@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ru-zh-live-subtitles"
+version = "0.1.0"
+description = "Offline real-time Russian-to-Chinese lecture subtitles using Sber ASR"
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "onnx-asr[cpu,hub]==0.12.0",
+    "numpy",
+    "sounddevice",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[project.scripts]
+live-subtitles = "live_subtitles.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
