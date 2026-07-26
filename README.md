@@ -8,9 +8,17 @@ RNN-T model through ONNX Runtime.
 
 The current implementation records short mono WAV files, recognizes Russian
 speech from a local WAV file, and separately translates supplied Russian text to
-Chinese with a local T5 model. The ASR and translation paths are not connected.
+Chinese with a local T5 experimental baseline. The ASR and translation paths are not connected.
 It is not streaming ASR. Continuous microphone recognition, VAD, live subtitle
 state, GUI, PowerPoint overlays, and Windows packaging have not been implemented.
+
+The T5 translator is a provisional benchmark model, not an approved final
+subtitle model. Its speed and GPU memory usage satisfy the prototype target and
+general software instructions are often usable, but its mathematical terminology
+contains serious errors. It must not be used for unattended mathematical classroom
+subtitles. There is currently no final default translation model; the next stage
+compares the T5 baseline with M2M100 and NLLB while keeping ASR and translation
+separate.
 
 ## Install on Windows PowerShell
 
@@ -25,7 +33,9 @@ python -m pip install -e ".[dev]"
 
 Translation uses a separately installed CUDA-enabled PyTorch wheel plus optional
 project dependencies. Select the official PyTorch command for the local CUDA
-driver, install only `torch`, then install the project extras:
+driver, install only `torch`, then install the project extras. The CUDA 13.0
+command below is a locally verified example for this machine, not a universal
+recommendation for every Windows/NVIDIA computer:
 
 ```powershell
 python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
@@ -89,6 +99,8 @@ ignored by Git and must not be committed.
 - Only short WAV files (up to the model's practical 20–30 second limit) are in scope.
 - The supported baseline provider is `CPUExecutionProvider`.
 - Translation is a separate text-only spike and does not consume ASR output yet.
+- T5 is an experimental baseline and is not approved for unattended mathematical subtitles.
+- There is no final default translation model yet; M2M100 and NLLB are the next comparison targets.
 - Translation GPU execution requires a separately installed compatible CUDA PyTorch wheel.
 - Recording depends on Windows microphone permissions and a free input device.
 - Model download depends on Hugging Face availability during the first run.

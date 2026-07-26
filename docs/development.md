@@ -103,7 +103,16 @@ Model and audio artifacts remain ignored and outside Git.
 
 ## Translation validation
 
-- PyTorch installation command:
+The T5 checkpoint is an experimental baseline and provisional benchmark model,
+not an approved final subtitle model. Its speed and memory use meet the prototype
+target and general software instructions are often usable, but the recorded
+mathematical terminology errors make it unsuitable for unattended mathematical
+classroom subtitles. There is currently no final default translation model.
+ASR and translation remain separate; the next stage compares M2M100 and NLLB
+against this baseline.
+
+- Locally verified PyTorch installation command for this machine (not a universal
+  Windows/NVIDIA recommendation):
   `.\.venv\Scripts\python.exe -m pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130`
 - PyTorch CUDA runtime: 13.0.
 - `torch.cuda.is_available()`: true.
