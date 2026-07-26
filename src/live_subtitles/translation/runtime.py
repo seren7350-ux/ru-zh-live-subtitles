@@ -1,60 +1,34 @@
-"""Lazy direct-Transformers wrapper for Russian-to-Chinese T5 translation."""
+"""Shared lazy Transformers runtime for forced-language seq2seq models."""
 
 from __future__ import annotations
 
 import importlib
 import time
 import warnings
-from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
-from ..config import DEFAULT_TRANSLATION_MODEL
-
-DeviceChoice = Literal["auto", "cpu", "cuda"]
-
-
-class TranslationError(RuntimeError):
-    """Base class for user-facing translation errors."""
-
-
-class InvalidTranslationInputError(TranslationError):
-    """Raised when the source text or generation settings are invalid."""
+from .t5_ru_zh import (
+    InvalidTranslationInputError,
+    TranslationDeviceError,
+    TranslationError,
+    TranslationMetrics,
+    TranslationModelError,
+)
 
 
-class TranslationDeviceError(TranslationError):
-    """Raised when the requested compute device is unavailable."""
+class ForcedBosRuZhTranslator:
+    """Common runtime for multilingual models selected by a target BOS token."""
 
-
-class TranslationModelError(TranslationError):
-    """Raised when model loading or generation fails."""
-
-
-@dataclass(frozen=True)
-class TranslationMetrics:
-    tokenizer_load_seconds: float
-    model_load_seconds: float
-    total_load_seconds: float
-    translation_seconds: float
-    input_characters: int
-    output_characters: int
-    device: str
-    dtype: str
-    peak_cuda_memory_bytes: int
-    first_call: bool
-
-
-class T5RuZhTranslator:
-    """Translate Russian text to Chinese with one lazily loaded T5 instance."""
-
-    engine = "t5"
-    source_language = "ru"
-    target_language = "zh"
+    engine = "unknown"
+    default_model_name = ""
+    source_language = ""
+    target_language = ""
 
     def __init__(
         self,
-        model_name: str = DEFAULT_TRANSLATION_MODEL,
+        model_name: str | None = None,
         *,
-        device: DeviceChoice = "auto",
+        device: str = "auto",
         num_beams: int = 1,
         max_new_tokens: int = 256,
         max_input_characters: int = 2_000,
@@ -70,7 +44,7 @@ class T5RuZhTranslator:
         if max_input_characters <= 0 or max_input_tokens <= 0:
             raise InvalidTranslationInputError("Input limits must be greater than 0.")
 
-        self.model_name = model_name
+        self.model_name = model_name or self.default_model_name
         self.requested_device = device
         self.num_beams = num_beams
         self.max_new_tokens = max_new_tokens
@@ -101,6 +75,19 @@ class T5RuZhTranslator:
             return "cuda" if cuda_available else "cpu"
         return self.requested_device
 
+    def _target_token_id(self, tokenizer: Any) -> int:
+        raise NotImplementedError
+
+    @staticmethod
+    def _revision_from(model: Any, tokenizer: Any) -> str:
+        config = getattr(model, "config", None)
+        revision = getattr(config, "_commit_hash", None)
+        if not revision:
+            init_kwargs = getattr(tokenizer, "init_kwargs", {})
+            if isinstance(init_kwargs, dict):
+                revision = init_kwargs.get("_commit_hash")
+        return str(revision or "unknown")
+
     def _load(self) -> None:
         if self._model is not None:
             return
@@ -121,8 +108,10 @@ class T5RuZhTranslator:
         try:
             tokenizer = transformers.AutoTokenizer.from_pretrained(
                 self.model_name,
+                src_lang=self.source_language,
                 trust_remote_code=False,
             )
+            self._target_token_id(tokenizer)
         except Exception as exc:
             raise TranslationModelError(
                 f"Unable to load tokenizer for {self.model_name!r}: {exc}"
@@ -130,10 +119,12 @@ class T5RuZhTranslator:
         tokenizer_finished = self._clock()
 
         try:
+            # Official Meta repositories may contain standard PyTorch weights.
+            # Do not force safetensors and do not permit remote custom code.
             model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_name,
                 dtype=dtype,
-                use_safetensors=True,
+                use_safetensors=False,
                 trust_remote_code=False,
             )
             model.to(actual_device)
@@ -150,11 +141,7 @@ class T5RuZhTranslator:
         self._model = model
         self.actual_device = actual_device
         self.dtype = dtype_name
-        self.revision = str(
-            getattr(getattr(model, "config", None), "_commit_hash", None)
-            or getattr(tokenizer, "init_kwargs", {}).get("_commit_hash")
-            or "unknown"
-        )
+        self.revision = self._revision_from(model, tokenizer)
         self._tokenizer_load_seconds = tokenizer_finished - load_started
         self._model_load_seconds = model_finished - tokenizer_finished
         self._total_load_seconds = model_finished - load_started
@@ -183,9 +170,8 @@ class T5RuZhTranslator:
         assert self.actual_device is not None
         assert self.dtype is not None
 
-        prompt = f"translate to zh: {source_text}"
         try:
-            encoded = self._tokenizer(prompt, return_tensors="pt", truncation=False)
+            encoded = self._tokenizer(source_text, return_tensors="pt", truncation=False)
             token_count = int(encoded["input_ids"].shape[-1])
         except Exception as exc:
             raise TranslationModelError(f"Unable to tokenize translation input: {exc}") from exc
@@ -193,13 +179,16 @@ class T5RuZhTranslator:
             raise InvalidTranslationInputError(
                 f"Translation input has {token_count} tokens; maximum is {self.max_input_tokens}."
             )
+
         try:
+            target_token_id = self._target_token_id(self._tokenizer)
             device_inputs = {name: tensor.to(self.actual_device) for name, tensor in encoded.items()}
             self._cuda_sync(self._torch, self.actual_device)
             started = self._clock()
             with self._torch.inference_mode():
                 generated = self._model.generate(
                     **device_inputs,
+                    forced_bos_token_id=target_token_id,
                     max_new_tokens=self.max_new_tokens,
                     num_beams=self.num_beams,
                     do_sample=False,
@@ -214,11 +203,7 @@ class T5RuZhTranslator:
 
         if not output:
             warnings.warn("The translation model returned empty text.", RuntimeWarning, stacklevel=2)
-        peak_memory = (
-            int(self._torch.cuda.max_memory_allocated())
-            if self.actual_device == "cuda"
-            else 0
-        )
+        peak_memory = int(self._torch.cuda.max_memory_allocated()) if self.actual_device == "cuda" else 0
         self.last_metrics = TranslationMetrics(
             tokenizer_load_seconds=self._tokenizer_load_seconds,
             model_load_seconds=self._model_load_seconds,

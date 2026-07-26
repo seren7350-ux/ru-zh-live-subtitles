@@ -8,17 +8,17 @@ RNN-T model through ONNX Runtime.
 
 The current implementation records short mono WAV files, recognizes Russian
 speech from a local WAV file, and separately translates supplied Russian text to
-Chinese with a local T5 experimental baseline. The ASR and translation paths are not connected.
+Chinese with independently selectable T5, M2M100, or NLLB benchmark adapters.
+The ASR and translation paths are not connected.
 It is not streaming ASR. Continuous microphone recognition, VAD, live subtitle
 state, GUI, PowerPoint overlays, and Windows packaging have not been implemented.
 
-The T5 translator is a provisional benchmark model, not an approved final
-subtitle model. Its speed and GPU memory usage satisfy the prototype target and
-general software instructions are often usable, but its mathematical terminology
-contains serious errors. It must not be used for unattended mathematical classroom
-subtitles. There is currently no final default translation model; the next stage
-compares the T5 baseline with M2M100 and NLLB while keeping ASR and translation
-separate.
+T5 remains an experimental baseline, while M2M100 and NLLB are comparison
+candidates. All three meet the local GPU latency and memory thresholds, and
+general software instructions are often usable, but all three fail the required
+85% mathematical terminology threshold by a wide margin. None is approved for
+unattended mathematical classroom subtitles, and there is no final default
+translation model. ASR and translation remain separate.
 
 ## Install on Windows PowerShell
 
@@ -61,8 +61,10 @@ python -m live_subtitles devices
 python -m live_subtitles record --seconds 8 --output data/sample.wav
 python -m live_subtitles transcribe-file data/sample.wav
 python -m live_subtitles translation-doctor
-python -m live_subtitles translate-text "Здравствуйте." --device auto
-python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cuda
+python -m live_subtitles translate-text "Здравствуйте." --engine t5 --device auto
+python -m live_subtitles translate-text "Здравствуйте." --engine m2m100 --device cuda
+python -m live_subtitles translate-text "Здравствуйте." --engine nllb --device cuda
+python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --engine m2m100 --device cuda
 ```
 
 `doctor` reports Python, dependency, ONNX Runtime provider, GPU, cache, and audio
@@ -79,14 +81,14 @@ python -m live_subtitles transcribe-file data/sample.wav
 Remove-Item Env:HF_HUB_OFFLINE
 ```
 
-The first `translate-text` invocation likewise downloads
-`utrobinmv/t5_translate_en_ru_zh_base_200`. After it is cached, verify translation
-without network access:
+The first `translate-text` invocation for an engine downloads its official model.
+After it is cached, verify translation without network access:
 
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
-python -m live_subtitles translate-text "Модель работает локально." --device auto
+python -m live_subtitles translate-text "Модель работает локально." --engine m2m100 --device cuda
+python -m live_subtitles translate-text "Модель работает локально." --engine nllb --device cuda
 Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
@@ -100,7 +102,8 @@ ignored by Git and must not be committed.
 - The supported baseline provider is `CPUExecutionProvider`.
 - Translation is a separate text-only spike and does not consume ASR output yet.
 - T5 is an experimental baseline and is not approved for unattended mathematical subtitles.
-- There is no final default translation model yet; M2M100 and NLLB are the next comparison targets.
+- M2M100 and NLLB also fail the mathematical terminology gate; there is no final default model.
+- NLLB is CC-BY-NC-4.0 and is only a research/academic candidate; future distribution and use must be reviewed again.
 - Translation GPU execution requires a separately installed compatible CUDA PyTorch wheel.
 - Recording depends on Windows microphone permissions and a free input device.
 - Model download depends on Hugging Face availability during the first run.
@@ -108,3 +111,5 @@ ignored by Git and must not be committed.
 
 See [development notes](docs/development.md) for verified environment details and
 [architecture](docs/architecture.md) for component boundaries and future work.
+The complete comparison is in
+[translation model comparison](docs/translation-model-comparison.md).

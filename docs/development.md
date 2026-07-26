@@ -208,3 +208,78 @@ only from the local cache and succeeded:
 - `git diff --check` completed without whitespace errors.
 - `.venv`, Hugging Face/model data, WAV files, generated `data/`, coverage data,
   and Python caches remain ignored and untracked.
+
+## Translation model comparison validation
+
+### Runtime and storage
+
+- Branch base: main squash commit `5dbb8c8` from PR #2.
+- Python: 3.11.9 from the project `.venv`.
+- Torch: 2.12.1+cu130; Torch CUDA runtime: 13.0.
+- CUDA available: true; device: NVIDIA GeForce RTX 4060 Laptop GPU.
+- NVIDIA-SMI: 610.74; driver CUDA UMD: 13.3; GPU memory: 8,188 MiB.
+- C drive free space before model work: 336,020,766,720 bytes.
+- M2M100 revision: `55c2e61bbf05dfb8d7abccdc3fae6fc8512fd636`.
+- NLLB revision: `f8d333a098d19b4fd9a8b18f94170487ad3f821d`.
+- M2M100 standard snapshot: 1,941,931,012 bytes; whole cache:
+  3,877,615,381 bytes.
+- NLLB standard snapshot: 2,482,646,304 bytes; whole cache:
+  4,943,003,911 bytes.
+
+The user had already downloaded both official standard PyTorch checkpoints. One
+M2M100 `vocab.json` read timed out and resumed successfully. Transformers later
+fetched automatic safetensors conversion snapshots before the adapter explicitly
+set `use_safetensors=False`. Nothing was deleted; final validation and all final
+benchmarks use the official standard `pytorch_model.bin` files at the `main`
+revisions above.
+
+### Offline validation
+
+With both `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`:
+
+- M2M100: tokenizer 1.619 seconds; model 1.174 seconds; translation 0.568
+  seconds; 938.0 MiB peak; output
+  `该模型运行本地,不会向互联网发送音频。`.
+- NLLB: tokenizer 2.196 seconds; model 2.343 seconds; translation 0.496
+  seconds; 1,189.6 MiB peak; output
+  `模型是本地运行的,不会发送音频到互联网.`.
+- Both commands returned zero and the temporary environment variables were removed.
+
+### Final benchmark conclusion
+
+The same 32-sentence corpus was used in a separate Python process for each
+configuration. GPU runs used two warmups and three timed repetitions; CPU runs
+used one warmup and one timed repetition. Full tables, category results, all
+outputs, severe errors, cache details, and the licensing decision are recorded in
+`docs/translation-model-comparison.md`.
+
+All models pass the local GPU P95 and peak-memory limits. None approaches the 85%
+mathematical terminology threshold: T5 peaks at 13.3%, M2M100 at 8.9%, and NLLB
+at 8.9%. Dedicated machine-translation models still do not satisfy the project
+requirement. No model is selected and ASR remains disconnected.
+
+### Comparison warnings and errors
+
+- The first no-network unit-test run had one incorrect fake expected term
+  (`译1` instead of the fake translator's actual `译d`); the fixture was corrected
+  and all tests passed.
+- One benchmark orchestration attempt passed `gpu` to a CLI that correctly
+  accepts `cuda`; it exited with code 2 before loading any model. The corrected
+  serial run completed all eight configurations.
+- Windows Hugging Face caching cannot use symlinks and therefore consumes more disk.
+- Transformers reports that `max_new_tokens` takes precedence over the model's
+  configured `max_length`; deterministic generation still uses `do_sample=False`.
+- Model loading progress is written to stderr by Transformers; no model objects,
+  weights, or cache paths are emitted into committed application data.
+
+### Final comparison-branch checks
+
+- `python -m pytest -v`: 57 passed in 0.40 seconds, 10 more collected test
+  cases than the merged translation-baseline branch.
+- `python -m pytest --cov=live_subtitles --cov-report=term-missing`: 57 passed
+  in 0.66 seconds; total coverage 79%.
+- Core comparison coverage: benchmark 87%, factory 94%, each Meta adapter 93%,
+  shared runtime 80%, and T5 wrapper 91%.
+- `python -m pip check`: no broken requirements found.
+- CLI help confirms `--engine {t5,m2m100,nllb}` for both single-text translation
+  and benchmarking.
