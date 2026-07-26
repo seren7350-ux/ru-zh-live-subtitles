@@ -1,4 +1,4 @@
-"""argparse command-line interface for the ASR spike."""
+"""argparse command-line interface for ASR and independent translation spikes."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ from typing import Sequence
 
 from .asr.gigaam_onnx import AsrError, GigaAMOnnxRecognizer
 from .audio.recording import AudioDeviceError, RecordingError, list_input_devices, record_wav, select_input_device
-from .config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER
+from .config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER, DEFAULT_TRANSLATION_MODEL
 from .diagnostics import collect_diagnostics, format_report
+from .translation.benchmark import load_samples, run_benchmark
+from .translation.diagnostics import collect_translation_diagnostics
+from .translation.t5_ru_zh import T5RuZhTranslator, TranslationError
 
 
 def _doctor(_: argparse.Namespace) -> int:
@@ -71,10 +74,80 @@ def _transcribe_file(args: argparse.Namespace) -> int:
     return 0
 
 
+def _translation_doctor(_: argparse.Namespace) -> int:
+    report = collect_translation_diagnostics()
+    print(format_report(report))
+    return report.exit_code
+
+
+def _translate_text(args: argparse.Namespace) -> int:
+    print("First load may download the translation model; later runs use the local cache.")
+    translator = T5RuZhTranslator(
+        model_name=args.model,
+        device=args.device,
+        num_beams=args.num_beams,
+        max_new_tokens=args.max_new_tokens,
+    )
+    translation = translator.translate(args.text)
+    metrics = translator.last_metrics
+    if metrics is None:
+        raise TranslationError("Translation completed without timing metrics.")
+    print(f"Russian input: {args.text.strip()}")
+    print(f"Chinese output: {translation}")
+    print(f"Model: {translator.model_name}")
+    print(f"Actual device: {metrics.device}")
+    print(f"dtype: {metrics.dtype}")
+    print(f"Tokenizer load time: {metrics.tokenizer_load_seconds:.3f} s")
+    print(f"Model load time: {metrics.model_load_seconds:.3f} s")
+    print(f"Total load time: {metrics.total_load_seconds:.3f} s")
+    print(f"Translation time: {metrics.translation_seconds:.3f} s")
+    print(f"CUDA peak memory: {metrics.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB")
+    return 0
+
+
+def _benchmark_translation(args: argparse.Namespace) -> int:
+    samples = load_samples(Path(args.path))
+    translator = T5RuZhTranslator(
+        model_name=args.model,
+        device=args.device,
+        num_beams=args.num_beams,
+        max_new_tokens=args.max_new_tokens,
+    )
+    summary = run_benchmark(
+        translator,
+        samples,
+        warmup_runs=args.warmup_runs,
+        repeat=args.repeat,
+    )
+    for index, result in enumerate(summary.samples, start=1):
+        repeats = ", ".join(f"{value:.3f}" for value in result.subsequent_translation_seconds)
+        print(f"Sample {index}")
+        print(f"  Russian: {result.source}")
+        print(f"  Chinese reference: {result.reference}")
+        print(f"  Translation: {result.translation}")
+        print(f"  First translation: {result.first_translation_seconds:.3f} s")
+        print(f"  Subsequent translations: {repeats} s")
+        print(f"  Average: {result.average_seconds:.3f} s")
+        print(f"  Minimum: {result.minimum_seconds:.3f} s")
+        print(f"  Maximum: {result.maximum_seconds:.3f} s")
+    print("Benchmark summary")
+    print(f"  Device: {summary.device}")
+    print(f"  dtype: {summary.dtype}")
+    print(f"  Cold load total: {summary.cold_load_seconds:.3f} s")
+    print(f"  Average warm translation: {summary.average_warm_seconds:.3f} s")
+    print(f"  Median warm translation: {summary.median_warm_seconds:.3f} s")
+    print(f"  P95 warm translation: {summary.p95_warm_seconds:.3f} s")
+    print(f"  Source characters per second: {summary.source_characters_per_second:.2f}")
+    print(f"  Corpus chrF: {summary.corpus_chrf:.3f}")
+    print(f"  CUDA peak memory: {summary.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB")
+    print("  Note: corpus chrF is an automatic reference metric, not a substitute for human quality review.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="live-subtitles",
-        description="Short Russian WAV recording and GigaAM ONNX transcription spike.",
+        description="Short Russian WAV ASR and independent offline Russian-to-Chinese translation spikes.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -96,6 +169,30 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--model", default=DEFAULT_ASR_MODEL, help=f"onnx-asr model name (default: {DEFAULT_ASR_MODEL})")
     transcribe.add_argument("--provider", default=DEFAULT_PROVIDER, help=f"ONNX Runtime provider (supported baseline: {DEFAULT_PROVIDER})")
     transcribe.set_defaults(handler=_transcribe_file)
+
+    translation_doctor = subparsers.add_parser(
+        "translation-doctor",
+        help="check translation dependencies, CUDA, and cache without loading a model",
+    )
+    translation_doctor.set_defaults(handler=_translation_doctor)
+
+    translate = subparsers.add_parser("translate-text", help="translate one Russian text to Chinese")
+    translate.add_argument("text", help="Russian source text")
+    translate.add_argument("--model", default=DEFAULT_TRANSLATION_MODEL, help=f"translation model (default: {DEFAULT_TRANSLATION_MODEL})")
+    translate.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    translate.add_argument("--num-beams", type=int, default=1)
+    translate.add_argument("--max-new-tokens", type=int, default=256)
+    translate.set_defaults(handler=_translate_text)
+
+    benchmark = subparsers.add_parser("benchmark-translation", help="benchmark translation using a UTF-8 JSON corpus")
+    benchmark.add_argument("path", help="benchmark JSON path")
+    benchmark.add_argument("--model", default=DEFAULT_TRANSLATION_MODEL, help=f"translation model (default: {DEFAULT_TRANSLATION_MODEL})")
+    benchmark.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    benchmark.add_argument("--num-beams", type=int, default=1)
+    benchmark.add_argument("--max-new-tokens", type=int, default=256)
+    benchmark.add_argument("--warmup-runs", type=int, default=1)
+    benchmark.add_argument("--repeat", type=int, default=3)
+    benchmark.set_defaults(handler=_benchmark_translation)
     return parser
 
 
@@ -104,7 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (AsrError, AudioDeviceError, RecordingError, ValueError) as exc:
+    except (AsrError, AudioDeviceError, RecordingError, TranslationError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

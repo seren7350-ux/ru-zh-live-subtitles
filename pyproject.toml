@@ -18,6 +18,12 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov",
+    "sacrebleu",
+]
+translation = [
+    "transformers",
+    "sentencepiece",
+    "safetensors",
 ]
 
 [project.scripts]
