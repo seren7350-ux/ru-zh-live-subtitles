@@ -31,5 +31,8 @@ def test_translation_doctor_does_not_load_model(monkeypatch: pytest.MonkeyPatch,
     names = {check.name: check for check in report.checks}
     assert names["CUDA available"].status == "OK"
     assert names["CUDA device"].detail == "Fake GPU"
+    assert names["Default translation candidate"].detail == (
+        "nllb: facebook/nllb-200-distilled-600M"
+    )
     assert names["Model cache"].status == "WARN"
     assert load_calls == []

@@ -29,6 +29,7 @@ def test_python_module_help_starts() -> None:
         "devices",
         "record",
         "transcribe-file",
+        "translate-audio",
         "translation-doctor",
         "translate-text",
         "benchmark-translation",
@@ -97,3 +98,98 @@ def test_broken_benchmark_json_returns_nonzero(
     captured = capsys.readouterr()
     assert "Unable to read benchmark JSON" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_translate_audio_defaults_to_nllb_and_reports_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from live_subtitles.pipeline.offline_file import OfflineTranslationResult
+
+    captured_kwargs: dict[str, object] = {}
+
+    class FakePipeline:
+        def __init__(self, **kwargs: object) -> None:
+            captured_kwargs.update(kwargs)
+
+        @staticmethod
+        def run(path: Path) -> OfflineTranslationResult:
+            return OfflineTranslationResult(
+                audio_path=path,
+                russian_text="Русский текст",
+                chinese_text="中文文本",
+                asr_model="gigaam-v3-e2e-rnnt",
+                asr_provider="CPUExecutionProvider",
+                translation_engine="nllb",
+                translation_model="facebook/nllb-200-distilled-600M",
+                audio_duration_seconds=2.0,
+                asr_model_load_seconds=1.0,
+                asr_seconds=0.5,
+                translation_model_load_seconds=3.0,
+                translation_seconds=0.25,
+                total_processing_seconds=4.75,
+                end_to_end_rtf=2.375,
+                asr_device="CPUExecutionProvider",
+                translation_device="cuda",
+                translation_dtype="float16",
+                peak_cuda_memory_bytes=1024 * 1024,
+            )
+
+    monkeypatch.setattr(cli, "OfflineAudioTranslationPipeline", FakePipeline)
+    wav = tmp_path / "sample.wav"
+    assert cli.main(["translate-audio", str(wav)]) == 0
+    assert captured_kwargs["translation_engine"] == "nllb"
+    assert captured_kwargs["translation_model"] is None
+    assert captured_kwargs["device"] == "auto"
+    output = capsys.readouterr().out
+    assert "Russian text: Русский текст" in output
+    assert "Chinese text: 中文文本" in output
+    assert "End-to-end RTF: 2.375" in output
+    assert "translation=cuda" in output
+
+
+@pytest.mark.parametrize("engine", ["t5", "m2m100"])
+def test_translate_audio_accepts_compatibility_engine_override(
+    engine: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FailingAfterCapturePipeline:
+        def __init__(self, **kwargs: object) -> None:
+            captured_kwargs.update(kwargs)
+
+        @staticmethod
+        def run(path: Path) -> object:
+            raise ValueError(f"stopped after parsing {path.name}")
+
+    monkeypatch.setattr(cli, "OfflineAudioTranslationPipeline", FailingAfterCapturePipeline)
+    result = cli.main(
+        [
+            "translate-audio",
+            "sample.wav",
+            "--translation-engine",
+            engine,
+            "--translation-model",
+            "example/model",
+            "--device",
+            "cpu",
+            "--num-beams",
+            "3",
+            "--max-new-tokens",
+            "80",
+        ]
+    )
+    assert result != 0
+    assert captured_kwargs == {
+        "asr_model": "gigaam-v3-e2e-rnnt",
+        "asr_provider": "CPUExecutionProvider",
+        "translation_engine": engine,
+        "translation_model": "example/model",
+        "device": "cpu",
+        "num_beams": 3,
+        "max_new_tokens": 80,
+    }
+    assert "Traceback" not in capsys.readouterr().err

@@ -8,7 +8,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-from ..config import DEFAULT_TRANSLATION_MODEL
+from ..config import DEFAULT_T5_TRANSLATION_MODEL
 
 DeviceChoice = Literal["auto", "cpu", "cuda"]
 
@@ -52,7 +52,7 @@ class T5RuZhTranslator:
 
     def __init__(
         self,
-        model_name: str = DEFAULT_TRANSLATION_MODEL,
+        model_name: str = DEFAULT_T5_TRANSLATION_MODEL,
         *,
         device: DeviceChoice = "auto",
         num_beams: int = 1,

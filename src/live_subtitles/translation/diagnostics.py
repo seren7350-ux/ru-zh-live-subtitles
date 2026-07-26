@@ -5,7 +5,11 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from ..config import DEFAULT_TRANSLATION_MODEL, hugging_face_model_cache_dir
+from ..config import (
+    DEFAULT_TRANSLATION_ENGINE,
+    DEFAULT_TRANSLATION_MODEL,
+    hugging_face_model_cache_dir,
+)
 from ..diagnostics import Check, DiagnosticReport
 
 
@@ -49,7 +53,11 @@ def collect_translation_diagnostics() -> DiagnosticReport:
     model_cache = hugging_face_model_cache_dir(DEFAULT_TRANSLATION_MODEL)
     checks.extend(
         (
-            Check("OK", "T5 experimental baseline", DEFAULT_TRANSLATION_MODEL),
+            Check(
+                "OK",
+                "Default translation candidate",
+                f"{DEFAULT_TRANSLATION_ENGINE}: {DEFAULT_TRANSLATION_MODEL}",
+            ),
             Check("OK" if model_cache.exists() else "WARN", "Model cache", f"{model_cache} ({'exists' if model_cache.exists() else 'not cached'})"),
             Check("WARN", "First model load", "requires internet if the model is not cached"),
             Check("OK", "Offline translation", "available after caching with HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1"),
