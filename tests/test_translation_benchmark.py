@@ -11,11 +11,18 @@ from live_subtitles.translation.benchmark import (
     load_samples,
     percentile,
     run_benchmark,
+    terminology_hits,
 )
 from live_subtitles.translation.t5_ru_zh import TranslationMetrics
 
 
 class FakeTranslator:
+    engine = "fake"
+    model_name = "fake/model"
+    source_language = "ru"
+    target_language = "zh"
+    revision = "abc123"
+
     def __init__(self) -> None:
         self.latencies = iter([0.9, 0.5, 0.4, 0.6, 0.8, 0.4, 0.3, 0.5])
         self.last_metrics: TranslationMetrics | None = None
@@ -39,8 +46,8 @@ class FakeTranslator:
 
 def test_benchmark_statistics_are_correct() -> None:
     samples = [
-        TranslationSample("abcd", "参考1"),
-        TranslationSample("uvwxyz", "参考2"),
+        TranslationSample("abcd", "参考1", "mathematics", (("译d",),)),
+        TranslationSample("uvwxyz", "参考2", "software", (("不存在",),)),
     ]
     summary = run_benchmark(
         FakeTranslator(),  # type: ignore[arg-type]
@@ -58,6 +65,12 @@ def test_benchmark_statistics_are_correct() -> None:
     assert summary.device == "cuda"
     assert summary.dtype == "float16"
     assert len(summary.samples) == 2
+    assert summary.required_term_hits == 1
+    assert summary.required_term_total == 2
+    assert summary.terminology_accuracy == pytest.approx(0.5)
+    assert summary.mathematics_terminology_accuracy == pytest.approx(1.0)
+    assert summary.severe_terminology_errors == (2,)
+    assert {category.category for category in summary.categories} == {"mathematics", "software"}
 
 
 def test_percentile_interpolates() -> None:
@@ -74,6 +87,20 @@ def test_load_samples_rejects_corrupt_json(tmp_path: Path) -> None:
 def test_loads_utf8_benchmark_data() -> None:
     path = Path(__file__).parents[1] / "benchmarks" / "translation_samples.json"
     samples = load_samples(path)
-    assert len(samples) == 12
-    assert samples[0].source.startswith("Здравствуйте")
-    assert samples[0].reference.startswith("您好")
+    assert len(samples) >= 30
+    assert {sample.category for sample in samples} == {
+        "functional_analysis",
+        "general_lecture",
+        "mathematics",
+        "software",
+    }
+    assert any(("线性算子",) in sample.required_terms for sample in samples)
+
+
+def test_required_terms_accept_alternatives_and_remove_only_whitespace() -> None:
+    hits, total, missing = terminology_hits(
+        "这是 巴拿赫 空间中的线性运营商。",
+        (("巴拿赫空间",), ("线性算子", "线性算符")),
+    )
+    assert (hits, total) == (1, 2)
+    assert missing == (("线性算子", "线性算符"),)

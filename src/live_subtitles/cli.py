@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
 from .asr.gigaam_onnx import AsrError, GigaAMOnnxRecognizer
 from .audio.recording import AudioDeviceError, RecordingError, list_input_devices, record_wav, select_input_device
-from .config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER, DEFAULT_TRANSLATION_MODEL
+from .config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER
 from .diagnostics import collect_diagnostics, format_report
 from .translation.benchmark import load_samples, run_benchmark
 from .translation.diagnostics import collect_translation_diagnostics
-from .translation.t5_ru_zh import T5RuZhTranslator, TranslationError
+from .translation.factory import TRANSLATION_ENGINES, create_translator
+from .translation.t5_ru_zh import TranslationError
 
 
 def _doctor(_: argparse.Namespace) -> int:
@@ -82,11 +85,12 @@ def _translation_doctor(_: argparse.Namespace) -> int:
 
 def _translate_text(args: argparse.Namespace) -> int:
     print("First load may download the translation model; later runs use the local cache.")
-    translator = T5RuZhTranslator(
-        model_name=args.model,
-        device=args.device,
-        num_beams=args.num_beams,
-        max_new_tokens=args.max_new_tokens,
+    translator = create_translator(
+        args.engine,
+        args.model,
+        args.device,
+        args.num_beams,
+        args.max_new_tokens,
     )
     translation = translator.translate(args.text)
     metrics = translator.last_metrics
@@ -94,7 +98,11 @@ def _translate_text(args: argparse.Namespace) -> int:
         raise TranslationError("Translation completed without timing metrics.")
     print(f"Russian input: {args.text.strip()}")
     print(f"Chinese output: {translation}")
+    print(f"Engine: {translator.engine}")
     print(f"Model: {translator.model_name}")
+    print(f"Source language: {translator.source_language}")
+    print(f"Target language: {translator.target_language}")
+    print(f"Revision: {translator.revision}")
     print(f"Actual device: {metrics.device}")
     print(f"dtype: {metrics.dtype}")
     print(f"Tokenizer load time: {metrics.tokenizer_load_seconds:.3f} s")
@@ -107,11 +115,12 @@ def _translate_text(args: argparse.Namespace) -> int:
 
 def _benchmark_translation(args: argparse.Namespace) -> int:
     samples = load_samples(Path(args.path))
-    translator = T5RuZhTranslator(
-        model_name=args.model,
-        device=args.device,
-        num_beams=args.num_beams,
-        max_new_tokens=args.max_new_tokens,
+    translator = create_translator(
+        args.engine,
+        args.model,
+        args.device,
+        args.num_beams,
+        args.max_new_tokens,
     )
     summary = run_benchmark(
         translator,
@@ -125,22 +134,58 @@ def _benchmark_translation(args: argparse.Namespace) -> int:
         print(f"  Russian: {result.source}")
         print(f"  Chinese reference: {result.reference}")
         print(f"  Translation: {result.translation}")
+        print(f"  Category: {result.category}")
+        print(f"  Required terms: {result.required_term_hits}/{result.required_term_total}")
+        if result.missing_required_terms:
+            missing = "; ".join(" / ".join(group) for group in result.missing_required_terms)
+            print(f"  Missing required terms: {missing}")
         print(f"  First translation: {result.first_translation_seconds:.3f} s")
         print(f"  Subsequent translations: {repeats} s")
         print(f"  Average: {result.average_seconds:.3f} s")
         print(f"  Minimum: {result.minimum_seconds:.3f} s")
         print(f"  Maximum: {result.maximum_seconds:.3f} s")
     print("Benchmark summary")
+    print(f"  Engine: {summary.engine}")
+    print(f"  Model: {summary.model_name}")
+    print(f"  Source language: {summary.source_language}")
+    print(f"  Target language: {summary.target_language}")
+    print(f"  Revision: {summary.revision}")
     print(f"  Device: {summary.device}")
     print(f"  dtype: {summary.dtype}")
+    print(f"  Tokenizer load: {summary.tokenizer_load_seconds:.3f} s")
+    print(f"  Model load: {summary.model_load_seconds:.3f} s")
     print(f"  Cold load total: {summary.cold_load_seconds:.3f} s")
     print(f"  Average warm translation: {summary.average_warm_seconds:.3f} s")
     print(f"  Median warm translation: {summary.median_warm_seconds:.3f} s")
     print(f"  P95 warm translation: {summary.p95_warm_seconds:.3f} s")
     print(f"  Source characters per second: {summary.source_characters_per_second:.2f}")
     print(f"  Corpus chrF: {summary.corpus_chrf:.3f}")
+    print(f"  Mathematics chrF: {summary.mathematics_chrf:.3f}")
+    print(
+        f"  Terminology accuracy: {summary.required_term_hits}/{summary.required_term_total} "
+        f"({summary.terminology_accuracy:.1%})"
+    )
+    print(
+        "  Mathematics terminology accuracy: "
+        f"{summary.mathematics_required_term_hits}/{summary.mathematics_required_term_total} "
+        f"({summary.mathematics_terminology_accuracy:.1%})"
+    )
+    print("  Category results:")
+    for category in summary.categories:
+        print(
+            f"    {category.category}: chrF={category.corpus_chrf:.3f}, "
+            f"terms={category.required_term_hits}/{category.required_term_total} "
+            f"({category.terminology_accuracy:.1%})"
+        )
+    errors = ", ".join(str(index) for index in summary.severe_terminology_errors) or "none"
+    print(f"  Sentences with terminology errors: {errors}")
     print(f"  CUDA peak memory: {summary.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB")
     print("  Note: corpus chrF is an automatic reference metric, not a substitute for human quality review.")
+    if args.json_output:
+        output_path = Path(args.json_output).expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  JSON result: {output_path}")
     return 0
 
 
@@ -178,7 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     translate = subparsers.add_parser("translate-text", help="translate one Russian text to Chinese")
     translate.add_argument("text", help="Russian source text")
-    translate.add_argument("--model", default=DEFAULT_TRANSLATION_MODEL, help=f"translation model (default: {DEFAULT_TRANSLATION_MODEL})")
+    translate.add_argument("--engine", choices=TRANSLATION_ENGINES, default="t5")
+    translate.add_argument("--model", help="model repository override (default: official model for the engine)")
     translate.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     translate.add_argument("--num-beams", type=int, default=1)
     translate.add_argument("--max-new-tokens", type=int, default=256)
@@ -186,12 +232,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     benchmark = subparsers.add_parser("benchmark-translation", help="benchmark translation using a UTF-8 JSON corpus")
     benchmark.add_argument("path", help="benchmark JSON path")
-    benchmark.add_argument("--model", default=DEFAULT_TRANSLATION_MODEL, help=f"translation model (default: {DEFAULT_TRANSLATION_MODEL})")
+    benchmark.add_argument("--engine", choices=TRANSLATION_ENGINES, default="t5")
+    benchmark.add_argument("--model", help="model repository override (default: official model for the engine)")
     benchmark.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     benchmark.add_argument("--num-beams", type=int, default=1)
     benchmark.add_argument("--max-new-tokens", type=int, default=256)
     benchmark.add_argument("--warmup-runs", type=int, default=1)
     benchmark.add_argument("--repeat", type=int, default=3)
+    benchmark.add_argument("--json-output", help="optional JSON result path")
     benchmark.set_defaults(handler=_benchmark_translation)
     return parser
 
