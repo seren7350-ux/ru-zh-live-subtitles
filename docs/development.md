@@ -3,7 +3,7 @@
 ## Environment survey
 
 - Operating environment: Windows, PowerShell
-- Selected Python: `C:\Users\seren\AppData\Local\Programs\Python\Python311\python.exe`
+- Selected Python: Python.org CPython selected through `py -3.11`
 - Selected Python version: `Python 3.11.9` (64-bit)
 - Project interpreter: `.venv\Scripts\python.exe`
 - pip: `26.1.2`, installed inside `.venv`
@@ -26,6 +26,12 @@ Editable installation completed successfully inside `.venv`. Key versions:
 - `huggingface-hub 1.24.0`
 - `pytest 9.1.1`
 - `pytest-cov 7.1.0`
+- `torch 2.12.1+cu130` (installed separately from the official CUDA 13.0 wheel index)
+- `transformers 5.14.1`
+- `tokenizers 0.22.2`
+- `sentencepiece 0.2.2`
+- `safetensors 0.8.0`
+- `sacrebleu 2.6.0`
 
 `python -m pip check` reports `No broken requirements found.` No freeze or
 lockfile was committed; `pyproject.toml` remains the dependency source.
@@ -41,6 +47,9 @@ lockfile was committed; `pyproject.toml` remains the dependency source.
 .\.venv\Scripts\python.exe -m live_subtitles devices
 .\.venv\Scripts\python.exe -m live_subtitles record --seconds 8 --output data/sample.wav
 .\.venv\Scripts\python.exe -m live_subtitles transcribe-file data/sample.wav
+.\.venv\Scripts\python.exe -m live_subtitles translation-doctor
+.\.venv\Scripts\python.exe -m live_subtitles translate-text "Здравствуйте." --device auto
+.\.venv\Scripts\python.exe -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cuda
 ```
 
 ## Real and offline validation
@@ -56,7 +65,7 @@ Validated on 2026-07-26:
 - Recorded peak amplitude: 699/32767 and RMS 60.41; the microphone level was low.
 - Model: `gigaam-v3-e2e-rnnt`, provider `CPUExecutionProvider`.
 - Model download: success, with five model repository files fetched.
-- Model cache: `C:\Users\seren\.cache\huggingface\hub\models--istupakov--gigaam-v3-onnx`.
+- Model cache: the `models--istupakov--gigaam-v3-onnx` directory under the effective Hugging Face Hub cache.
 - Cache observation: 7 files totaling 892,417,061 bytes.
 - First model load (including download): 203.925 seconds.
 - First recognition: 1.803 seconds for 8.000 seconds of audio; RTF 0.225.
@@ -91,3 +100,102 @@ CPU or memory behavior was observed; this is a spot check, not a full profiler.
   the correct Russian display; no translation feature was involved.
 
 Model and audio artifacts remain ignored and outside Git.
+
+## Translation validation
+
+- PyTorch installation command:
+  `.\.venv\Scripts\python.exe -m pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130`
+- PyTorch CUDA runtime: 13.0.
+- `torch.cuda.is_available()`: true.
+- CUDA device: NVIDIA GeForce RTX 4060 Laptop GPU.
+- Translation model: `utrobinmv/t5_translate_en_ru_zh_base_200`.
+- Model download: successful; cache contains 10 files totaling 1,194,418,014 bytes
+  under `models--utrobinmv--t5_translate_en_ru_zh_base_200` in the effective Hub cache.
+- First online CUDA load: tokenizer 13.717 seconds, model 188.034 seconds,
+  total 201.751 seconds.
+- First CUDA translation: 0.654 seconds, float16, peak allocated CUDA memory
+  658.6 MiB.
+- First source: `Сегодня мы рассмотрим основные свойства линейных операторов.`
+- First output: `今天我们来看看线下运营商的特点。`
+
+### GPU benchmark summary
+
+| Setting | Cold load | Warm mean | Median | P95 | Source chars/s | corpus chrF | Peak CUDA |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| beams=1, warmup=2, repeat=3 | 5.969 s | 0.184 s | 0.177 s | 0.269 s | 316.37 | 31.646 | 659.2 MiB |
+| beams=4, warmup=2, repeat=3 | 14.706 s | 0.235 s | 0.224 s | 0.363 s | 248.21 | 35.043 | 666.7 MiB |
+
+The higher beam count improved corpus chrF by 3.397 points but increased mean
+warm latency by about 28%. chrF is an automatic reference metric and is not a
+substitute for human evaluation.
+
+### Actual GPU translations
+
+| # | beams=1 | beams=4 |
+| ---: | --- | --- |
+| 1 | 這是對俄語辨識的檢查。 | 你好,这是俄罗斯语言识别测试。 |
+| 2 | 今天我们来看看线下运营商的特点。 | 今天,我们来看看线性运营商的基本特性。 |
+| 3 | 让 X - Banachov空间,A – 有限线性操作员。 | 让 X 是香蕉空间,而 A 是有限的线性运算符。 |
+| 4 | 运算符称为紧凑型,如果它将有限的数组转换为前置的集合。 | 运算符称为紧凑型,如果它将有限的数组转换为前置的数组。 |
+| 5 | 证明这个任务的存在和唯一性。 | 证明这个任务的存在和唯一性。 |
+| 6 | 下面我们来看看,计算一下函数的规则。 | 让我们来看看下面的例子,并计算功能规范。 |
+| 7 | 首先启动程序,然后在设置中选择麦克风。 | 首先启动程序,然后在设置中选择麦克风。 |
+| 8 | 该模型在本地运行,不会将音频发送到互联网。 | 该模型在本地运行,不会将音频发送到互联网。 |
+| 9 | 如果出现错误,请检查设备连接并重复尝试。 | 如果出现错误,请检查设备连接并重复尝试。 |
+| 10 | 让我们进入下一个幻灯片。 | 让我们进入下一个幻灯片。 |
+| 11 | 理论2.3在中断后得到证实。 | 理论2.3在中断后得到证实。 |
+| 12 | 参数值为零,t =0。 | 参数值为零,t = 0。 |
+
+The general software/device sentences are usable, but mathematical terminology
+is frequently mistranslated: for example, linear operators become telecom
+operators, Banach space becomes `Banachov空间` or `香蕉空间`, and functional norm
+becomes `函数的规则` or `功能规范`. The model is therefore not acceptable for
+unsupervised mathematical lecture subtitles without terminology adaptation or a
+better model.
+
+### CPU benchmark
+
+beams=1 with warmup=1 and repeat=1 completed all 12 sentences: cold load 4.301
+seconds, warm mean 0.279 seconds, median 0.267 seconds, P95 0.388 seconds,
+208.91 source characters/second, corpus chrF 31.577, and no CUDA allocation.
+
+### Fully offline verification
+
+With both `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, CUDA translation loaded
+only from the local cache and succeeded:
+
+- Source: `Модель работает локально и не отправляет аудио в интернет.`
+- Output: `该模型在本地运行,不会将音频发送到互联网。`
+- Tokenizer load: 1.406 seconds.
+- Model load: 0.800 seconds.
+- Total load: 2.206 seconds.
+- Translation: 0.625 seconds.
+- dtype: float16.
+- Peak allocated CUDA memory: 658.7 MiB.
+
+## Translation warnings
+
+- The 1.93 GB PyTorch CUDA wheel took about 12 minutes to download. One small
+  dependency request timed out after 15 seconds and pip retried successfully.
+- Hugging Face warned about unauthenticated rate limits; no token was provided or
+  stored.
+- Windows lacks cache symlink support in this setup. Caching works in degraded
+  mode and may use more disk.
+- Transformers reports that `shared.weight` and `lm_head.weight` differ despite
+  the checkpoint's tied-weight configuration, so it deliberately does not tie
+  them. The code does not mutate the upstream model configuration.
+
+## Final translation-spike validation
+
+- `python -m pip check`: no broken requirements found.
+- `python -m pytest -v`: 47 tests passed in 0.44 seconds.
+- `python -m pytest --cov=live_subtitles --cov-report=term-missing`: 47 tests
+  passed in 0.60 seconds with 79% total coverage.
+- Core translation coverage: 90% for `t5_ru_zh.py`, 83% for `benchmark.py`, and
+  79% for translation diagnostics.
+- The test suite replaces socket connection functions with failures, uses fake
+  Torch/Transformers modules, and does not download a model, access the network,
+  or require a GPU.
+- `git diff --check` completed without whitespace errors.
+- `.venv`, Hugging Face/model data, WAV files, generated `data/`, coverage data,
+  and Python caches remain ignored and untracked.

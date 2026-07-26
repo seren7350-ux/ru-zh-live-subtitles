@@ -22,7 +22,18 @@ def test_python_module_help_starts() -> None:
     assert "transcribe-file" in result.stdout
 
 
-@pytest.mark.parametrize("command", ["doctor", "devices", "record", "transcribe-file"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "doctor",
+        "devices",
+        "record",
+        "transcribe-file",
+        "translation-doctor",
+        "translate-text",
+        "benchmark-translation",
+    ],
+)
 def test_subcommand_help(command: str) -> None:
     with pytest.raises(SystemExit) as exc_info:
         cli.main([command, "--help"])
@@ -67,3 +78,22 @@ def test_non_wav_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[s
     text_file.write_text("not audio", encoding="utf-8")
     assert cli.main(["transcribe-file", str(text_file)]) != 0
     assert "Only .wav files" in capsys.readouterr().err
+
+
+def test_translation_cli_error_has_no_traceback(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["translate-text", "   "]) != 0
+    captured = capsys.readouterr()
+    assert "whitespace-only" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_broken_benchmark_json_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    broken = tmp_path / "broken.json"
+    broken.write_text("{broken", encoding="utf-8")
+    assert cli.main(["benchmark-translation", str(broken)]) != 0
+    captured = capsys.readouterr()
+    assert "Unable to read benchmark JSON" in captured.err
+    assert "Traceback" not in captured.err
