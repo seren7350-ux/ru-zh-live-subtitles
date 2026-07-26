@@ -1,24 +1,32 @@
 # Russian–Chinese Live Subtitles
 
-An offline-first Windows application for Russian lecture subtitles. This spike
-establishes the audio and speech-recognition baseline with Sber's GigaAM-v3 E2E
-RNN-T model through ONNX Runtime.
+An offline-first Windows prototype for Russian lecture subtitles. The current
+milestone accepts one short local WAV file, recognizes Russian speech with
+GigaAM-v3 E2E RNN-T, and sends that text directly to an offline
+Russian-to-Chinese translator.
 
 ## Current scope
 
-The current implementation records short mono WAV files, recognizes Russian
-speech from a local WAV file, and separately translates supplied Russian text to
-Chinese with independently selectable T5, M2M100, or NLLB benchmark adapters.
-The ASR and translation paths are not connected.
-It is not streaming ASR. Continuous microphone recognition, VAD, live subtitle
-state, GUI, PowerPoint overlays, and Windows packaging have not been implemented.
+The complete short-file path is now:
 
-T5 remains an experimental baseline, while M2M100 and NLLB are comparison
-candidates. All three meet the local GPU latency and memory thresholds, and
-general software instructions are often usable, but all three fail the required
-85% mathematical terminology threshold by a wide margin. None is approved for
-unattended mathematical classroom subtitles, and there is no final default
-translation model. ASR and translation remain separate.
+```text
+WAV -> GigaAM ASR -> Russian text -> NLLB translation -> Chinese text
+```
+
+NLLB (`facebook/nllb-200-distilled-600M`) is the current default
+general-purpose candidate because its outputs were relatively natural on the
+project's general lecture and operating-instruction samples. It is not a final
+model choice. T5 and M2M100 remain available through CLI overrides and their
+comparison results are retained as research history.
+
+Mathematical terminology optimization is not a core acceptance requirement for
+this project. The current milestone does not implement continuous microphone
+recognition, streaming ASR, VAD, live subtitle state, Chinese subtitle display,
+GUI, PowerPoint overlays, or Windows packaging.
+
+NLLB is licensed CC-BY-NC-4.0. It is used here only as a learning, research, and
+non-commercial candidate; licensing and model suitability must be reviewed
+before any broader or commercial use.
 
 ## Install on Windows PowerShell
 
@@ -28,26 +36,20 @@ Python 3.10–3.14 is supported; Python 3.11 is recommended.
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-```
-
-Translation uses a separately installed CUDA-enabled PyTorch wheel plus optional
-project dependencies. Select the official PyTorch command for the local CUDA
-driver, install only `torch`, then install the project extras. The CUDA 13.0
-command below is a locally verified example for this machine, not a universal
-recommendation for every Windows/NVIDIA computer:
-
-```powershell
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
 python -m pip install -e ".[dev,translation]"
 ```
 
-If PowerShell policy prevents activation, use the virtual-environment executable
-directly:
+Translation requires a compatible PyTorch installation. Select the official
+PyTorch command for the machine's NVIDIA driver and install it in `.venv`. This
+machine was verified with the CUDA 13.0 wheel:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
 ```
+
+If PowerShell policy prevents activation, call
+`.\.venv\Scripts\python.exe` directly. Do not install project dependencies
+globally.
 
 ## Commands
 
@@ -60,56 +62,48 @@ python -m live_subtitles doctor
 python -m live_subtitles devices
 python -m live_subtitles record --seconds 8 --output data/sample.wav
 python -m live_subtitles transcribe-file data/sample.wav
+python -m live_subtitles translate-audio data/sample.wav
 python -m live_subtitles translation-doctor
-python -m live_subtitles translate-text "Здравствуйте." --engine t5 --device auto
-python -m live_subtitles translate-text "Здравствуйте." --engine m2m100 --device cuda
-python -m live_subtitles translate-text "Здравствуйте." --engine nllb --device cuda
-python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --engine m2m100 --device cuda
+python -m live_subtitles translate-text "Здравствуйте."
+python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cuda
 ```
 
-`doctor` reports Python, dependency, ONNX Runtime provider, GPU, cache, and audio
-device status without loading a model or opening the microphone. `devices` lists
-input-capable audio devices. `record` writes mono, 16 kHz, PCM16 WAV audio.
+`translate-audio` defaults to GigaAM on `CPUExecutionProvider`, NLLB translation,
+`device=auto`, and one beam. `auto` prefers CUDA when PyTorch reports it available
+and otherwise uses CPU. An explicit `--device cuda` request fails instead of
+silently falling back. T5 and M2M100 compatibility can be checked with
+`--translation-engine t5` or `--translation-engine m2m100`.
 
-The first `transcribe-file` invocation may need internet access to download
-`gigaam-v3-e2e-rnnt` from Hugging Face. After a successful download, repeat the
-same command with the cache forced offline:
+## Cached offline use
 
-```powershell
-$env:HF_HUB_OFFLINE = "1"
-python -m live_subtitles transcribe-file data/sample.wav
-Remove-Item Env:HF_HUB_OFFLINE
-```
-
-The first `translate-text` invocation for an engine downloads its official model.
-After it is cached, verify translation without network access:
+The first use of each model needs network access unless its files are already in
+the Hugging Face cache. After both models have loaded successfully, force a
+complete cache-only run in the current PowerShell session:
 
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
-python -m live_subtitles translate-text "Модель работает локально." --engine m2m100 --device cuda
-python -m live_subtitles translate-text "Модель работает локально." --engine nllb --device cuda
+python -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cuda --num-beams 1
 Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
 
-The `.venv`, `data`, model/cache directories, WAV files, and model weights are
-ignored by Git and must not be committed.
+The ASR path remains CPU-only in this milestone; translation can use CUDA. Audio
+and recognized text stay in the local process. The `.venv`, `data`, WAV files,
+model caches, weights, and generated benchmark output are ignored by Git and
+must not be committed.
 
 ## Limitations and troubleshooting
 
-- Only short WAV files (up to the model's practical 20–30 second limit) are in scope.
-- The supported baseline provider is `CPUExecutionProvider`.
-- Translation is a separate text-only spike and does not consume ASR output yet.
-- T5 is an experimental baseline and is not approved for unattended mathematical subtitles.
-- M2M100 and NLLB also fail the mathematical terminology gate; there is no final default model.
-- NLLB is CC-BY-NC-4.0 and is only a research/academic candidate; future distribution and use must be reviewed again.
-- Translation GPU execution requires a separately installed compatible CUDA PyTorch wheel.
-- Recording depends on Windows microphone permissions and a free input device.
-- Model download depends on Hugging Face availability during the first run.
-- Run `python -m live_subtitles doctor` first when setup or device detection fails.
+- Only short, local WAV files are supported; this is not a live subtitle loop.
+- Recording depends on Windows microphone permission and a free input device.
+- GigaAM uses CPU ONNX Runtime; NLLB CUDA needs a compatible PyTorch wheel.
+- Cache-only mode fails if either model snapshot is incomplete.
+- NLLB is a current candidate, not a quality guarantee or production approval.
+- Run `doctor` and `translation-doctor` first when setup, device, or cache checks
+  fail.
 
-See [development notes](docs/development.md) for verified environment details and
-[architecture](docs/architecture.md) for component boundaries and future work.
-The complete comparison is in
-[translation model comparison](docs/translation-model-comparison.md).
+See [architecture](docs/architecture.md),
+[development notes](docs/development.md),
+[pipeline validation](docs/offline-audio-translation-pipeline.md), and the
+[translation comparison](docs/translation-model-comparison.md).

@@ -47,6 +47,7 @@ lockfile was committed; `pyproject.toml` remains the dependency source.
 .\.venv\Scripts\python.exe -m live_subtitles devices
 .\.venv\Scripts\python.exe -m live_subtitles record --seconds 8 --output data/sample.wav
 .\.venv\Scripts\python.exe -m live_subtitles transcribe-file data/sample.wav
+.\.venv\Scripts\python.exe -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cuda
 .\.venv\Scripts\python.exe -m live_subtitles translation-doctor
 .\.venv\Scripts\python.exe -m live_subtitles translate-text "Здравствуйте." --device auto
 .\.venv\Scripts\python.exe -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cuda
@@ -103,13 +104,11 @@ Model and audio artifacts remain ignored and outside Git.
 
 ## Translation validation
 
-The T5 checkpoint is an experimental baseline and provisional benchmark model,
-not an approved final subtitle model. Its speed and memory use meet the prototype
-target and general software instructions are often usable, but the recorded
-mathematical terminology errors make it unsuitable for unattended mathematical
-classroom subtitles. There is currently no final default translation model.
-ASR and translation remain separate; the next stage compares M2M100 and NLLB
-against this baseline.
+This section preserves the first T5-only benchmark as historical validation. T5
+remains an experimental baseline. The later comparison retained all three
+adapters and selected NLLB as the current general-purpose candidate; the
+short-file pipeline now connects ASR to the selected translator. NLLB is not a
+final model approval.
 
 - Locally verified PyTorch installation command for this machine (not a universal
   Windows/NVIDIA recommendation):
@@ -253,10 +252,12 @@ used one warmup and one timed repetition. Full tables, category results, all
 outputs, severe errors, cache details, and the licensing decision are recorded in
 `docs/translation-model-comparison.md`.
 
-All models pass the local GPU P95 and peak-memory limits. None approaches the 85%
-mathematical terminology threshold: T5 peaks at 13.3%, M2M100 at 8.9%, and NLLB
-at 8.9%. Dedicated machine-translation models still do not satisfy the project
-requirement. No model is selected and ASR remains disconnected.
+All models pass the local GPU P95 and peak-memory limits. None approaches the
+historical 85% mathematical terminology threshold: T5 peaks at 13.3%, M2M100 at
+8.9%, and NLLB at 8.9%. Those measurements remain useful research evidence, but
+mathematical terminology is no longer a core acceptance requirement. NLLB is the
+current general-purpose candidate and may be connected to ASR; it is not a final
+model selection.
 
 ### Comparison warnings and errors
 
@@ -283,3 +284,53 @@ requirement. No model is selected and ASR remains disconnected.
 - `python -m pip check`: no broken requirements found.
 - CLI help confirms `--engine {t5,m2m100,nllb}` for both single-text translation
   and benchmarking.
+
+## Offline audio-to-translation integration
+
+Validated on 2026-07-27 after PR #3 was squash-merged:
+
+- Branch: `feat/offline-audio-translation-pipeline`.
+- Default translation engine: `nllb`.
+- Default translation model: `facebook/nllb-200-distilled-600M`.
+- Languages: `rus_Cyrl` to `zho_Hans`.
+- ASR remains `gigaam-v3-e2e-rnnt` on `CPUExecutionProvider`.
+- Translation device mode defaults to `auto`, which selected CUDA on this host;
+  explicit CUDA requests do not fall back.
+- Unit tests after integration: 70 passed in 0.45 seconds, with socket access
+  blocked and all model and microphone interactions replaced by fakes.
+
+The first real pipeline run used both `HF_HUB_OFFLINE=1` and
+`TRANSFORMERS_OFFLINE=1`, so both models loaded from local caches:
+
+- File: `data/sample-retry.wav`; duration: 8.000 seconds.
+- Russian: `Здравствуйте. Это проверка распознавания русской речи.`
+- Chinese: `你好,这是一个俄罗斯语识别检查.`
+- ASR load: 2.377 seconds; ASR recognition: 2.453 seconds.
+- NLLB load: 4.383 seconds; translation: 0.609 seconds.
+- Total: 12.481 seconds; end-to-end RTF: 1.560.
+- Translation runtime: CUDA float16; peak allocation: 1,189.6 MiB.
+- CPU offload: none configured or observed. ASR running on CPU is intentional
+  and separate from translation offload.
+
+The second fully offline run used a newly recorded ordinary lecture sample:
+
+- WAV: mono PCM16, 16 kHz, 160,000 frames, 10.000 seconds, 320,044 bytes.
+- Signal: peak 1,249/32,767; RMS 142.49/32,767; not near silence.
+- Russian: `Сегодня мы рассмотрим новую тему и приведём несколько простых примеров.`
+- Chinese: `今天我们将讨论一个新的主题,并举出一些简单的例子.`
+- ASR load: 2.127 seconds; recognition: 2.792 seconds.
+- NLLB load: 4.433 seconds; translation: 0.652 seconds.
+- Total: 12.797 seconds; end-to-end RTF: 1.280.
+- CUDA float16 peak allocation: 1,189.8 MiB; no CPU offload was configured or
+  observed.
+- Both offline flags were removed from the PowerShell session after the command.
+
+Final integration checks: 70 tests passed in 0.45 seconds; the coverage run
+passed all 70 tests in 0.78 seconds with 80% total coverage and 90% coverage for
+`pipeline/offline_file.py`. `python -m pip check` reported no broken
+requirements.
+
+Transformers warned that the model's configured `max_length=200` and the CLI's
+`max_new_tokens=256` were both present. It explicitly used `max_new_tokens`;
+generation remained deterministic. See `offline-audio-translation-pipeline.md`
+for the complete file-pipeline record.

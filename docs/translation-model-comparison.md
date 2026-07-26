@@ -1,17 +1,21 @@
 # Offline translation model comparison
 
-## Scope and decision
+## Scope and historical decision
 
 This comparison uses the same 32 Russian-to-Simplified-Chinese samples for all
 models. It measures automatic chrF, exact required-term hits, latency, throughput,
 and peak CUDA allocation. chrF and term hits do not replace human review.
 
-No model passes the internal candidate gate. All meet the GPU P95 limit of 0.7
-seconds and the 4 GiB peak-memory limit, and all work from cache with networking
-disabled. All fail the required 85% mathematical terminology accuracy and make
-severe errors in mandatory concepts. Dedicated machine-translation models still
-do not meet the project requirement. No model is selected, and translation must
-not be connected to ASR.
+This document preserves the original three-model benchmark and its domain-heavy
+acceptance gate as research history. All models met the measured GPU latency and
+memory limits and worked from cache with networking disabled, while all failed
+the then-proposed 85% mathematical terminology threshold.
+
+That mathematical threshold is no longer a core project acceptance requirement
+and does not block the general lecture pipeline. NLLB is now the current default
+general-purpose candidate and is connected to ASR for short-file validation.
+This does not retroactively change the measurements below, approve specialized
+mathematical translation, or make NLLB a final model selection.
 
 ## Models and local cache
 
@@ -32,7 +36,7 @@ card says it is a research model and not released for production deployment.
 Future distribution and every intended use must be reviewed against the license
 again. M2M100 is MIT licensed. T5 remains an experimental baseline.
 
-## Internal candidate gate
+## Historical domain-specific candidate gate
 
 | Requirement | T5 | M2M100 | NLLB |
 | --- | --- | --- | --- |

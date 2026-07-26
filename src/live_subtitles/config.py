@@ -7,11 +7,14 @@ from pathlib import Path
 
 DEFAULT_ASR_MODEL = "gigaam-v3-e2e-rnnt"
 DEFAULT_PROVIDER = "CPUExecutionProvider"
-DEFAULT_TRANSLATION_MODEL = "utrobinmv/t5_translate_en_ru_zh_base_200"
+DEFAULT_T5_TRANSLATION_MODEL = "utrobinmv/t5_translate_en_ru_zh_base_200"
 DEFAULT_M2M100_MODEL = "facebook/m2m100_418M"
 DEFAULT_NLLB_MODEL = "facebook/nllb-200-distilled-600M"
-DEFAULT_SOURCE_LANGUAGE = "ru"
-DEFAULT_TARGET_LANGUAGE = "zh"
+DEFAULT_TRANSLATION_ENGINE = "nllb"
+DEFAULT_TRANSLATION_MODEL = DEFAULT_NLLB_MODEL
+DEFAULT_SOURCE_LANGUAGE = "rus_Cyrl"
+DEFAULT_TARGET_LANGUAGE = "zho_Hans"
+DEFAULT_TRANSLATION_DEVICE = "auto"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 

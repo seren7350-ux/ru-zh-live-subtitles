@@ -1,4 +1,4 @@
-"""argparse command-line interface for ASR and independent translation spikes."""
+"""argparse command-line interface for offline ASR and translation experiments."""
 
 from __future__ import annotations
 
@@ -11,8 +11,17 @@ from typing import Sequence
 
 from .asr.gigaam_onnx import AsrError, GigaAMOnnxRecognizer
 from .audio.recording import AudioDeviceError, RecordingError, list_input_devices, record_wav, select_input_device
-from .config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER
+from .config import (
+    DEFAULT_ASR_MODEL,
+    DEFAULT_PROVIDER,
+    DEFAULT_TRANSLATION_DEVICE,
+    DEFAULT_TRANSLATION_ENGINE,
+)
 from .diagnostics import collect_diagnostics, format_report
+from .pipeline.offline_file import (
+    OfflineAudioTranslationPipeline,
+    OfflinePipelineError,
+)
 from .translation.benchmark import load_samples, run_benchmark
 from .translation.diagnostics import collect_translation_diagnostics
 from .translation.factory import TRANSLATION_ENGINES, create_translator
@@ -81,6 +90,47 @@ def _translation_doctor(_: argparse.Namespace) -> int:
     report = collect_translation_diagnostics()
     print(format_report(report))
     return report.exit_code
+
+
+def _translate_audio(args: argparse.Namespace) -> int:
+    path = Path(args.path).expanduser().resolve()
+    print("Using local caches only when HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1 are set.")
+    pipeline = OfflineAudioTranslationPipeline(
+        asr_model=args.asr_model,
+        asr_provider=args.asr_provider,
+        translation_engine=args.translation_engine,
+        translation_model=args.translation_model,
+        device=args.device,
+        num_beams=args.num_beams,
+        max_new_tokens=args.max_new_tokens,
+    )
+    result = pipeline.run(path)
+    end_to_end_rtf = (
+        "n/a (zero-duration audio)"
+        if result.end_to_end_rtf is None
+        else f"{result.end_to_end_rtf:.3f}"
+    )
+    print(f"File: {result.audio_path}")
+    print(f"Audio duration: {result.audio_duration_seconds:.3f} s")
+    print(f"Russian text: {result.russian_text}")
+    print(f"Chinese text: {result.chinese_text}")
+    print(f"ASR model: {result.asr_model}")
+    print(f"ASR provider: {result.asr_provider}")
+    print(f"ASR model load time: {result.asr_model_load_seconds:.3f} s")
+    print(f"ASR recognition time: {result.asr_seconds:.3f} s")
+    print(f"Translation engine: {result.translation_engine}")
+    print(f"Translation model: {result.translation_model}")
+    print(f"Translation model load time: {result.translation_model_load_seconds:.3f} s")
+    print(f"Translation time: {result.translation_seconds:.3f} s")
+    print(f"Total processing time: {result.total_processing_seconds:.3f} s")
+    print(f"End-to-end RTF: {end_to_end_rtf}")
+    print(
+        "Actual devices: "
+        f"ASR={result.asr_device}; translation={result.translation_device}; "
+        f"dtype={result.translation_dtype}"
+    )
+    print(f"CUDA peak memory: {result.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB")
+    return 0
 
 
 def _translate_text(args: argparse.Namespace) -> int:
@@ -192,7 +242,7 @@ def _benchmark_translation(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="live-subtitles",
-        description="Short Russian WAV ASR and independent offline Russian-to-Chinese translation spikes.",
+        description="Short Russian WAV ASR and offline Russian-to-Chinese translation pipeline.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -215,6 +265,40 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--provider", default=DEFAULT_PROVIDER, help=f"ONNX Runtime provider (supported baseline: {DEFAULT_PROVIDER})")
     transcribe.set_defaults(handler=_transcribe_file)
 
+    translate_audio = subparsers.add_parser(
+        "translate-audio",
+        help="recognize one Russian WAV file and translate the result to Chinese",
+    )
+    translate_audio.add_argument("path", help="path to a WAV file")
+    translate_audio.add_argument(
+        "--asr-model",
+        default=DEFAULT_ASR_MODEL,
+        help=f"onnx-asr model name (default: {DEFAULT_ASR_MODEL})",
+    )
+    translate_audio.add_argument(
+        "--asr-provider",
+        default=DEFAULT_PROVIDER,
+        help=f"ONNX Runtime provider (default: {DEFAULT_PROVIDER})",
+    )
+    translate_audio.add_argument(
+        "--translation-engine",
+        choices=TRANSLATION_ENGINES,
+        default=DEFAULT_TRANSLATION_ENGINE,
+    )
+    translate_audio.add_argument(
+        "--translation-model",
+        help="model repository override (default: official model for the selected engine)",
+    )
+    translate_audio.add_argument(
+        "--device",
+        choices=("auto", "cpu", "cuda"),
+        default=DEFAULT_TRANSLATION_DEVICE,
+        help="translation device; auto prefers CUDA and falls back to CPU",
+    )
+    translate_audio.add_argument("--num-beams", type=int, default=1)
+    translate_audio.add_argument("--max-new-tokens", type=int, default=256)
+    translate_audio.set_defaults(handler=_translate_audio)
+
     translation_doctor = subparsers.add_parser(
         "translation-doctor",
         help="check translation dependencies, CUDA, and cache without loading a model",
@@ -223,18 +307,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     translate = subparsers.add_parser("translate-text", help="translate one Russian text to Chinese")
     translate.add_argument("text", help="Russian source text")
-    translate.add_argument("--engine", choices=TRANSLATION_ENGINES, default="t5")
+    translate.add_argument("--engine", choices=TRANSLATION_ENGINES, default=DEFAULT_TRANSLATION_ENGINE)
     translate.add_argument("--model", help="model repository override (default: official model for the engine)")
-    translate.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    translate.add_argument(
+        "--device", choices=("auto", "cpu", "cuda"), default=DEFAULT_TRANSLATION_DEVICE
+    )
     translate.add_argument("--num-beams", type=int, default=1)
     translate.add_argument("--max-new-tokens", type=int, default=256)
     translate.set_defaults(handler=_translate_text)
 
     benchmark = subparsers.add_parser("benchmark-translation", help="benchmark translation using a UTF-8 JSON corpus")
     benchmark.add_argument("path", help="benchmark JSON path")
-    benchmark.add_argument("--engine", choices=TRANSLATION_ENGINES, default="t5")
+    benchmark.add_argument("--engine", choices=TRANSLATION_ENGINES, default=DEFAULT_TRANSLATION_ENGINE)
     benchmark.add_argument("--model", help="model repository override (default: official model for the engine)")
-    benchmark.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    benchmark.add_argument(
+        "--device", choices=("auto", "cpu", "cuda"), default=DEFAULT_TRANSLATION_DEVICE
+    )
     benchmark.add_argument("--num-beams", type=int, default=1)
     benchmark.add_argument("--max-new-tokens", type=int, default=256)
     benchmark.add_argument("--warmup-runs", type=int, default=1)
@@ -249,7 +337,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (AsrError, AudioDeviceError, RecordingError, TranslationError, ValueError) as exc:
+    except (
+        AsrError,
+        AudioDeviceError,
+        RecordingError,
+        TranslationError,
+        OfflinePipelineError,
+        ValueError,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

@@ -1,34 +1,34 @@
 # Architecture
 
-## Current independent spikes
+## Current short-file pipeline
 
 ```text
-Audio file
+Local WAV file
   -> WAV validation and duration reading
-  -> GigaAM-v3 E2E RNN-T through onnx-asr / ONNX Runtime
-  -> Russian text
-```
-
-```text
-Russian text
-  -> translator factory (t5 | m2m100 | nllb)
-  -> engine-specific source and target language handling
-  -> direct Transformers model generation
+  -> GigaAM-v3 E2E RNN-T through onnx-asr / CPU ONNX Runtime
+  -> non-empty Russian text check
+  -> translator factory (default: NLLB; optional: T5 or M2M100)
+  -> direct local Transformers generation
   -> Chinese text
 ```
 
-The current ASR implementation recognizes one short WAV file at a time. It is
-not streaming ASR and does not use VAD. Its CPU implementation is a baseline for
-correctness, portability, and latency measurement. Translation accepts explicit
-text input and runs independently on CPU or CUDA. T5 uses its documented target
-prefix; M2M100 and NLLB obtain and force their target-language BOS token from the
-tokenizer. The two pipelines are intentionally not connected in this spike.
+ASR and translation remain independent components. The pipeline module only
+coordinates their narrow interfaces and combines timing data; it does not copy
+model logic. Both wrappers are lazy, so importing the package, displaying help,
+or running a doctor command does not load a model. A pipeline instance creates
+at most one ASR wrapper and one selected translator, allowing the same loaded
+objects to be reused in a future long-running process.
 
-The command layer depends on narrow audio, ASR, and translation protocols. ASR
-and translation model creation is lazy: importing the package, displaying help,
-or running either doctor command does not download or load a model. Each
-translator instance loads at most one model, and benchmark configurations run in
-separate processes so multiple large models are not held in GPU memory together.
+The current file command handles one short WAV at a time. GigaAM remains on CPU,
+while translation selects CUDA when `device=auto` and CUDA is available. No
+audio or text is sent to a network service. Cache-only operation requires both
+Hugging Face offline environment variables and complete local model snapshots.
+
+T5, M2M100, and NLLB are not loaded together. NLLB is the current default
+general-purpose candidate, while the other adapters remain selectable for
+comparison and compatibility. Mathematical terminology is not a core project
+acceptance requirement; earlier comparison failures remain documented as
+research observations rather than a pipeline blocker.
 
 ## Future target
 
@@ -42,7 +42,7 @@ Microphone
   -> always-on-top GUI
 ```
 
-ASR, translation, subtitle state, and GUI components must remain decoupled so
-they can be profiled and replaced independently. Future performance work must
-measure ASR latency and translation latency separately instead of reporting one
-combined number.
+The current implementation is neither streaming ASR nor continuous subtitles.
+ASR, translation, subtitle state, and GUI must remain decoupled so they can be
+profiled and replaced independently. Future performance work must report ASR,
+translation, and orchestration latency separately as well as end-to-end delay.
