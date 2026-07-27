@@ -85,9 +85,13 @@ GUI main thread
      -> persistent control bar
      -> subtitle content area
      -> one optional persistent SettingsPanel Toplevel
-  <- immutable events from one bounded queue
-Background controller
-  -> at most one live session
+  <- immutable events from one bounded multiprocessing queue
+Spawned live-session process
+  -> cached model preparation
+  -> PortAudio callback and bounded audio queue
+  -> VAD/segmenter worker
+  -> bounded segment queue
+  -> serial GigaAM/translation worker
 ```
 
 The overlay has no compact, expanded, or captions-only layout state. Its main
@@ -102,10 +106,18 @@ panel is created. Borderless changes use one `overrideredirect()` call on the
 existing root followed by one idle callback that restores geometry, topmost,
 and opacity. Neither operation rebuilds widgets or creates a new live session.
 
-Tk calls stay on the main thread. Background work emits immutable queue events;
-subtitle rendering never changes focus, grabs input, or repeatedly reapplies
-window-manager state. Stop is a non-blocking request and Exit polls completion
-from the Tk event loop before destroying the root.
+Tk calls stay on the main thread. Model preparation, audio capture, VAD, ASR,
+and translation stay in the spawned child. Background work emits immutable
+queue events; subtitle rendering never changes focus, grabs input, or repeatedly
+reapplies window-manager state. Raw single-writer process counters avoid a
+Windows synchronization lock being abandoned during child shutdown. Stop sets
+a process event without blocking Tk, and Exit polls completion from the Tk event
+loop before destroying the root.
+
+Only one child may be alive at a time. Stop releases its microphone and workers;
+a later Start intentionally creates a fresh child and reloads each model once
+from the existing local caches. It does not reuse model objects across stopped
+sessions, create concurrent microphones, or persist subtitle text.
 
 ## Future target
 

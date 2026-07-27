@@ -20,12 +20,19 @@ Microphone -> bounded audio queue -> Silero ONNX VAD -> immutable speech segment
 ```
 
 The current GUI spike adds an always-on-top Tk subtitle surface around that
-pipeline. Its layout is deliberately fixed: a persistent control bar remains
-visible above the subtitle content, while the optional Settings panel opens in
-one reusable `Toplevel`. The main bar always exposes Start/Stop, Pinned/Unpinned,
-Settings, and Exit. Settings only shows or hides the settings panel; right-click
-is a shortcut to the same action. The earlier compact, expanded, and
-captions-only modes have been removed.
+pipeline. Tk stays in the main process while each live session runs in one
+spawned worker process and returns immutable events through a bounded queue.
+This prevents CPU/GPU model work from starving the Tk mainloop. Its layout is
+deliberately fixed: a persistent control bar remains visible above the subtitle
+content, while the optional Settings panel opens in one reusable `Toplevel`.
+The main bar always exposes Start/Stop, Pinned/Unpinned, Settings, and Exit.
+Settings only shows or hides the settings panel; right-click is a shortcut to
+the same action. The earlier compact, expanded, and captions-only modes have
+been removed.
+
+**GUI overlay prototype accepted for packaging evaluation.** This status is
+based on the documented user interaction/PowerPoint acceptance and real offline
+60/120-second microphone validation. It does not mean production ready.
 
 This is a **VAD 分段后调用短音频离线 ASR 的近实时终端字幕原型**. GigaAM is
 called only after VAD closes a segment and receives a temporary WAV; it is not
@@ -175,8 +182,11 @@ only the verified local VAD cache and never access the network.
   Start/Stop, and Exit behavior.
 - Closing the settings panel withdraws it without stopping the session. Switching
   borderless mode keeps the same root, controls, subtitle state, and session.
-- PowerPoint and Acrobat compatibility still require user validation. The GUI
-  is not finally accepted, packaged, or claimed to reserve Windows work area.
+- The user accepted the interaction checks and PowerPoint slide-show behavior.
+  Acrobat checks were explicitly waived because Acrobat is not installed on the
+  validation machine; the overlay is not an Acrobat or PowerPoint plugin.
+- The GUI is not packaged, click-through, production ready, or claimed to
+  reserve Windows work area. It does not persist subtitle history.
 
 See [architecture](docs/architecture.md),
 [development notes](docs/development.md),

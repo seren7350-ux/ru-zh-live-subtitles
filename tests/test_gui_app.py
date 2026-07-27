@@ -180,9 +180,9 @@ def test_controller_source_has_no_tk_calls_and_no_user_path() -> None:
     assert "c:\\users\\" not in source
 
 
-def test_cli_declares_live_terminal_session_reuse() -> None:
+def test_cli_uses_process_isolation_without_persisting_subtitles() -> None:
     source = Path(app.__file__).read_text(encoding="utf-8")
-    assert "LiveTerminalSession(" in source
+    assert "LiveProcessOverlayController(" in source
     assert "write_text(" not in source
     assert "open(" not in source
 

@@ -498,9 +498,9 @@ The desktop-control API does not enumerate or target Tk roots after
 Borderless-to-Windowed click or ten full screen-driven round trips. The fake-Tk
 regression performs ten transitions and verifies geometry/topmost/opacity,
 binding count, root identity, and session identity, but this is not represented
-as a substitute for the missing screen clicks. PowerPoint, Acrobat, and final
-visual acceptance remain user work; no 60/120-second live subtitle run was
-started in this stabilization task.
+as a substitute for the missing screen clicks. At that intermediate point,
+external-application acceptance and 60/120-second live subtitle runs had not yet
+been completed; the later results are recorded below.
 
 Final local checks: 235 tests passed in 1.40 seconds; the coverage run passed the
 same 235 tests in 2.20 seconds with 79% total coverage. GUI module coverage was
@@ -508,3 +508,99 @@ same 235 tests in 2.20 seconds with 79% total coverage. GUI module coverage was
 `overlay.py`, and 98% for `state.py`. `git diff --check` completed without
 whitespace errors. `.coverage`, pytest/Python caches, `.venv`, `data`, WAV,
 models, and downloaded artifacts remained ignored and untracked.
+
+### User overlay acceptance
+
+On 2026-07-27 the user formally reported A1–A5 visual/interaction and B1–B5
+PowerPoint checks as passing. Repeated real
+Borderless/Windowed changes retained position, opacity, and topmost state with
+one SettingsPanel and no crash or terminal Tk error. Direct main-bar Stop,
+Settings, Pin/Unpin, dragging, external focus behavior, and Exit were acceptable.
+Acrobat was not installed; the user explicitly waived C1–C5, so those checks are
+not claimed as passed. No user screenshot was provided or claimed. These human
+checks are recorded separately from Codex's mechanical GUI tests and from the
+live 60/120-second audio/model validation that follows.
+
+## Final live overlay validation
+
+Completed on 2026-07-27 on `feat/always-on-top-subtitle-overlay`. Real cached
+model loading in a Python thread had starved the Tk mainloop. The final design
+keeps Tk in the parent and runs one existing `LiveTerminalSession` in a spawned
+child process. A bounded multiprocessing queue returns immutable events and a
+compact summary. The child never calls Tk. A real three-second diagnostic found
+and then verified fixes for Windows process-counter locking and stop-forwarder
+shutdown; the corrected heartbeat maximum was 0.073 seconds with queue HWM 2,
+overflow 0, 94/94 blocks, and clean release.
+
+All real GUI commands set `HF_HUB_OFFLINE=1` and
+`TRANSFORMERS_OFFLINE=1`. They used Python 3.11.9, Tk/Tcl 8.6, device 1
+(`麦克风 (HyperX Cloud III)`), Silero VAD and GigaAM on CPU ONNX Runtime, and
+NLLB on CUDA float16. No dependency, runtime, model, or system configuration was
+changed and no network download occurred.
+
+The accepted 60-second run displayed 5/5 subtitles. GUI events were 10/10,
+queue HWM 2, overflow 0, render latency average/median/P95
+0.030/0.026/0.054 seconds, and heartbeat maximum 0.077 seconds. It processed
+1,874/1,874 blocks with audio/segment HWMs 1/320 and 1/8. Dropped blocks,
+sequence gaps, PortAudio status, backlog, and queue wait were zero. Processing
+RTF average/median/P95 was 0.211/0.207/0.308; RU latency was
+0.628/0.611/0.680 seconds and ZH latency was 1.232/1.075/1.712 seconds. Model
+counts were 1/1/1/1, CUDA peak was 1,189.6 MiB, and temporary WAV lifecycle was
+5/5/0.
+
+The real Stop → Start → Stop test produced one subtitle in each session, used
+one child at a time, and released both microphones/workers. By design, the
+second Start spawned a new child and reloaded each cached model once; it did not
+reuse objects from the stopped process. The prepare-period Exit test emitted no
+Listening event, never opened the microphone, created no WAV, remained
+responsive, and left no process.
+
+Two 120-second attempts were retained as honest non-passing evidence because
+they produced only 5 and 7 subtitles. The first nevertheless exercised Settings,
+Show Russian, opacity, Unpin, and Pin during live updates without regression.
+The final 120.018-second run passed with 11/11 subtitles, GUI events 16/16,
+queue HWM 2, overflow 0, render average/median/P95 0.033/0.029/0.055 seconds,
+and heartbeat maximum 0.019 seconds. It processed 3,749/3,749 blocks; audio and
+segment HWMs were 1/320 and 1/8; loss, gaps, PortAudio status, backlog, and queue
+wait were all zero. Processing RTF average/median/P95 was 0.184/0.179/0.291,
+RU latency 0.600/0.599/0.626 seconds, and ZH latency
+0.989/0.974/1.369 seconds. Model counts were 1/1/1/1, CUDA peak was 1,189.4
+MiB, and temporary WAV lifecycle was 11/11/0. A late stable memory window moved
+from 5,327.1/8,594.6 MiB working/private to 5,328.2/8,595.3 MiB, with no
+obvious growth trend. All workers, microphones, GUI windows, and live child
+processes exited.
+
+Exact RU/ZH output and all GUI/pipeline measurements are in
+`always-on-top-subtitle-overlay.md`. The known Transformers
+`max_new_tokens`/`max_length` warning remained harmless. The acceptance wording
+is **GUI overlay prototype accepted for packaging evaluation**, not production
+ready.
+
+Final automated verification commands and results:
+
+- `python -m pytest -v`: 239 passed in 1.87 seconds (the previous 235 plus four
+  process-controller regressions).
+- `python -m pytest --cov=live_subtitles --cov-report=term-missing`: 239 passed
+  in 2.58 seconds; 79% total coverage. `process_controller.py` reached 84%,
+  `app.py` 63%, `controller.py` 95%, `events.py` 100%, `overlay.py` 62%, and
+  `state.py` 98%.
+- Targeted GUI suite: 66 passed in 0.47 seconds.
+- `python -m pip check`: `No broken requirements found.`
+- `doctor`: 20 OK, 2 WARN, 0 FAIL; the warnings were the intentionally absent
+  CUDA ONNX provider and the generic first-load network reminder.
+- `vad-doctor`: pinned SHA valid; CPU session load 0.067652 seconds.
+- `translation-doctor`: 7 OK, 1 WARN, 0 FAIL; cached NLLB exists and CUDA is
+  available.
+- `git diff --check`: success; Git printed only the existing Windows LF-to-CRLF
+  checkout warning.
+- Repository scans found no tracked WAV/ONNX/wheel/log/image artifact, no token,
+  no user absolute path in the diff, no Tk call in the child controller, and no
+  new network or subtitle-persistence path. `.venv`, `data`, `.coverage`, and
+  Python/pytest caches remained ignored.
+
+One targeted pytest command mistakenly named the nonexistent
+`tests/test_gui_runtime.py`; collection stopped with zero tests. The corrected
+command used the five actual GUI test files and passed 66/66. The first launch
+attempt for the final 120-second run was rejected by the command safety policy
+because it included log-file removal; no application started and no file was
+changed. A unique log name was then used without overwriting anything.

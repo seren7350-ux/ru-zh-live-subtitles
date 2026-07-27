@@ -14,11 +14,8 @@ from ..config import (
     DEFAULT_TRANSLATION_DEVICE,
     DEFAULT_TRANSLATION_ENGINE,
 )
-from ..pipeline.offline_file import OfflineAudioTranslationPipeline
-from ..realtime.live_subtitles import LiveTerminalSession
-from ..realtime.vad_model import SileroOnnxVad
 from ..translation.factory import TRANSLATION_ENGINES
-from .controller import DemoOverlayController, GuiMetricsSnapshot, LiveOverlayController
+from .controller import DemoOverlayController, GuiMetricsSnapshot
 from .events import (
     FatalErrorEvent,
     ListeningEvent,
@@ -30,6 +27,11 @@ from .events import (
     SubtitleEvent,
 )
 from .overlay import SubtitleOverlay
+from .process_controller import (
+    LiveProcessOverlayController,
+    LiveWorkerConfig,
+    LiveWorkerSummary,
+)
 from .state import SubtitleEntry, SubtitleViewState
 
 
@@ -396,85 +398,104 @@ def _overlay_demo(args: argparse.Namespace) -> int:
 
 
 def _live_overlay(args: argparse.Namespace) -> int:
-    shared: dict[str, Any] = {}
-
-    def session_factory(on_result: Any, on_listening: Any) -> LiveTerminalSession:
-        if "pipeline" not in shared:
-            shared["pipeline"] = OfflineAudioTranslationPipeline(
-                asr_model=DEFAULT_ASR_MODEL,
-                asr_provider=DEFAULT_PROVIDER,
-                translation_engine=args.translation_engine,
-                translation_model=args.translation_model,
-                device=args.translation_device,
-                num_beams=args.num_beams,
-                max_new_tokens=args.max_new_tokens,
-            )
-        if "vad" not in shared:
-            shared["vad"] = SileroOnnxVad()
-        return LiveTerminalSession(
+    state = _state_from_args(args)
+    controller = LiveProcessOverlayController(
+        LiveWorkerConfig(
             device_index=args.device,
             duration=args.duration,
             audio_queue_size=args.audio_queue_size,
             segment_queue_size=args.segment_queue_size,
-            threshold=args.vad_threshold,
+            vad_threshold=args.vad_threshold,
             negative_threshold=args.negative_threshold,
             min_silence_ms=args.min_silence_ms,
             speech_pad_ms=args.speech_pad_ms,
             pre_roll_ms=args.pre_roll_ms,
             min_segment_ms=args.min_segment_ms,
             max_segment_seconds=args.max_segment_seconds,
-            on_result=on_result,
-            on_listening=on_listening,
-            pipeline=shared["pipeline"],
-            vad=shared["vad"],
+            asr_model=DEFAULT_ASR_MODEL,
+            asr_provider=DEFAULT_PROVIDER,
+            translation_engine=args.translation_engine,
+            translation_model=args.translation_model,
+            translation_device=args.translation_device,
+            num_beams=args.num_beams,
+            max_new_tokens=args.max_new_tokens,
         )
-
-    state = _state_from_args(args)
-    controller = LiveOverlayController(session_factory)
+    )
     exit_code = _run_tk(state, controller, args)
+    for index, summary in enumerate(controller.summaries, start=1):
+        print(f"Live session {index}")
+        _print_live_worker_summary(summary)
     result = controller.last_result
-    if result is not None:
-        vad = result.vad.metrics
-        subtitles = result.subtitle_metrics
-        print("Live pipeline summary")
-        print(f"  Stop reason: {result.vad.stop_reason}")
-        print(f"  Successful/failed subtitles: {subtitles.successful_segments}/{subtitles.failed_segments}")
-        print(
-            f"  Audio queue high-water/capacity: {vad.queue_high_watermark}/{vad.queue_capacity}"
-        )
-        print(
-            f"  Segment queue high-water/capacity: "
-            f"{subtitles.queue_high_watermark}/{subtitles.queue_capacity}"
-        )
-        print(f"  Dropped blocks/sequence gaps: {vad.dropped_blocks}/{vad.sequence_gaps}")
-        print(f"  PortAudio status events: {vad.portaudio_status_count}")
-        print(f"  Segment backlog failures: {subtitles.backlog_failures}")
-        print(
-            f"  RU latency average/median/P95: "
-            f"{subtitles.average_russian_latency_seconds:.3f}/"
-            f"{subtitles.median_russian_latency_seconds:.3f}/"
-            f"{subtitles.p95_russian_latency_seconds:.3f} s"
-        )
-        print(
-            f"  ZH latency average/median/P95: "
-            f"{subtitles.average_chinese_latency_seconds:.3f}/"
-            f"{subtitles.median_chinese_latency_seconds:.3f}/"
-            f"{subtitles.p95_chinese_latency_seconds:.3f} s"
-        )
-        print(
-            f"  Temporary WAV created/deleted/remaining: "
-            f"{subtitles.temp_files_created}/{subtitles.temp_files_deleted}/"
-            f"{subtitles.temp_files_remaining}"
-        )
-        print(
-            f"  Workers exited (VAD/subtitle): {vad.worker_exited}/"
-            f"{subtitles.worker_exited}"
-        )
-        print(f"  Microphone released: {vad.microphone_closed}")
-        translator = shared.get("pipeline").translator if shared.get("pipeline") else None
-        if translator is not None:
-            print(
-                f"  CUDA peak memory: "
-                f"{getattr(translator, 'peak_cuda_memory_bytes', 0) / (1024 ** 2):.1f} MiB"
-            )
     return max(exit_code, 2 if result is not None and result.errors else 0)
+
+
+def _print_live_worker_summary(summary: LiveWorkerSummary) -> None:
+    result = summary.result
+    vad = result.vad.metrics
+    metrics = result.subtitle_metrics
+    print("Live segment results")
+    for segment in result.subtitles:
+        print(f"  Segment {segment.index}: {'success' if segment.succeeded else 'failed'}")
+        print(f"    RU: {segment.russian_text}")
+        print(f"    ZH: {segment.chinese_text}")
+        print(
+            f"    Audio/VAD release/queue wait: {segment.audio_duration_seconds:.3f}/"
+            f"{segment.vad_release_latency_seconds:.3f}/{segment.queue_wait_seconds:.3f} s"
+        )
+        print(
+            f"    ASR/translation/processing: {float(segment.asr_seconds or 0):.3f}/"
+            f"{float(segment.translation_seconds or 0):.3f}/{segment.processing_seconds:.3f} s"
+        )
+        print(
+            f"    RTF/RU latency/ZH latency: {float(segment.rtf or 0):.3f}/"
+            f"{float(segment.russian_latency_seconds or 0):.3f}/"
+            f"{float(segment.chinese_latency_seconds or 0):.3f}"
+        )
+    print("Live pipeline summary")
+    print(f"  Stop reason: {result.vad.stop_reason}")
+    print(f"  Session duration: {vad.session_seconds:.3f} s")
+    print(f"  Detected segments: {vad.detected_segments}")
+    print(f"  Captured/processed blocks: {vad.captured_blocks}/{vad.processed_blocks}")
+    print(f"  Successful/failed subtitles: {metrics.successful_segments}/{metrics.failed_segments}")
+    print(f"  Audio queue high-water/capacity: {vad.queue_high_watermark}/{vad.queue_capacity}")
+    print(f"  Segment queue high-water/capacity: {metrics.queue_high_watermark}/{metrics.queue_capacity}")
+    print(f"  Dropped blocks/sequence gaps: {vad.dropped_blocks}/{vad.sequence_gaps}")
+    print(f"  PortAudio status events: {vad.portaudio_status_count}")
+    print(f"  Segment backlog failures: {metrics.backlog_failures}")
+    print(
+        f"  Queue wait average/median/P95: {metrics.average_queue_wait_seconds:.3f}/"
+        f"{metrics.median_queue_wait_seconds:.3f}/{metrics.p95_queue_wait_seconds:.3f} s"
+    )
+    print(
+        f"  Processing average/median/P95: {metrics.average_processing_seconds:.3f}/"
+        f"{metrics.median_processing_seconds:.3f}/{metrics.p95_processing_seconds:.3f} s"
+    )
+    print(
+        f"  RTF average/median/P95: {metrics.average_rtf:.3f}/"
+        f"{metrics.median_rtf:.3f}/{metrics.p95_rtf:.3f}"
+    )
+    print(
+        f"  RU latency average/median/P95: {metrics.average_russian_latency_seconds:.3f}/"
+        f"{metrics.median_russian_latency_seconds:.3f}/{metrics.p95_russian_latency_seconds:.3f} s"
+    )
+    print(
+        f"  ZH latency average/median/P95: {metrics.average_chinese_latency_seconds:.3f}/"
+        f"{metrics.median_chinese_latency_seconds:.3f}/{metrics.p95_chinese_latency_seconds:.3f} s"
+    )
+    print(
+        f"  Model load counts (VAD/ASR/tokenizer/translation): "
+        f"{summary.vad_session_creation_count}/{summary.asr_model_load_count}/"
+        f"{summary.translation_tokenizer_load_count}/{summary.translation_model_load_count}"
+    )
+    print(
+        f"  Model load seconds (VAD/ASR/translation): {summary.vad_load_seconds:.3f}/"
+        f"{summary.asr_load_seconds:.3f}/{summary.translation_load_seconds:.3f}"
+    )
+    print(f"  Translation runtime: {summary.translation_device}, {summary.translation_dtype}")
+    print(f"  CUDA peak memory: {summary.cuda_peak_memory_bytes / (1024 ** 2):.1f} MiB")
+    print(
+        f"  Temporary WAV created/deleted/remaining: {metrics.temp_files_created}/"
+        f"{metrics.temp_files_deleted}/{metrics.temp_files_remaining}"
+    )
+    print(f"  Workers exited (VAD/subtitle): {vad.worker_exited}/{metrics.worker_exited}")
+    print(f"  Microphone released: {vad.microphone_closed}")

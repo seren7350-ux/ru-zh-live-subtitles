@@ -180,3 +180,17 @@ the application-owned PyTorch peak is the authoritative CUDA allocation value.
 The visible PowerShell `Tee-Object` wrapper classified native stderr progress as
 `NativeCommandError`; this was a wrapper presentation artifact, not an
 application error. The pull request remains Draft.
+
+## GUI process boundary and final overlay validation
+
+`live-overlay` reuses the same `LiveTerminalSession` contract and metrics, but
+runs each session in one spawned child process so cached model work cannot starve
+the Tk parent mainloop. Stop terminates that child cleanly; a later Start creates
+a fresh child and reloads each cached model exactly once. This does not change
+`live-terminal`, introduce native streaming decoding, or persist audio/text.
+
+On 2026-07-27 the real offline overlay passed a 60-second 5/5 subtitle run, the
+Stop → Start → Stop lifecycle, Exit during model preparation, and a final
+120-second 11/11 subtitle stability run. All loss/backpressure counters and
+temporary residue were zero. Exact GUI, pipeline, memory, CUDA, RU/ZH, and
+cleanup evidence is recorded in `always-on-top-subtitle-overlay.md`.
