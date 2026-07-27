@@ -409,6 +409,37 @@ def test_live_terminal_duration_releases_microphone_and_workers(tmp_path: Path) 
     assert result.subtitle_metrics.worker_exited
 
 
+def test_live_terminal_public_stop_is_idempotent_and_prevents_microphone_open(
+    tmp_path: Path,
+) -> None:
+    sounddevice = FakeSoundDevice()
+    input_stream_calls = 0
+    original_input_stream = sounddevice.InputStream
+
+    def count_input_stream(**kwargs: Any) -> FakeStream:
+        nonlocal input_stream_calls
+        input_stream_calls += 1
+        return original_input_stream(**kwargs)
+
+    sounddevice.InputStream = count_input_stream  # type: ignore[method-assign]
+    session = LiveTerminalSession(
+        duration=0,
+        pipeline=PreparedFakePipeline(),  # type: ignore[arg-type]
+        vad=FakeVad(tmp_path),
+        sounddevice_module=sounddevice,
+        join_timeout=1.0,
+    )
+    session.request_stop("window closed")
+    session.request_stop("duplicate")
+    result = session.run()
+    assert result.succeeded
+    assert result.vad.stop_reason == "window closed"
+    assert input_stream_calls == 0
+    assert result.vad.metrics.microphone_closed
+    assert result.vad.metrics.worker_exited
+    assert result.subtitle_metrics.worker_exited
+
+
 def test_prepare_order_finishes_before_microphone_start(tmp_path: Path) -> None:
     order: list[str] = []
 

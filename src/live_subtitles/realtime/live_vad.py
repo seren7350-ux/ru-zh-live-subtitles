@@ -133,6 +133,17 @@ class LiveVadSession:
         self._sequence_gaps = 0
         self._ignored_short_segments = 0
         self._prepared = False
+        self._stop_event = threading.Event()
+        self._stop_lock = threading.Lock()
+        self._stop_reason = "stopped"
+
+    def request_stop(self, reason: str = "user requested stop") -> None:
+        """Request a normal, idempotent stop from another thread."""
+
+        with self._stop_lock:
+            if not self._stop_event.is_set():
+                self._stop_reason = str(reason).strip() or "user requested stop"
+                self._stop_event.set()
 
     def prepare(self) -> AudioDevice:
         """Validate cached assets and the device without downloading or opening it."""
@@ -266,17 +277,23 @@ class LiveVadSession:
         session_started = self._clock()
         worker.start()
         try:
-            capture.start()
-            session_started = self._clock()
-            if self.on_listening is not None:
-                self.on_listening()
-            while True:
-                if self._fatal_event.is_set():
-                    stop_reason = "infrastructure error"
-                    break
-                if self.duration and self._clock() - session_started >= self.duration:
-                    break
-                self._sleeper(0.02)
+            if self._stop_event.is_set():
+                stop_reason = self._stop_reason
+            else:
+                capture.start()
+                session_started = self._clock()
+                if self.on_listening is not None:
+                    self.on_listening()
+                while True:
+                    if self._fatal_event.is_set():
+                        stop_reason = "infrastructure error"
+                        break
+                    if self._stop_event.is_set():
+                        stop_reason = self._stop_reason
+                        break
+                    if self.duration and self._clock() - session_started >= self.duration:
+                        break
+                    self._sleeper(0.02)
         except KeyboardInterrupt:
             stop_reason = "Ctrl+C"
         except Exception:

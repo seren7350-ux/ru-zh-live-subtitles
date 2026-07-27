@@ -77,10 +77,52 @@ Both queues use non-blocking producer writes and explicit fatal backpressure;
 the PortAudio callback remains unchanged. Percentile windows and retained
 subtitle results are capped at 8,192 entries.
 
+## Current subtitle overlay
+
+```text
+GUI main thread
+  -> one Tk root
+     -> persistent control bar
+     -> subtitle content area
+     -> one optional persistent SettingsPanel Toplevel
+  <- immutable events from one bounded multiprocessing queue
+Spawned live-session process
+  -> cached model preparation
+  -> PortAudio callback and bounded audio queue
+  -> VAD/segmenter worker
+  -> bounded segment queue
+  -> serial GigaAM/translation worker
+```
+
+The overlay has no compact, expanded, or captions-only layout state. Its main
+control bar remains present in both borderless and normal-window modes. Settings
+and root right-click both call the same panel toggle; they do not alter the
+subtitle layout or session state.
+
+The SettingsPanel is created lazily, retained, and closed with `withdraw()`.
+Reopening uses `deiconify()`, reapplies the current topmost value once, and calls
+`lift()` once. A destroyed or stale panel reference is discarded before a new
+panel is created. Borderless changes use one `overrideredirect()` call on the
+existing root followed by one idle callback that restores geometry, topmost,
+and opacity. Neither operation rebuilds widgets or creates a new live session.
+
+Tk calls stay on the main thread. Model preparation, audio capture, VAD, ASR,
+and translation stay in the spawned child. Background work emits immutable
+queue events; subtitle rendering never changes focus, grabs input, or repeatedly
+reapplies window-manager state. Raw single-writer process counters avoid a
+Windows synchronization lock being abandoned during child shutdown. Stop sets
+a process event without blocking Tk, and Exit polls completion from the Tk event
+loop before destroying the root.
+
+Only one child may be alive at a time. Stop releases its microphone and workers;
+a later Start intentionally creates a fresh child and reloads each model once
+from the existing local caches. It does not reuse model objects across stopped
+sessions, create concurrent microphones, or persist subtitle text.
+
 ## Future target
 
 ```text
-terminal results -> subtitle state management -> always-on-top GUI
+always-on-top GUI -> external application validation -> packaging
 ```
 
 The current implementation is not native streaming ASR. GigaAM starts only
