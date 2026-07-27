@@ -214,3 +214,11 @@ The integrated terminal prototype, latency definitions, and guided offline
 validation are in [live terminal subtitles](docs/live-terminal-subtitles.md).
 The overlay lifecycle, controls, crash analysis, and remaining manual checks are
 in [always-on-top subtitle overlay](docs/always-on-top-subtitle-overlay.md).
+The shared console/GUI onedir design, exact size evidence, DLL sampling, PE
+closure, pruning experiments, and final offline measurements are in
+[Windows onedir size optimization](docs/windows-package-size-optimization.md).
+
+The current Windows packaging candidate is one onedir with two launchers and a
+single dependency set. It is not an installer, onefile build, signed release,
+or production distribution. All model weights remain outside the repository and
+outside the frozen directory.

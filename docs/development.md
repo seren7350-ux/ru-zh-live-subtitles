@@ -629,3 +629,33 @@ both environments. The final cached frozen run produced 5/5 subtitles, no loss
 or backlog, 0.060-second render P95, 0.286 RTF P95, 0.698/1.656-second RU/ZH
 latency P95, and no remaining temporary WAV or process. The exact status is
 **Onedir GUI build validated on development machine**.
+
+## Windows onedir size optimization
+
+PR #9 was squash-merged as `3069e96744c97139f6198f8790f9a6f52d681f35`
+before `feat/windows-package-size-optimization` was created. The unchanged
+baseline rebuilds were 3,006,418,834 bytes (console) and 3,006,414,738 bytes
+(GUI). A one-analysis/two-EXE shared onedir was then built and validated.
+
+The final conservative candidate is 3,064,137,629 bytes, 5,463 files, and 98
+DLLs. It saves 2,948,695,943 bytes (49.040%) versus storing both independent
+onedirs, but remains 57,722,891 bytes larger than the independent GUI because it
+contains the second launcher. All 37 Torch DLLs were observed loaded by the real
+CUDA worker and remain present. Only 2,233,922 bytes of installer bookkeeping
+were safely removed. A Torch `pyz`-only experiment saved 41,259,670 more bytes
+but failed real NLLB loading with `could not get source code` and was rolled
+back to `pyz+py`.
+
+The final cache-only frozen run displayed 5/5 subtitles, processed 1,875/1,875
+audio blocks, and reported render P95 0.050 seconds, heartbeat 0.037 seconds,
+RTF P95 0.313, RU/ZH latency P95 0.702/1.807 seconds, zero loss/status/backlog,
+one load of each model component, 1,189.6 MiB CUDA peak, and 5/5/0 temporary WAV
+create/delete/remain. Three final-candidate module samples had zero permission
+errors. Defender found zero new detections. Exact builds, PE closure, experiment
+results, warnings, and limitations are recorded in
+`windows-package-size-optimization.md`.
+
+After the new size/PE tests were included, the complete suite passed 271/271 in
+1.69 seconds; coverage passed 271/271 in 2.68 seconds at 80%. The packaging
+environment passed its 32/32 focused tests. Both virtual environments again
+reported no broken requirements.

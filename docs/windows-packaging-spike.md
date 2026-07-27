@@ -298,3 +298,8 @@ Recommendation: perform a separate, evidence-driven size-optimization pass and
 then evaluate the untouched onedir on a clean Windows machine. Do not start an
 installer, release, signing, or commercial-distribution phase until the clean
 machine, license, footprint, and startup findings are resolved.
+
+Follow-up completed: PR #9 was merged and the console/windowed outputs were
+combined into one shared onedir. The evidence, safe metadata cleanup, failed
+Torch `pyz` experiment, all-retained CUDA DLL inventory, and final 5/5 offline
+run are documented in [Windows onedir size optimization](windows-package-size-optimization.md).

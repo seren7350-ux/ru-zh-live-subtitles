@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "git_commit": "<commit>",
+  "build": "separate-console-or-windowed",
+  "build_seconds": 0,
+  "distribution_analysis": {
+    "total_size_bytes": 0,
+    "file_count": 0,
+    "dll_count": 0,
+    "exe_sha256": "<sha256>"
+  },
+  "models_bundled": false,
+  "machine_paths_included": false
+}

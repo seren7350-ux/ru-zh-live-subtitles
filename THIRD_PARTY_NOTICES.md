@@ -47,3 +47,12 @@ the user must prepare an external model cache. No statement here approves
 commercial distribution. A full license, attribution, export-control, privacy,
 and dependency audit remains required before any distribution beyond this
 feasibility evaluation.
+
+## Shared onedir size work
+
+The combined console/GUI onedir does not change third-party versions or license
+boundaries. The validated conservative profile removes only installer
+bookkeeping files such as wheel `RECORD`; package `METADATA`, entry points,
+license files, notices, SBOM material, Python/Tk licenses, and every runtime DLL
+remain included. See `docs/windows-package-size-optimization.md` for the exact
+retained/excluded evidence. No claim of redistribution approval is made.
