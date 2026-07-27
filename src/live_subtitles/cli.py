@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from dataclasses import asdict
@@ -22,6 +23,9 @@ from .pipeline.offline_file import (
     OfflineAudioTranslationPipeline,
     OfflinePipelineError,
 )
+from .realtime.file_vad import VadFileError, run_vad_file
+from .realtime.vad_assets import VadAssetError, prepare_vad_assets, validate_vad_assets
+from .realtime.vad_model import SileroOnnxVad, VadInferenceError
 from .translation.benchmark import load_samples, run_benchmark
 from .translation.diagnostics import collect_translation_diagnostics
 from .translation.factory import TRANSLATION_ENGINES, create_translator
@@ -130,6 +134,87 @@ def _translate_audio(args: argparse.Namespace) -> int:
         f"dtype={result.translation_dtype}"
     )
     print(f"CUDA peak memory: {result.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB")
+    return 0
+
+
+def _vad_prepare(_: argparse.Namespace) -> int:
+    info, downloaded = prepare_vad_assets()
+    print(f"Status: {'downloaded and prepared' if downloaded else 'cached and verified'}")
+    print(f"Package: {info.package_name} {info.package_version}")
+    print(f"Source: {info.source}")
+    print(f"Cache: {info.cache_dir}")
+    print(f"Model: {info.model_path}")
+    print(f"Model size: {info.model_size_bytes} bytes")
+    print(f"Model SHA-256: {info.model_sha256}")
+    return 0
+
+
+def _vad_doctor(_: argparse.Namespace) -> int:
+    try:
+        ort = importlib.import_module("onnxruntime")
+    except Exception as exc:
+        raise VadInferenceError(f"ONNX Runtime is unavailable: {exc}") from exc
+    providers = list(ort.get_available_providers())
+    if "CPUExecutionProvider" not in providers:
+        raise VadInferenceError(
+            f"CPUExecutionProvider is unavailable. Available providers: {providers or 'none'}."
+        )
+    info = validate_vad_assets()
+    model = SileroOnnxVad(model_path=info.model_path)
+    model.prepare()
+    print(f"ONNX Runtime: {ort.__version__}")
+    print(f"Providers: {providers}")
+    print("CPUExecutionProvider: OK")
+    print(f"Cache: {info.cache_dir}")
+    print(f"Model exists: {info.model_path.is_file()}")
+    print(f"Model SHA-256: OK ({info.model_sha256})")
+    print(f"Model load time: {model.load_seconds:.6f} s")
+    print("Inputs:")
+    for value in model.inputs:
+        print(f"  {value.name}: shape={list(value.shape)}, type={value.type}")
+    print("Outputs:")
+    for value in model.outputs:
+        print(f"  {value.name}: shape={list(value.shape)}, type={value.type}")
+    return 0
+
+
+def _vad_file(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir) if args.output_dir else None
+    result = run_vad_file(
+        Path(args.path),
+        threshold=args.threshold,
+        min_silence_ms=args.min_silence_ms,
+        max_segment_seconds=args.max_segment_seconds,
+        output_dir=output_dir,
+    )
+    print(f"File: {result.path}")
+    print(
+        f"WAV: channels={result.channels}, sample_rate={result.sample_rate}, "
+        f"sample_width={result.sample_width_bits}-bit, frames={result.frame_count}"
+    )
+    print(f"VAD model version: {result.model_version}")
+    print(f"VAD model path: {result.model_path}")
+    print(f"Model load time: {result.model_load_seconds:.6f} s")
+    print(f"Audio duration: {result.duration_seconds:.3f} s")
+    print(f"Total chunks: {result.total_chunks}")
+    print(f"Detected segments: {len(result.segments)}")
+    print(f"Ignored short segments: {result.ignored_short_segments}")
+    for index, segment in enumerate(result.segments, start=1):
+        print(
+            f"Segment {index}: start={segment.start_sample / result.sample_rate:.3f} s, "
+            f"end={segment.end_sample / result.sample_rate:.3f} s, "
+            f"duration={segment.duration_seconds:.3f} s, "
+            f"forced_split={'yes' if segment.forced_split else 'no'}"
+        )
+    print(f"VAD inference total: {result.inference_seconds:.6f} s")
+    print(f"Average per chunk: {result.average_chunk_seconds * 1000:.3f} ms")
+    print(f"P95 per chunk: {result.p95_chunk_seconds * 1000:.3f} ms")
+    if result.output_paths:
+        print(f"Saved segments: {len(result.output_paths)}")
+        for path in result.output_paths:
+            print(f"  {path}")
+    else:
+        print("Saved segments: none (default)")
     return 0
 
 
@@ -265,6 +350,32 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--provider", default=DEFAULT_PROVIDER, help=f"ONNX Runtime provider (supported baseline: {DEFAULT_PROVIDER})")
     transcribe.set_defaults(handler=_transcribe_file)
 
+    vad_prepare = subparsers.add_parser(
+        "vad-prepare",
+        help="download and SHA-verify the official Silero VAD 6.2.1 ONNX asset",
+    )
+    vad_prepare.set_defaults(handler=_vad_prepare)
+
+    vad_doctor = subparsers.add_parser(
+        "vad-doctor",
+        help="inspect the cached direct ONNX VAD without network access",
+    )
+    vad_doctor.set_defaults(handler=_vad_doctor)
+
+    vad_file = subparsers.add_parser(
+        "vad-file",
+        help="segment one mono PCM16 16 kHz WAV with cached Silero ONNX VAD",
+    )
+    vad_file.add_argument("path", help="path to a strict mono PCM16 16 kHz WAV")
+    vad_file.add_argument("--threshold", type=float, default=0.5)
+    vad_file.add_argument("--min-silence-ms", type=int, default=600)
+    vad_file.add_argument("--max-segment-seconds", type=float, default=15.0)
+    vad_file.add_argument(
+        "--output-dir",
+        help="optional segment directory (recommended: data/vad-segments); default writes nothing",
+    )
+    vad_file.set_defaults(handler=_vad_file)
+
     translate_audio = subparsers.add_parser(
         "translate-audio",
         help="recognize one Russian WAV file and translate the result to Chinese",
@@ -343,6 +454,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         RecordingError,
         TranslationError,
         OfflinePipelineError,
+        VadAssetError,
+        VadInferenceError,
+        VadFileError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
