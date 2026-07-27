@@ -52,6 +52,13 @@ class OfflineTranslationResult:
     peak_cuda_memory_bytes: int
 
 
+@dataclass(frozen=True)
+class PipelinePrepareMetrics:
+    asr_prepare_seconds: float
+    translation_prepare_seconds: float
+    total_prepare_seconds: float
+
+
 class OfflineAudioTranslationPipeline:
     """Lazily coordinate one reusable ASR instance and one translator instance."""
 
@@ -81,6 +88,9 @@ class OfflineAudioTranslationPipeline:
         self._clock = clock
         self._recognizer: Any | None = None
         self._translator: Any | None = None
+        self.recognizer_creation_count = 0
+        self.translator_creation_count = 0
+        self.prepare_metrics: PipelinePrepareMetrics | None = None
 
     def _get_recognizer(self) -> Any:
         if self._recognizer is None:
@@ -88,6 +98,7 @@ class OfflineAudioTranslationPipeline:
                 model_name=self.asr_model,
                 provider=self.asr_provider,
             )
+            self.recognizer_creation_count += 1
         return self._recognizer
 
     def _get_translator(self) -> Any:
@@ -99,12 +110,37 @@ class OfflineAudioTranslationPipeline:
                 self.num_beams,
                 self.max_new_tokens,
             )
+            self.translator_creation_count += 1
         return self._translator
 
-    def run(self, audio_path: Path) -> OfflineTranslationResult:
-        """Recognize one WAV locally, then translate its non-empty Russian text."""
+    @property
+    def recognizer(self) -> Any:
+        return self._get_recognizer()
 
+    @property
+    def translator(self) -> Any:
+        return self._get_translator()
+
+    def prepare(self) -> PipelinePrepareMetrics:
+        """Create and preload exactly one recognizer and translator."""
+
+        if self.prepare_metrics is not None:
+            return self.prepare_metrics
         started = self._clock()
+        recognizer = self._get_recognizer()
+        recognizer.prepare()
+        asr_finished = self._clock()
+        translator = self._get_translator()
+        translator.prepare()
+        finished = self._clock()
+        self.prepare_metrics = PipelinePrepareMetrics(
+            asr_prepare_seconds=asr_finished - started,
+            translation_prepare_seconds=finished - asr_finished,
+            total_prepare_seconds=finished - started,
+        )
+        return self.prepare_metrics
+
+    def transcribe_file(self, audio_path: Path) -> tuple[str, Any]:
         try:
             recognizer = self._get_recognizer()
             russian_text = str(recognizer.transcribe_file(audio_path)).strip()
@@ -114,15 +150,16 @@ class OfflineAudioTranslationPipeline:
             raise PipelineAsrError(f"ASR stage failed: {exc}") from exc
         except Exception as exc:
             raise PipelineAsrError(f"ASR stage failed unexpectedly: {exc}") from exc
-
-        asr_metrics = getattr(recognizer, "last_metrics", None)
-        if asr_metrics is None:
+        metrics = getattr(recognizer, "last_metrics", None)
+        if metrics is None:
             raise PipelineAsrError("ASR stage completed without timing metrics.")
         if not russian_text:
             raise PipelineAsrError(
                 "ASR stage produced empty Russian text; translation was not started."
             )
+        return russian_text, metrics
 
+    def translate_text(self, russian_text: str) -> tuple[str, Any]:
         try:
             translator = self._get_translator()
             chinese_text = str(translator.translate(russian_text)).strip()
@@ -132,14 +169,23 @@ class OfflineAudioTranslationPipeline:
             raise PipelineTranslationError(f"Translation stage failed: {exc}") from exc
         except Exception as exc:
             raise PipelineTranslationError(f"Translation stage failed unexpectedly: {exc}") from exc
-
-        translation_metrics = getattr(translator, "last_metrics", None)
-        if translation_metrics is None:
+        metrics = getattr(translator, "last_metrics", None)
+        if metrics is None:
             raise PipelineTranslationError(
                 "Translation stage completed without timing metrics."
             )
         if not chinese_text:
             raise PipelineTranslationError("Translation stage produced empty Chinese text.")
+        return chinese_text, metrics
+
+    def run(self, audio_path: Path) -> OfflineTranslationResult:
+        """Recognize one WAV locally, then translate its non-empty Russian text."""
+
+        started = self._clock()
+        russian_text, asr_metrics = self.transcribe_file(audio_path)
+        chinese_text, translation_metrics = self.translate_text(russian_text)
+        recognizer = self._get_recognizer()
+        translator = self._get_translator()
 
         total_processing_seconds = self._clock() - started
         audio_duration = float(asr_metrics.audio_duration_seconds)

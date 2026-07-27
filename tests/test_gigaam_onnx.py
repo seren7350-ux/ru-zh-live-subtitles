@@ -84,6 +84,18 @@ def test_model_load_is_deferred_and_happens_once(monkeypatch: pytest.MonkeyPatch
     assert recognizer.last_metrics.model_load_seconds == pytest.approx(0.4)
 
 
+def test_prepare_loads_without_wav_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _, load_calls = install_fake_runtime(monkeypatch)
+    times = iter([1.0, 1.25])
+    recognizer = GigaAMOnnxRecognizer(clock=lambda: next(times))
+
+    assert recognizer.prepare() == pytest.approx(0.25)
+    assert recognizer.prepare() == pytest.approx(0.25)
+    assert load_calls == [("gigaam-v3-e2e-rnnt", ["CPUExecutionProvider"])]
+    assert recognizer.model_load_count == 1
+    assert recognizer.last_metrics is None
+
+
 def test_unavailable_provider_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     audio = write_wav(tmp_path / "speech.wav")
     _, load_calls = install_fake_runtime(monkeypatch, providers=["CPUExecutionProvider"])

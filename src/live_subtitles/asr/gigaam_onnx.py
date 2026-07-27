@@ -56,7 +56,18 @@ class GigaAMOnnxRecognizer:
         self._clock = clock
         self._model: Any | None = None
         self._model_load_seconds = 0.0
+        self.model_load_count = 0
         self.last_metrics: RecognitionMetrics | None = None
+
+    @property
+    def model_load_seconds(self) -> float:
+        return self._model_load_seconds
+
+    def prepare(self) -> float:
+        """Load the ASR model without requiring audio; repeated calls are idempotent."""
+
+        self._load_model()
+        return self._model_load_seconds
 
     @staticmethod
     def _validate_wav(path: Path) -> tuple[Path, float]:
@@ -101,6 +112,7 @@ class GigaAMOnnxRecognizer:
             ) from exc
         self._model_load_seconds = self._clock() - started
         self._model = model
+        self.model_load_count += 1
         return model
 
     def transcribe_file(self, path: Path) -> str:

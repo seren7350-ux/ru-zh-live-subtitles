@@ -50,21 +50,41 @@ comparison and compatibility. Mathematical terminology is not a core project
 acceptance requirement; earlier comparison failures remain documented as
 research observations rather than a pipeline blocker.
 
+## Current live terminal prototype
+
+```text
+PortAudio callback
+  -> bounded audio queue
+  -> one Silero VAD/segmenter worker
+  -> immutable AudioSegment
+  -> bounded segment queue (default 8, range 1..32)
+  -> one serial GigaAM/translation worker
+  -> ordered Russian and Chinese terminal results
+```
+
+This is a **VAD 分段后调用短音频离线 ASR 的近实时终端字幕原型**. Each segment
+is temporarily encoded as mono PCM16 16 kHz WAV in the system temporary
+directory, closed before GigaAM reads it, and removed in `finally`. No segment
+audio is written under `data/`, and no temporary path is printed.
+
+The ASR/translation worker is the only caller of the reusable preloaded GigaAM
+and translator instances. It never processes segments in parallel. Individual
+ASR/translation errors produce ordered failed results and do not prevent later
+segments. Audio loss, either queue filling, PortAudio overflow, sequence gaps,
+worker death, preparation failure, or finite join timeout stops the session.
+
+Both queues use non-blocking producer writes and explicit fatal backpressure;
+the PortAudio callback remains unchanged. Percentile windows and retained
+subtitle results are capped at 8,192 entries.
+
 ## Future target
 
 ```text
-Microphone
-  -> audio frames
-  -> VAD / segmentation
-  -> ASR
-  -> offline Russian-to-Chinese translation
-  -> subtitle state management
-  -> always-on-top GUI
+terminal results -> subtitle state management -> always-on-top GUI
 ```
 
-Live microphone VAD is now available as a bounded-queue terminal diagnostic, but
-it is not connected to GigaAM. The current implementation is neither streaming
-ASR nor continuous subtitles.
+The current implementation is not native streaming ASR. GigaAM starts only
+after VAD closes a short segment.
 ASR, translation, subtitle state, and GUI must remain decoupled so they can be
 profiled and replaced independently. Future performance work must report ASR,
 translation, and orchestration latency separately as well as end-to-end delay.
@@ -77,7 +97,8 @@ PortAudio callback
   -> bounded FIFO queue
   -> single VAD/segmenter worker
   -> immutable AudioSegment results
-  -> main-thread reporting and optional post-session WAV saving
+  -> non-blocking bounded segment queue
+  -> serial ASR/translation worker and terminal reporting
 ```
 
 The callback has a strict real-time boundary: validate, copy, timestamp, and

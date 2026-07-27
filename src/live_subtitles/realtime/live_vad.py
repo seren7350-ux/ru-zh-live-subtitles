@@ -6,7 +6,6 @@ import queue
 import threading
 import time
 import uuid
-import wave
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +14,7 @@ from typing import Any, Callable
 import numpy as np
 
 from ..audio.recording import AudioDevice
+from ..audio.wav_io import write_pcm16_mono_wav
 from .metrics import AudioBlock, LiveVadMetrics, TimingAccumulator
 from .microphone import MicrophoneCapture, validate_live_input_device
 from .segmenter import AudioSegment, VadSegmenter
@@ -50,21 +50,7 @@ class LiveVadResult:
 
 
 def _write_pcm16_atomic(path: Path, samples: np.ndarray) -> None:
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    pcm = np.rint(np.clip(samples, -1.0, 32767.0 / 32768.0) * 32768.0).astype("<i2")
-    try:
-        with wave.open(str(temporary), "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(SAMPLE_RATE)
-            wav_file.writeframes(pcm.tobytes())
-        temporary.replace(path)
-    except Exception:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    write_pcm16_mono_wav(path, samples, sample_rate=SAMPLE_RATE, atomic=True)
 
 
 class LiveVadSession:
@@ -92,6 +78,8 @@ class LiveVadSession:
         join_timeout: float = 5.0,
         on_segment: Callable[[int, AudioSegment], None] | None = None,
         on_probability: Callable[[int, float], None] | None = None,
+        on_listening: Callable[[], None] | None = None,
+        external_fatal_event: threading.Event | None = None,
     ) -> None:
         if duration < 0 or duration > MAX_DURATION_SECONDS:
             raise LiveVadError(
@@ -132,9 +120,10 @@ class LiveVadSession:
         self.join_timeout = join_timeout
         self.on_segment = on_segment
         self.on_probability = on_probability
+        self.on_listening = on_listening
         self.device: AudioDevice | None = None
         self._audio_queue: queue.Queue[object] = queue.Queue(maxsize=queue_size)
-        self._fatal_event = threading.Event()
+        self._fatal_event = external_fatal_event or threading.Event()
         self._worker_exited = threading.Event()
         self._worker_error: str | None = None
         self._segments: list[AudioSegment] = []
@@ -151,6 +140,9 @@ class LiveVadSession:
         if self._prepared:
             assert self.device is not None
             return self.device
+        validate_cache = getattr(self.vad, "validate_cache", None)
+        if callable(validate_cache):
+            validate_cache()
         sd, device = validate_live_input_device(
             self.device_index,
             sounddevice_module=self._sd,
@@ -276,6 +268,8 @@ class LiveVadSession:
         try:
             capture.start()
             session_started = self._clock()
+            if self.on_listening is not None:
+                self.on_listening()
             while True:
                 if self._fatal_event.is_set():
                     stop_reason = "infrastructure error"

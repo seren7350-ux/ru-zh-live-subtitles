@@ -1,9 +1,8 @@
 # Russian–Chinese Live Subtitles
 
 An offline-first Windows prototype for Russian lecture subtitles. The current
-milestone includes a terminal-only live microphone-to-VAD diagnostic path, plus
-the existing local-file Silero segmentation and short-file GigaAM recognition /
-offline Russian-to-Chinese translation experiments.
+milestone connects cached Silero VAD, GigaAM short-WAV recognition, and NLLB
+translation in an ordered terminal subtitle loop.
 
 ## Current scope
 
@@ -13,11 +12,16 @@ The complete short-file path is now:
 WAV -> GigaAM ASR -> Russian text -> NLLB translation -> Chinese text
 ```
 
-The live VAD path is separate and intentionally stops after segmentation:
+The live terminal path is:
 
 ```text
-Microphone -> float32 mono 16 kHz blocks -> bounded queue -> Silero ONNX -> speech segments
+Microphone -> bounded audio queue -> Silero ONNX VAD -> immutable speech segment
+  -> bounded segment queue -> one GigaAM/NLLB worker -> Russian and Chinese terminal text
 ```
+
+This is a **VAD 分段后调用短音频离线 ASR 的近实时终端字幕原型**. GigaAM is
+called only after VAD closes a segment and receives a temporary WAV; it is not
+native streaming ASR.
 
 `live-vad` uses `sounddevice.InputStream` with exactly 512 samples per 32 ms
 block. Its PortAudio callback only validates, copies, timestamps, and attempts a
@@ -38,10 +42,9 @@ model choice. T5 and M2M100 remain available through CLI overrides and their
 comparison results are retained as research history.
 
 Mathematical terminology optimization is not a core acceptance requirement for
-this project. The current milestone does not connect live VAD to GigaAM or
-translation and does not implement continuous recognition, streaming ASR, live
-subtitle state, Chinese subtitle display, GUI, PowerPoint overlays, system-audio
-capture, resampling, or Windows packaging.
+this project. The current milestone does not implement native streaming ASR,
+GUI subtitle state, PowerPoint overlays, system-audio capture, resampling, or
+Windows packaging.
 
 NLLB is licensed CC-BY-NC-4.0. It is used here only as a learning, research, and
 non-commercial candidate; licensing and model suitability must be reviewed
@@ -85,6 +88,7 @@ python -m live_subtitles vad-doctor
 python -m live_subtitles vad-file data/sample.wav
 python -m live_subtitles live-vad --device 1 --duration 60
 python -m live_subtitles live-vad --device 1 --duration 60 --output-dir data/live-vad-segments
+python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cuda --num-beams 1
 python -m live_subtitles transcribe-file data/sample.wav
 python -m live_subtitles translate-audio data/sample.wav
 python -m live_subtitles translation-doctor
@@ -111,6 +115,14 @@ enabled, each run gets a unique session subdirectory containing PCM16 mono 16 kH
 WAV files. `--show-probabilities` is a verbose diagnostic switch and should not
 be used for normal latency measurements.
 
+`live-terminal` uses the same exact microphone and VAD contract. Before opening
+the microphone it validates the cached VAD asset/device, creates one Silero ONNX
+session, and preloads one GigaAM recognizer plus one selected translator. The
+default complete-segment queue holds eight segments and accepts 1 through 32.
+Queue full is fatal because losing a complete utterance would make subtitles
+misleading. `--show-russian` and `--show-metrics` are enabled by default; use
+their `--no-...` forms to disable them. Duration `0` runs until Ctrl+C.
+
 ## Cached offline use
 
 The first use of each model needs network access unless its files are already in
@@ -121,6 +133,7 @@ complete cache-only run in the current PowerShell session:
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
 python -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cuda --num-beams 1
+python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cuda --num-beams 1
 Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
@@ -135,8 +148,10 @@ only the verified local VAD cache and never access the network.
 
 ## Limitations and troubleshooting
 
-- `live-vad` is a terminal segmentation diagnostic, not a live subtitle loop.
-- Live VAD is not connected to GigaAM, translation, or subtitle presentation.
+- `live-vad` remains a segmentation-only diagnostic; `live-terminal` performs
+  ordered RU/ZH terminal output after each completed VAD segment.
+- `live-terminal` is near-real-time at the segment boundary, not native
+  streaming GigaAM decoding.
 - A queue overflow, input overflow, or sequence discontinuity stops the session;
   use the printed summary to diagnose device/host load rather than accepting loss.
 - Recording depends on Windows microphone permission and a free input device.
@@ -154,3 +169,5 @@ design and measurements are in
 [direct Silero ONNX VAD](docs/direct-silero-onnx-vad.md); the live capture design
 and operational checks are in
 [live microphone VAD](docs/live-microphone-vad.md).
+The integrated terminal prototype, latency definitions, and guided offline
+validation are in [live terminal subtitles](docs/live-terminal-subtitles.md).

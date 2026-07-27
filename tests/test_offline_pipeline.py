@@ -34,6 +34,11 @@ class FakeRecognizer:
         self.error = error
         self.calls: list[Path] = []
         self.last_metrics = RecognitionMetrics(duration, 1.0, 0.5, 0.25)
+        self.prepare_calls = 0
+
+    def prepare(self) -> float:
+        self.prepare_calls += 1
+        return 1.0
 
     def transcribe_file(self, path: Path) -> str:
         self.calls.append(path)
@@ -62,6 +67,11 @@ class FakeTranslator:
             peak_cuda_memory_bytes=123_456,
             first_call=True,
         )
+        self.prepare_calls = 0
+
+    def prepare(self) -> float:
+        self.prepare_calls += 1
+        return 2.0
 
     def translate(self, text: str) -> str:
         self.calls.append(text)
@@ -142,6 +152,30 @@ def test_pipeline_reuses_both_model_wrappers(tmp_path: Path) -> None:
     )
     pipeline.run(tmp_path / "first.wav")
     pipeline.run(tmp_path / "second.wav")
+    assert len(recognizer_creations) == 1
+    assert len(translator_creations) == 1
+
+
+def test_pipeline_prepare_is_separate_idempotent_and_reuses_wrappers() -> None:
+    recognizer = FakeRecognizer()
+    translator = FakeTranslator()
+    pipeline, recognizer_creations, translator_creations = make_pipeline(
+        recognizer,
+        translator,
+        times=[1.0, 1.4, 2.0],
+    )
+
+    first = pipeline.prepare()
+    second = pipeline.prepare()
+
+    assert first is second
+    assert first.asr_prepare_seconds == pytest.approx(0.4)
+    assert first.translation_prepare_seconds == pytest.approx(0.6)
+    assert first.total_prepare_seconds == pytest.approx(1.0)
+    assert recognizer.prepare_calls == 1
+    assert translator.prepare_calls == 1
+    assert pipeline.recognizer_creation_count == 1
+    assert pipeline.translator_creation_count == 1
     assert len(recognizer_creations) == 1
     assert len(translator_creations) == 1
 

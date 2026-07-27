@@ -25,3 +25,8 @@ __all__ = [
     "VadSegmenter",
     "prepare_vad_assets",
 ]
+"""Real-time microphone and VAD components for terminal prototypes."""
+
+from .live_subtitles import LiveTerminalResult, LiveTerminalSession
+
+__all__ = ["LiveTerminalResult", "LiveTerminalSession"]

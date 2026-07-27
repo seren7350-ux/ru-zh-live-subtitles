@@ -11,6 +11,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
+from ..audio.wav_io import write_pcm16_mono_wav
 from .segmenter import AudioSegment, VadSegmenter
 from .vad_assets import PACKAGE_VERSION
 from .vad_model import CHUNK_SAMPLES, SAMPLE_RATE, SileroOnnxVad
@@ -86,14 +87,9 @@ def _read_pcm16_mono_16k(path: Path) -> tuple[Path, np.ndarray]:
 
 
 def _write_segment(path: Path, samples: np.ndarray) -> None:
-    pcm = np.rint(np.clip(samples, -1.0, 32767.0 / 32768.0) * 32768.0).astype("<i2")
     try:
-        with wave.open(str(path), "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(SAMPLE_RATE)
-            wav_file.writeframes(pcm.tobytes())
-    except (OSError, wave.Error) as exc:
+        write_pcm16_mono_wav(path, samples, sample_rate=SAMPLE_RATE)
+    except (OSError, ValueError, wave.Error) as exc:
         raise VadFileError(f"Unable to save VAD segment {path}: {exc}") from exc
 
 

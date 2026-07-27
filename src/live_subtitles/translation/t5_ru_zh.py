@@ -86,7 +86,32 @@ class T5RuZhTranslator:
         self._tokenizer_load_seconds = 0.0
         self._model_load_seconds = 0.0
         self._total_load_seconds = 0.0
+        self._peak_cuda_memory_bytes = 0
+        self.tokenizer_load_count = 0
+        self.model_load_count = 0
         self.last_metrics: TranslationMetrics | None = None
+
+    @property
+    def tokenizer_load_seconds(self) -> float:
+        return self._tokenizer_load_seconds
+
+    @property
+    def model_load_seconds(self) -> float:
+        return self._model_load_seconds
+
+    @property
+    def total_load_seconds(self) -> float:
+        return self._total_load_seconds
+
+    @property
+    def peak_cuda_memory_bytes(self) -> int:
+        return self._peak_cuda_memory_bytes
+
+    def prepare(self) -> float:
+        """Load tokenizer/model without translating text; repeated calls are idempotent."""
+
+        self._load()
+        return self._total_load_seconds
 
     @staticmethod
     def _cuda_sync(torch_module: Any, device: str | None) -> None:
@@ -128,6 +153,7 @@ class T5RuZhTranslator:
                 f"Unable to load tokenizer for {self.model_name!r}: {exc}"
             ) from exc
         tokenizer_finished = self._clock()
+        self.tokenizer_load_count += 1
 
         try:
             model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
@@ -158,6 +184,10 @@ class T5RuZhTranslator:
         self._tokenizer_load_seconds = tokenizer_finished - load_started
         self._model_load_seconds = model_finished - tokenizer_finished
         self._total_load_seconds = model_finished - load_started
+        self.model_load_count += 1
+        self._peak_cuda_memory_bytes = (
+            int(torch_module.cuda.max_memory_allocated()) if actual_device == "cuda" else 0
+        )
 
     def _validate_text(self, text: str) -> str:
         if text is None:
@@ -219,6 +249,7 @@ class T5RuZhTranslator:
             if self.actual_device == "cuda"
             else 0
         )
+        self._peak_cuda_memory_bytes = max(self._peak_cuda_memory_bytes, peak_memory)
         self.last_metrics = TranslationMetrics(
             tokenizer_load_seconds=self._tokenizer_load_seconds,
             model_load_seconds=self._model_load_seconds,
