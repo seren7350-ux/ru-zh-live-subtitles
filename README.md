@@ -58,8 +58,9 @@ comparison results are retained as research history.
 
 Mathematical terminology optimization is not a core acceptance requirement for
 this project. The current milestone does not implement native streaming ASR,
-GUI subtitle state, PowerPoint overlays, system-audio capture, resampling, or
-Windows packaging.
+PowerPoint integration, system-audio capture, or production distribution. A
+PyInstaller onedir feasibility spike now packages the existing GUI and CLI on
+the development machine; it is not an installer or a portable release.
 
 NLLB is licensed CC-BY-NC-4.0. It is used here only as a learning, research, and
 non-commercial candidate; licensing and model suitability must be reviewed
@@ -163,6 +164,18 @@ must not be committed.
 After one successful `vad-prepare`, `vad-doctor`, `vad-file`, and `live-vad` use
 only the verified local VAD cache and never access the network.
 
+## Windows onedir packaging evaluation
+
+The isolated packaging environment and repeatable PyInstaller 6.21.0 specs are
+documented in `packaging/README.md`. They create a console diagnostic onedir and
+a noconsole GUI onedir. Model weights and user caches are never bundled; the
+frozen application uses the same external caches as source mode.
+
+The current exact status is **Onedir GUI build validated on development
+machine**. The local CUDA-enabled output is about 3.01 GB, unsigned, and has not
+been evaluated on a clean machine. Do not treat `dist/` as a release or upload
+it to GitHub. See [Windows packaging spike](docs/windows-packaging-spike.md).
+
 ## Limitations and troubleshooting
 
 - `live-vad` remains a segmentation-only diagnostic; `live-terminal` performs
@@ -185,8 +198,9 @@ only the verified local VAD cache and never access the network.
 - The user accepted the interaction checks and PowerPoint slide-show behavior.
   Acrobat checks were explicitly waived because Acrobat is not installed on the
   validation machine; the overlay is not an Acrobat or PowerPoint plugin.
-- The GUI is not packaged, click-through, production ready, or claimed to
-  reserve Windows work area. It does not persist subtitle history.
+- The GUI is not click-through, production ready, signed, or claimed to reserve
+  Windows work area. The onedir spike is validated only on its development
+  machine and does not persist subtitle history.
 
 See [architecture](docs/architecture.md),
 [development notes](docs/development.md),

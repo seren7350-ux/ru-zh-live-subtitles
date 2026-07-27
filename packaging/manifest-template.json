@@ -1,0 +1,14 @@
+{
+  "git_commit": "<git-commit>",
+  "python": "<python-version>",
+  "pyinstaller": "6.21.0",
+  "built_at_utc": "<ISO-8601>",
+  "build_mode": "onedir-windowed",
+  "executable_sha256": "<sha256>",
+  "dist_size_bytes": 0,
+  "file_count": 0,
+  "dependencies": {},
+  "models_bundled": false,
+  "signing_status": "unsigned",
+  "test_results": {}
+}

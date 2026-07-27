@@ -25,6 +25,9 @@ translation = [
     "sentencepiece",
     "safetensors",
 ]
+packaging = [
+    "PyInstaller==6.21.0",
+]
 
 [project.scripts]
 live-subtitles = "live_subtitles.cli:main"

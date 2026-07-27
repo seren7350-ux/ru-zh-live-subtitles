@@ -604,3 +604,28 @@ command used the five actual GUI test files and passed 66/66. The first launch
 attempt for the final 120-second run was rejected by the command safety policy
 because it included log-file removal; no application started and no file was
 changed. A unique log name was then used without overwriting anything.
+
+## Windows onedir packaging spike
+
+Packaging started from merged commit `140404b` on
+`feat/windows-packaging-spike`. The original `.venv` remained the development
+environment; PyInstaller 6.21.0 and its helper packages were installed only in
+`.venv-packaging`. Python was 3.11.9 x64 on Windows build 26200. Runtime
+dependencies exactly matched the accepted source environment, including Torch
+2.12.1+cu130, Transformers 5.14.1, ONNX Runtime 1.28.0, onnx-asr 0.12.0,
+sounddevice 0.5.5, NumPy 2.4.6, and Hugging Face Hub 1.24.0. Both environments
+passed `pip check`.
+
+Final repeatable builds took about 102 seconds (console) and 103 seconds
+(windowed). They contain 5,549 files and 98 DLLs each. Console is
+3,006,417,919 bytes; windowed is 3,006,413,823 bytes. Torch/CUDA accounts for
+most of the footprint. Full commands, hashes, dependency inventory, warning
+classification, privacy scans, Defender result, and the complete real 60-second
+measurement are recorded in `windows-packaging-spike.md`.
+
+The final automated suite passed 253 tests in 1.80 seconds; coverage passed the
+same 253 tests in 2.58 seconds at 80%. Packaging-specific tests passed 14/14 in
+both environments. The final cached frozen run produced 5/5 subtitles, no loss
+or backlog, 0.060-second render P95, 0.286 RTF P95, 0.698/1.656-second RU/ZH
+latency P95, and no remaining temporary WAV or process. The exact status is
+**Onedir GUI build validated on development machine**.

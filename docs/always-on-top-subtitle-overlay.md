@@ -280,3 +280,21 @@ This is not a production-ready claim. The application remains a VAD-segmented,
 short-WAV offline ASR and offline translation overlay prototype, not native
 streaming ASR, a PowerPoint/Acrobat plugin, a packaged product, click-through
 overlay, or subtitle-history service.
+
+## Frozen onedir follow-up
+
+The subsequent PyInstaller 6.21.0 onedir spike preserved the same parent-Tk and
+spawned-worker boundary. A real cache-only frozen GUI run produced 5/5 ordered
+subtitles, GUI events 10/10, render P95 0.060 seconds, heartbeat maximum 0.019
+seconds, RTF P95 0.286, and RU/ZH latency P95 0.698/1.656 seconds. It processed
+1,875/1,875 audio blocks with audio/segment queue HWMs 1/320 and 1/8. Loss,
+gaps, PortAudio statuses, backlog, temporary residue, and residual processes
+were all zero; model counts remained 1/1/1/1 and CUDA peak was 1,189.6 MiB.
+
+The frozen entry called `multiprocessing.freeze_support()` before importing the
+GUI or model stack. Process inspection showed one main executable and one
+expected `--multiprocessing-fork` child, with no recursive GUI. The exact frozen
+captions, build footprint, logs, warning analysis, and security boundary are in
+`windows-packaging-spike.md`. The resulting status is **Onedir GUI build
+validated on development machine**, not a clean-machine, signed, installer, or
+production-ready claim.
