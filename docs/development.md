@@ -334,3 +334,33 @@ Transformers warned that the model's configured `max_length=200` and the CLI's
 `max_new_tokens=256` were both present. It explicitly used `max_new_tokens`;
 generation remained deterministic. See `offline-audio-translation-pipeline.md`
 for the complete file-pipeline record.
+
+## Direct Silero ONNX VAD validation
+
+Validated on 2026-07-27 on `feat/live-vad-terminal-pipeline`:
+
+- The proposed `silero-vad[onnx-cpu]==6.2.1` install was not performed because
+  it would add TorchAudio 2.11.0 beside Torch 2.12.1+cu130. TorchAudio requires
+  matching release lines, and the working CUDA Torch environment was preserved.
+- `silero-vad`, TorchAudio, and `onnxruntime-gpu` were not installed.
+- Torch remained 2.12.1+cu130 with CUDA 13.0 available.
+- ONNX Runtime remained 1.28.0 with Azure and CPU providers; direct VAD uses only
+  `CPUExecutionProvider`.
+- The official wheel and model hashes, input/output metadata, cache design, and
+  performance results are recorded in `direct-silero-onnx-vad.md`.
+- `vad-prepare` downloaded and verified the pinned wheel, extracted only the
+  default ONNX model and MIT license, and wrote the user cache atomically.
+- `vad-doctor` verified the cache and loaded the real CPU session in 0.069168
+  seconds on the first run and 0.072069 seconds during the simulated-offline run.
+- Two original recordings each produced one segment. A third ignored WAV built
+  only from those two real speech regions plus silence produced exactly two
+  ordered segments.
+- Invalid HTTP/HTTPS proxies were active for the cached prepare, doctor, and file
+  validation; all succeeded without network access.
+- Final unit tests passed 109 tests in 0.78 seconds. The coverage run passed all
+  109 tests in 1.13 seconds with 80% total coverage; the new file VAD, segmenter,
+  asset preparation, and model-wrapper modules reached 89%, 90%, 89%, and 78%.
+
+The inspection wheel under ignored `data/dependency-inspection/`, the generated
+two-utterance WAV, all source WAVs, the user cache, and coverage data remain
+outside Git.

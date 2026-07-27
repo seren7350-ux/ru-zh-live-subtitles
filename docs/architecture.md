@@ -2,6 +2,26 @@
 
 ## Current short-file pipeline
 
+The direct VAD file foundation is independent of ASR and translation:
+
+```text
+Strict PCM16 mono 16 kHz WAV
+  -> project-owned WAV reader
+  -> float32 chunks (512 samples / 32 ms)
+  -> official Silero VAD 6.2.1 ONNX model / CPUExecutionProvider
+  -> recurrent state + 64-sample context carried between chunks
+  -> probability hysteresis and padding state machine
+  -> immutable speech segments
+```
+
+`vad-prepare` downloads a single pinned official PyPI wheel as data, verifies its
+SHA-256, reads only the selected model and license ZIP members, verifies the
+model SHA-256, and atomically writes a per-user cache. It does not import or
+execute wheel code. The runtime uses NumPy and ONNX Runtime directly; neither
+`silero-vad`, TorchAudio, nor Torch participates in VAD inference.
+
+The existing offline audio-to-translation path remains:
+
 ```text
 Local WAV file
   -> WAV validation and duration reading
@@ -19,7 +39,7 @@ or running a doctor command does not load a model. A pipeline instance creates
 at most one ASR wrapper and one selected translator, allowing the same loaded
 objects to be reused in a future long-running process.
 
-The current file command handles one short WAV at a time. GigaAM remains on CPU,
+The current commands handle local WAV files. GigaAM remains on CPU,
 while translation selects CUDA when `device=auto` and CUDA is available. No
 audio or text is sent to a network service. Cache-only operation requires both
 Hugging Face offline environment variables and complete local model snapshots.
@@ -42,7 +62,8 @@ Microphone
   -> always-on-top GUI
 ```
 
-The current implementation is neither streaming ASR nor continuous subtitles.
+File VAD is now available, but it is not connected to microphone capture or
+GigaAM. The current implementation is neither streaming ASR nor continuous subtitles.
 ASR, translation, subtitle state, and GUI must remain decoupled so they can be
 profiled and replaced independently. Future performance work must report ASR,
 translation, and orchestration latency separately as well as end-to-end delay.

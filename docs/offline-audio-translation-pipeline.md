@@ -68,6 +68,8 @@ Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
 
-The next product stage, after file-mode validation, is microphone segmentation,
-VAD, and subtitle-state delivery. It must reuse the ASR and translator instances
-instead of loading a model for each segment.
+Direct Silero ONNX file segmentation is now implemented as a separate foundation
+and documented in `direct-silero-onnx-vad.md`. It is not yet connected to this
+ASR/translation pipeline. The next product stage is microphone capture and
+VAD-to-pipeline orchestration; it must reuse ASR and translator instances instead
+of loading a model for each segment.
