@@ -187,3 +187,21 @@ dispatch in the existing entrypoint, whose first runtime action remains
 the distribution. The size-analysis and PE tools are packaging-time utilities,
 not application dependencies. Detailed boundaries and validation are in
 `windows-package-size-optimization.md`.
+
+## Clean-machine validation boundary
+
+Windows Sandbox validation is packaging infrastructure, not an application
+runtime layer. The generated configuration maps the combined onedir, a minimal
+script set, and the exact Silero/GigaAM/NLLB staging read-only. Only a unique,
+empty results directory is writable. The repository, virtual environments,
+user profile, complete Hugging Face cache, and model download paths remain
+outside the guest boundary; networking is disabled.
+
+The cache-backed startup copies approved assets from the read-only mapping into
+the disposable guest's writable caches and sets `HF_HUB_OFFLINE=1` and
+`TRANSFORMERS_OFFLINE=1`. This preserves the host cache and accommodates
+libraries that create cache metadata or lock files. vGPU configuration only
+exposes a possible graphics path: actual frozen Torch CUDA detection determines
+CUDA versus CPU validation, never the vGPU setting itself. See
+`windows-sandbox-clean-machine-validation.md` for the exact trust boundary and
+the current Windows Home blocker.

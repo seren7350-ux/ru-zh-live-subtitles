@@ -247,3 +247,17 @@ validation of the combined candidate. Because Torch/CUDA is the dominant and
 observed-loaded size source, a separate future evaluation may compare a
 CPU-only package, CTranslate2, ONNX translation, or a separately downloadable
 GPU runtime. None of those runtime migrations belongs to this spike.
+
+## Clean-machine follow-up
+
+PR #10 was squash-merged as `34e7cab275dc6fa6a92d7c71ee9aba56de5ae076`.
+The candidate was rebuilt without dependency or profile changes at
+3,064,138,625 bytes, only 996 bytes above this report's baseline and with the
+same 5,463-file/98-DLL structure. A reproducible, network-disabled Windows
+Sandbox validation kit now enforces relative SHA manifests, exact local-only
+Silero/GigaAM/NLLB staging, read-only package/model/script mappings, a unique
+writable results mapping, and actual CUDA-versus-CPU classification.
+
+This host is Windows 11 Home and has no Windows Sandbox AppX, so no clean-machine
+run is claimed. Details and the eligible-host checklist are in
+[Windows Sandbox clean-machine validation](windows-sandbox-clean-machine-validation.md).

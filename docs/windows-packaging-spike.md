@@ -303,3 +303,10 @@ Follow-up completed: PR #9 was merged and the console/windowed outputs were
 combined into one shared onedir. The evidence, safe metadata cleanup, failed
 Torch `pyz` experiment, all-retained CUDA DLL inventory, and final 5/5 offline
 run are documented in [Windows onedir size optimization](windows-package-size-optimization.md).
+
+The next follow-up prepared a machine-path-free Windows Sandbox validation kit,
+but the current host is Windows 11 Home and has no Windows Sandbox application.
+No feature enablement, elevation, restart, or reduced-PATH substitute was used,
+and no clean-machine pass is claimed. See
+[Windows Sandbox clean-machine validation](windows-sandbox-clean-machine-validation.md)
+for the exact cache boundary and manual eligible-host sequence.
