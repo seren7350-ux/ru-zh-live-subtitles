@@ -33,6 +33,7 @@ def test_python_module_help_starts() -> None:
         "vad-doctor",
         "vad-file",
         "live-vad",
+        "live-terminal",
         "translate-audio",
         "translation-doctor",
         "translate-text",

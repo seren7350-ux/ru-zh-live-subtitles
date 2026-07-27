@@ -193,6 +193,29 @@ def test_model_loads_once_and_language_generation_settings_are_dynamic(
     assert translator.revision == "model-revision-sha"  # type: ignore[attr-defined]
 
 
+def test_nllb_prepare_loads_tokenizer_and_model_once_without_translation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, tokenizer_loads, model_loads = install_modules(
+        monkeypatch,
+        cuda_available=True,
+        target_id=947,
+    )
+    times = iter([1.0, 1.2, 1.8])
+    translator = NllbRuZhTranslator(device="auto", clock=lambda: next(times))
+
+    assert translator.prepare() == pytest.approx(0.8)
+    assert translator.prepare() == pytest.approx(0.8)
+    assert len(tokenizer_loads) == 1
+    assert len(model_loads) == 1
+    assert translator.tokenizer_load_count == 1
+    assert translator.model_load_count == 1
+    assert translator.last_metrics is None
+    assert translator.actual_device == "cuda"
+    assert translator.dtype == "float16"
+    assert translator.peak_cuda_memory_bytes == 123456
+
+
 def test_factory_returns_all_engines_and_rejects_unknown() -> None:
     assert isinstance(create_translator("t5", None, "cpu", 1, 32), T5RuZhTranslator)
     assert isinstance(create_translator("m2m100", None, "cpu", 1, 32), M2M100RuZhTranslator)

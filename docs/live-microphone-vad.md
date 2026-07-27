@@ -8,6 +8,11 @@ speech boundaries and infrastructure/performance metrics. It does not invoke
 GigaAM, any translation model, a subtitle state machine, or a GUI. It is not
 native streaming ASR.
 
+The separate `live-terminal` command now consumes these immutable segment
+callbacks through a second bounded queue. The capture callback and VAD worker
+contracts described here remain unchanged; neither executes ASR, translation,
+or temporary-WAV I/O. See `live-terminal-subtitles.md` for that integration.
+
 The path is intentionally fixed:
 
 ```text

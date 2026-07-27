@@ -419,3 +419,43 @@ drive or UNC name`; it did not run ASR or modify files. The corrected
 wrapper's `Process.ExitCode` property rendered blank on this PowerShell host,
 but both CLI commands and their enclosing shell calls returned success and the
 application summaries reported normal duration-based shutdown.
+
+## Live terminal subtitle development
+
+Started on 2026-07-27 after PR #6 was marked ready and squash-merged as
+`200836a`. Work continued on `feat/live-terminal-subtitles` without adding or
+changing dependencies. Python remained 3.11.9; Torch remained 2.12.1+cu130 and
+ONNX Runtime remained CPU package 1.28.0. `silero-vad` and TorchAudio remained
+uninstalled.
+
+Validation before real capture:
+
+- `python -m pip check`: `No broken requirements found.`
+- `python -m pytest -v`: 171 passed in 1.32 seconds.
+- Coverage: 171 passed in 1.89 seconds; 80% total.
+- New modules: `live_subtitles.py` 98% and `segment_processor.py` 94%.
+- `vad-doctor`: pinned SHA valid, CPU session load 0.068014 seconds.
+- `doctor`: 22 checks, 20 OK, 2 WARN, 0 FAIL.
+- `translation-doctor`: 8 checks, 7 OK, 1 WARN, 0 FAIL.
+- Device 1 (`麦克风 (HyperX Cloud III)`) passed native mono float32 16 kHz
+  validation.
+- System temporary-file baseline matching `ru-zh-live-subtitles-*.wav`: zero.
+
+The guided, fully offline 60/120-second output and exact metrics are recorded in
+`live-terminal-subtitles.md`. Both runs returned success from existing caches;
+5/5 and 8/8 subtitles succeeded. All loss, sequence, PortAudio, backlog, and
+temporary-residue counts were zero. Both model workers and the microphone
+released cleanly. No WAV, cache, model, benchmark artifact, or validation log is
+tracked by Git.
+
+Known validation warnings:
+
+- Transformers preferred `max_new_tokens=256` over the model's configured
+  `max_length=200`; inference remained deterministic and successful.
+- Windows WDDM returned `N/A` for per-process GPU memory through `nvidia-smi`;
+  the application reported about 1,189.5 MiB peak CUDA allocation.
+- A full-session auxiliary CIM process-tree sampler reached its command timeout.
+  It did not affect the separately running 120-second application. A lighter
+  late-session window showed no growth and observed the Python process release.
+- PowerShell `Tee-Object` surfaced native stderr progress under a
+  `NativeCommandError` heading even though the application exit code was zero.

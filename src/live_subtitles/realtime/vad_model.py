@@ -83,11 +83,11 @@ class SileroOnnxVad:
         except Exception as exc:
             raise VadInferenceError(f"Unable to load Silero ONNX model at {path}: {exc}") from exc
 
-    def prepare(self) -> None:
-        """Create one CPU inference session and record its actual metadata."""
+    def validate_cache(self) -> Path:
+        """Validate and expose the pinned model path without creating a session."""
 
-        if self._session is not None:
-            return
+        if self.model_path is not None:
+            return self.model_path
         if self._requested_model_path is None:
             try:
                 path = validate_vad_assets().model_path
@@ -97,6 +97,15 @@ class SileroOnnxVad:
             path = self._requested_model_path.expanduser().resolve()
             if not path.is_file():
                 raise VadInferenceError(f"Silero ONNX model does not exist: {path}")
+        self.model_path = path
+        return path
+
+    def prepare(self) -> None:
+        """Create one CPU inference session and record its actual metadata."""
+
+        if self._session is not None:
+            return
+        path = self.validate_cache()
 
         started = self._clock()
         session = self._create_session(path)

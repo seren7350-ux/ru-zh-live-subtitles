@@ -25,7 +25,9 @@ from .pipeline.offline_file import (
 )
 from .realtime.file_vad import VadFileError, run_vad_file
 from .realtime.live_vad import LiveVadError, LiveVadSession
+from .realtime.live_subtitles import LiveTerminalSession
 from .realtime.microphone import MicrophoneCaptureError
+from .realtime.segment_processor import LiveSubtitleResult, SegmentProcessorError
 from .realtime.vad_assets import (
     PACKAGE_VERSION,
     VadAssetError,
@@ -255,6 +257,7 @@ def _live_vad(args: argparse.Namespace) -> int:
         show_probabilities=args.show_probabilities,
         on_segment=show_segment,
         on_probability=show_probability,
+        on_listening=lambda: print("Listening... Press Ctrl+C to stop.", flush=True),
     )
     device = session.prepare()
     assert session.vad.model_path is not None
@@ -280,7 +283,6 @@ def _live_vad(args: argparse.Namespace) -> int:
     )
     print(f"Duration: {duration}")
     print(f"Segment saving: {Path(args.output_dir).expanduser().resolve() if args.output_dir else 'disabled'}")
-    print("Listening... Press Ctrl+C to stop.", flush=True)
     result = session.run()
     metrics = result.metrics
     print("Live VAD summary")
@@ -325,6 +327,174 @@ def _live_vad(args: argparse.Namespace) -> int:
             print(f"    {path}")
     else:
         print("  Output session directory: none")
+    if result.errors:
+        for error in result.errors:
+            print(f"Error: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _live_terminal(args: argparse.Namespace) -> int:
+    """Run the VAD-segmented near-real-time terminal subtitle prototype."""
+
+    def show_result(result: LiveSubtitleResult) -> None:
+        if result.succeeded:
+            print(f"\n[Segment {result.index}]", flush=True)
+            if args.show_russian:
+                print(f"RU: {result.russian_text}", flush=True)
+            print(f"ZH: {result.chinese_text}", flush=True)
+        else:
+            print(f"\n[Segment {result.index} failed]", file=sys.stderr, flush=True)
+            print(f"Stage: {result.error_stage}", file=sys.stderr, flush=True)
+            print(f"Error: {result.error}", file=sys.stderr, flush=True)
+        if args.show_metrics:
+            rtf = "n/a" if result.rtf is None else f"{result.rtf:.3f}"
+            russian_latency = (
+                "n/a"
+                if result.russian_latency_seconds is None
+                else f"{result.russian_latency_seconds:.3f} s"
+            )
+            chinese_latency = (
+                "n/a"
+                if result.chinese_latency_seconds is None
+                else f"{result.chinese_latency_seconds:.3f} s"
+            )
+            print(f"Audio: {result.audio_duration_seconds:.3f} s", flush=True)
+            print(f"VAD release: {result.vad_release_latency_seconds:.3f} s", flush=True)
+            print(f"Queue wait: {result.queue_wait_seconds:.3f} s", flush=True)
+            print(
+                f"ASR: {result.asr_seconds if result.asr_seconds is not None else 0.0:.3f} s",
+                flush=True,
+            )
+            print(
+                "Translation: "
+                f"{result.translation_seconds if result.translation_seconds is not None else 0.0:.3f} s",
+                flush=True,
+            )
+            print(f"Processing: {result.processing_seconds:.3f} s", flush=True)
+            print(f"Processing RTF: {rtf}", flush=True)
+            print(f"RU latency: {russian_latency}", flush=True)
+            print(f"ZH latency: {chinese_latency}", flush=True)
+
+    session = LiveTerminalSession(
+        device_index=args.device,
+        duration=args.duration,
+        segment_queue_size=args.segment_queue_size,
+        threshold=args.vad_threshold,
+        negative_threshold=args.negative_threshold,
+        min_silence_ms=args.min_silence_ms,
+        speech_pad_ms=args.speech_pad_ms,
+        pre_roll_ms=args.pre_roll_ms,
+        min_segment_ms=args.min_segment_ms,
+        max_segment_seconds=args.max_segment_seconds,
+        translation_engine=args.translation_engine,
+        translation_model=args.translation_model,
+        translation_device=args.translation_device,
+        num_beams=args.num_beams,
+        max_new_tokens=args.max_new_tokens,
+        on_result=show_result,
+        on_listening=lambda: print("Listening... Press Ctrl+C to stop.", flush=True),
+    )
+    print("Preparing cached VAD and validating the microphone...")
+    prepare_metrics = session.prepare()
+    device = session.vad_session.device
+    assert device is not None
+    recognizer = session.pipeline.recognizer
+    translator = session.pipeline.translator
+    print(f"Input device: {device.index} ({device.name})")
+    print("Capture format: 16000 Hz, mono, float32, 512 samples/block (32 ms)")
+    print(
+        f"VAD: Silero {session.vad_session.vad.provider}, "
+        f"load={session.vad_session.vad.load_seconds:.3f} s, "
+        f"sessions={session.vad_session.vad.session_creation_count}"
+    )
+    print(
+        f"ASR: {recognizer.model_name}, provider={recognizer.provider}, "
+        f"load={recognizer.model_load_seconds:.3f} s, loads={recognizer.model_load_count}"
+    )
+    print(
+        f"Translation: {translator.engine}, model={translator.model_name}, "
+        f"device={translator.actual_device}, dtype={translator.dtype}, "
+        f"load={translator.total_load_seconds:.3f} s, "
+        f"tokenizer_loads={translator.tokenizer_load_count}, "
+        f"model_loads={translator.model_load_count}"
+    )
+    print(
+        "Preload timing: "
+        f"ASR={prepare_metrics.asr_prepare_seconds:.3f} s, "
+        f"translation={prepare_metrics.translation_prepare_seconds:.3f} s, "
+        f"total={prepare_metrics.total_prepare_seconds:.3f} s"
+    )
+    print(f"Segment queue: bounded, {args.segment_queue_size} complete segments")
+    print("Models ready", flush=True)
+    result = session.run()
+    vad = result.vad.metrics
+    metrics = result.subtitle_metrics
+    translator = session.pipeline.translator
+    print("Live terminal subtitle summary")
+    print(f"  Stop reason: {result.vad.stop_reason}")
+    print(f"  Session duration: {vad.session_seconds:.3f} s")
+    print(f"  Detected segments: {vad.detected_segments}")
+    print(f"  Captured/processed blocks: {vad.captured_blocks}/{vad.processed_blocks}")
+    print(
+        f"  Audio queue high-water: {vad.queue_high_watermark}/{vad.queue_capacity}"
+    )
+    print(f"  VAD P95/chunk: {vad.p95_chunk_seconds * 1000:.3f} ms")
+    print(f"  Ignored short segments: {vad.ignored_short_segments}")
+    print(f"  Successful subtitles: {metrics.successful_segments}")
+    print(f"  Failed subtitles: {metrics.failed_segments}")
+    print(f"  Audio dropped blocks: {vad.dropped_blocks}")
+    print(f"  Audio sequence gaps: {vad.sequence_gaps}")
+    print(f"  PortAudio status events: {vad.portaudio_status_count}")
+    print(
+        f"  Segment queue: enqueued={metrics.enqueued_segments}, "
+        f"dequeued={metrics.dequeued_segments}, "
+        f"high-water={metrics.queue_high_watermark}/{metrics.queue_capacity}, "
+        f"final={metrics.queue_final_depth}, backlog_failures={metrics.backlog_failures}"
+    )
+    print(
+        f"  Processing average/median/P95: {metrics.average_processing_seconds:.3f}/"
+        f"{metrics.median_processing_seconds:.3f}/{metrics.p95_processing_seconds:.3f} s"
+    )
+    print(
+        f"  Queue wait average/median/P95: {metrics.average_queue_wait_seconds:.3f}/"
+        f"{metrics.median_queue_wait_seconds:.3f}/{metrics.p95_queue_wait_seconds:.3f} s"
+    )
+    print(
+        f"  RTF average/median/P95: {metrics.average_rtf:.3f}/"
+        f"{metrics.median_rtf:.3f}/{metrics.p95_rtf:.3f}"
+    )
+    print(
+        f"  Russian latency average/median/P95: "
+        f"{metrics.average_russian_latency_seconds:.3f}/"
+        f"{metrics.median_russian_latency_seconds:.3f}/"
+        f"{metrics.p95_russian_latency_seconds:.3f} s"
+    )
+    print(
+        f"  Chinese latency average/median/P95: "
+        f"{metrics.average_chinese_latency_seconds:.3f}/"
+        f"{metrics.median_chinese_latency_seconds:.3f}/"
+        f"{metrics.p95_chinese_latency_seconds:.3f} s"
+    )
+    print(
+        f"  Temporary WAV: created={metrics.temp_files_created}, "
+        f"deleted={metrics.temp_files_deleted}, remaining={metrics.temp_files_remaining}"
+    )
+    print(f"  VAD worker exited: {'yes' if vad.worker_exited else 'no'}")
+    print(f"  Subtitle worker exited: {'yes' if metrics.worker_exited else 'no'}")
+    print(f"  Microphone released: {'yes' if vad.microphone_closed else 'no'}")
+    print(f"  ASR model loads: {session.pipeline.recognizer.model_load_count}")
+    print(f"  Translation tokenizer loads: {translator.tokenizer_load_count}")
+    print(f"  Translation model loads: {translator.model_load_count}")
+    print(
+        f"  Model loads (VAD/ASR/translation): "
+        f"{session.vad_session.vad.load_seconds:.3f}/"
+        f"{session.pipeline.recognizer.model_load_seconds:.3f}/"
+        f"{translator.total_load_seconds:.3f} s"
+    )
+    print(
+        f"  CUDA peak memory: {translator.peak_cuda_memory_bytes / (1024 ** 2):.1f} MiB"
+    )
     if result.errors:
         for error in result.errors:
             print(f"Error: {error}", file=sys.stderr)
@@ -527,6 +697,66 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_vad.set_defaults(handler=_live_vad)
 
+    live_terminal = subparsers.add_parser(
+        "live-terminal",
+        help="show near-real-time Russian/Chinese terminal subtitles from VAD-bounded microphone segments",
+        description=(
+            "VAD-segmented short-file offline ASR terminal prototype; this is not native "
+            "streaming ASR."
+        ),
+    )
+    live_terminal.add_argument(
+        "--device", type=int, help="input device number; default uses the configured input"
+    )
+    live_terminal.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="seconds to run (0 means until Ctrl+C; maximum 3600)",
+    )
+    live_terminal.add_argument(
+        "--translation-engine",
+        choices=TRANSLATION_ENGINES,
+        default=DEFAULT_TRANSLATION_ENGINE,
+    )
+    live_terminal.add_argument(
+        "--translation-model",
+        help="model repository override (default: official model for selected engine)",
+    )
+    live_terminal.add_argument(
+        "--translation-device",
+        choices=("auto", "cpu", "cuda"),
+        default=DEFAULT_TRANSLATION_DEVICE,
+    )
+    live_terminal.add_argument("--num-beams", type=int, default=1)
+    live_terminal.add_argument("--max-new-tokens", type=int, default=256)
+    live_terminal.add_argument(
+        "--segment-queue-size",
+        type=int,
+        default=8,
+        help="bounded complete-segment queue, 1..32 (default: 8)",
+    )
+    live_terminal.add_argument("--vad-threshold", type=float, default=0.5)
+    live_terminal.add_argument("--negative-threshold", type=float, default=0.35)
+    live_terminal.add_argument("--min-silence-ms", type=int, default=600)
+    live_terminal.add_argument("--speech-pad-ms", type=int, default=100)
+    live_terminal.add_argument("--pre-roll-ms", type=int, default=250)
+    live_terminal.add_argument("--min-segment-ms", type=int, default=300)
+    live_terminal.add_argument("--max-segment-seconds", type=float, default=15.0)
+    live_terminal.add_argument(
+        "--show-russian",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="show Russian ASR text (default: enabled)",
+    )
+    live_terminal.add_argument(
+        "--show-metrics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="show per-segment latency metrics (default: enabled)",
+    )
+    live_terminal.set_defaults(handler=_live_terminal)
+
     translate_audio = subparsers.add_parser(
         "translate-audio",
         help="recognize one Russian WAV file and translate the result to Chinese",
@@ -609,6 +839,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         VadInferenceError,
         VadFileError,
         LiveVadError,
+        SegmentProcessorError,
         MicrophoneCaptureError,
         ValueError,
     ) as exc:

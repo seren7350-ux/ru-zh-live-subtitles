@@ -68,8 +68,8 @@ Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
 
-Direct Silero ONNX file segmentation is now implemented as a separate foundation
-and documented in `direct-silero-onnx-vad.md`. It is not yet connected to this
-ASR/translation pipeline. The next product stage is microphone capture and
-VAD-to-pipeline orchestration; it must reuse ASR and translator instances instead
-of loading a model for each segment.
+Direct Silero ONNX segmentation is documented in `direct-silero-onnx-vad.md`.
+The `live-terminal` command now reuses one explicitly preloaded pipeline across
+all completed microphone VAD segments. Existing file commands retain their lazy
+behavior and output contracts. The live integration is documented in
+`live-terminal-subtitles.md`.
