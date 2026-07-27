@@ -91,8 +91,9 @@ short ignored segments, and wrote no output WAVs by default.
 
 ## Limitations and next step
 
-This milestone performs file segmentation only. It does not open a microphone,
-call GigaAM, translate text, or display subtitles. Segment boundaries are VAD
-decisions rather than transcript-aware cuts. The next step is a bounded-queue
-microphone pipeline that reuses this stateful wrapper and separately preloaded
-ASR/translation models.
+The direct wrapper now also serves the separate bounded-queue `live-vad`
+diagnostic. Live capture opens a fixed-format microphone and stops after VAD
+segmentation; it does not call GigaAM, translate text, or display subtitles.
+Segment boundaries are VAD decisions rather than transcript-aware cuts. A later
+step may connect immutable completed segments to separately reusable ASR and
+translation components without moving those operations into the audio callback.

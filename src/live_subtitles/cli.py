@@ -1,4 +1,4 @@
-"""argparse command-line interface for offline ASR and translation experiments."""
+"""CLI for local-file experiments and terminal-only live microphone VAD."""
 
 from __future__ import annotations
 
@@ -24,8 +24,15 @@ from .pipeline.offline_file import (
     OfflinePipelineError,
 )
 from .realtime.file_vad import VadFileError, run_vad_file
-from .realtime.vad_assets import VadAssetError, prepare_vad_assets, validate_vad_assets
-from .realtime.vad_model import SileroOnnxVad, VadInferenceError
+from .realtime.live_vad import LiveVadError, LiveVadSession
+from .realtime.microphone import MicrophoneCaptureError
+from .realtime.vad_assets import (
+    PACKAGE_VERSION,
+    VadAssetError,
+    prepare_vad_assets,
+    validate_vad_assets,
+)
+from .realtime.vad_model import SAMPLE_RATE, SileroOnnxVad, VadInferenceError
 from .translation.benchmark import load_samples, run_benchmark
 from .translation.diagnostics import collect_translation_diagnostics
 from .translation.factory import TRANSLATION_ENGINES, create_translator
@@ -218,6 +225,113 @@ def _vad_file(args: argparse.Namespace) -> int:
     return 0
 
 
+def _live_vad(args: argparse.Namespace) -> int:
+    def show_segment(index: int, segment: object) -> None:
+        start_sample = int(getattr(segment, "start_sample"))
+        end_sample = int(getattr(segment, "end_sample"))
+        forced = bool(getattr(segment, "forced_split"))
+        print(f"[Segment {index}]", flush=True)
+        print(f"Start: {start_sample / SAMPLE_RATE:.3f} s", flush=True)
+        print(f"End: {end_sample / SAMPLE_RATE:.3f} s", flush=True)
+        print(f"Duration: {(end_sample - start_sample) / SAMPLE_RATE:.3f} s", flush=True)
+        print(f"Samples: {end_sample - start_sample}", flush=True)
+        print(f"Forced split: {'yes' if forced else 'no'}", flush=True)
+
+    def show_probability(sequence: int, probability: float) -> None:
+        print(f"Chunk {sequence}: speech_probability={probability:.6f}", flush=True)
+
+    session = LiveVadSession(
+        device_index=args.device,
+        duration=args.duration,
+        queue_size=args.audio_queue_size,
+        threshold=args.threshold,
+        negative_threshold=args.negative_threshold,
+        min_silence_ms=args.min_silence_ms,
+        speech_pad_ms=args.speech_pad_ms,
+        pre_roll_ms=args.pre_roll_ms,
+        min_segment_ms=args.min_segment_ms,
+        max_segment_seconds=args.max_segment_seconds,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        show_probabilities=args.show_probabilities,
+        on_segment=show_segment,
+        on_probability=show_probability,
+    )
+    device = session.prepare()
+    assert session.vad.model_path is not None
+    duration = f"{args.duration:g} seconds" if args.duration else "until Ctrl+C"
+    print(f"Input device: {device.index} ({device.name})")
+    print("Capture format: 16000 Hz, mono, float32, 512 samples/block (32 ms)")
+    print(
+        f"Queue: bounded, {args.audio_queue_size} blocks "
+        f"({args.audio_queue_size * 0.032:.2f} s)"
+    )
+    print(f"VAD: Silero {session.vad.provider}, model version {PACKAGE_VERSION}")
+    print(f"VAD model: {session.vad.model_path}")
+    print(f"VAD load time: {session.vad.load_seconds:.6f} s")
+    print(f"VAD session creations: {session.vad.session_creation_count}")
+    print(
+        f"Segmentation: threshold={args.threshold:g}, "
+        f"negative_threshold={args.negative_threshold:g}, "
+        f"min_silence={args.min_silence_ms} ms, "
+        f"speech_pad={args.speech_pad_ms} ms, "
+        f"pre_roll={args.pre_roll_ms} ms, "
+        f"min_segment={args.min_segment_ms} ms, "
+        f"max_segment={args.max_segment_seconds:g} s"
+    )
+    print(f"Duration: {duration}")
+    print(f"Segment saving: {Path(args.output_dir).expanduser().resolve() if args.output_dir else 'disabled'}")
+    print("Listening... Press Ctrl+C to stop.", flush=True)
+    result = session.run()
+    metrics = result.metrics
+    print("Live VAD summary")
+    print(f"  Stop reason: {result.stop_reason}")
+    print(f"  Session duration: {metrics.session_seconds:.3f} s")
+    print(f"  Captured blocks: {metrics.captured_blocks}")
+    print(f"  Processed blocks: {metrics.processed_blocks}")
+    print(f"  Queue enqueued blocks: {metrics.enqueued_blocks}")
+    print(f"  Queue dequeued blocks: {metrics.dequeued_blocks}")
+    print(f"  Processed audio: {metrics.audio_seconds:.3f} s")
+    print(f"  Dropped blocks: {metrics.dropped_blocks}")
+    print(f"  Sequence gaps: {metrics.sequence_gaps}")
+    print(
+        f"  Queue high-water mark: {metrics.queue_high_watermark}/"
+        f"{metrics.queue_capacity} blocks"
+    )
+    print(f"  Queue final depth: {metrics.queue_final_depth}")
+    print(f"  PortAudio status events: {metrics.portaudio_status_count}")
+    for status in metrics.portaudio_status_texts:
+        print(f"    {status}")
+    print(f"  Detected segments: {metrics.detected_segments}")
+    print(f"  Forced segments: {metrics.forced_segments}")
+    print(f"  Ignored short segments: {metrics.ignored_short_segments}")
+    print(f"  Saved segments: {metrics.saved_segments}")
+    print(f"  Save failures: {metrics.save_failures}")
+    print(f"  VAD inference total: {metrics.inference_total_seconds:.6f} s")
+    print(f"  VAD average/chunk: {metrics.average_chunk_seconds * 1000:.3f} ms")
+    print(f"  VAD median/chunk: {metrics.median_chunk_seconds * 1000:.3f} ms")
+    print(f"  VAD P95/chunk: {metrics.p95_chunk_seconds * 1000:.3f} ms")
+    print(f"  VAD maximum/chunk: {metrics.maximum_chunk_seconds * 1000:.3f} ms")
+    print(f"  Queue wait average: {metrics.average_queue_wait_seconds * 1000:.3f} ms")
+    print(f"  Queue wait median: {metrics.median_queue_wait_seconds * 1000:.3f} ms")
+    print(f"  Queue wait P95: {metrics.p95_queue_wait_seconds * 1000:.3f} ms")
+    print(f"  Queue wait maximum: {metrics.maximum_queue_wait_seconds * 1000:.3f} ms")
+    print(f"  VAD model load: {metrics.model_load_seconds:.6f} s")
+    print(f"  ONNX session creations: {metrics.session_creation_count}")
+    print(f"  VAD worker exited: {'yes' if metrics.worker_exited else 'no'}")
+    print(f"  Microphone released: {'yes' if metrics.microphone_closed else 'no'}")
+    if result.output_directory is not None:
+        print(f"  Output session directory: {result.output_directory}")
+        for path in result.output_paths:
+            print(f"    {path}")
+    else:
+        print("  Output session directory: none")
+    if result.errors:
+        for error in result.errors:
+            print(f"Error: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _translate_text(args: argparse.Namespace) -> int:
     print("First load may download the translation model; later runs use the local cache.")
     translator = create_translator(
@@ -327,7 +441,7 @@ def _benchmark_translation(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="live-subtitles",
-        description="Short Russian WAV ASR and offline Russian-to-Chinese translation pipeline.",
+        description="Local-file experiments and terminal-only live microphone VAD.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -375,6 +489,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional segment directory (recommended: data/vad-segments); default writes nothing",
     )
     vad_file.set_defaults(handler=_vad_file)
+
+    live_vad = subparsers.add_parser(
+        "live-vad",
+        help="capture native 16 kHz microphone blocks and segment speech with cached Silero ONNX VAD",
+    )
+    live_vad.add_argument("--device", type=int, help="input device number; default uses the configured input")
+    live_vad.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="seconds to run (0 means until Ctrl+C; maximum 3600)",
+    )
+    live_vad.add_argument(
+        "--audio-queue-size",
+        "--queue-size",
+        dest="audio_queue_size",
+        type=int,
+        default=320,
+        help="bounded audio queue blocks, 16..2000 (default: 320 = 10.24 seconds)",
+    )
+    live_vad.add_argument("--threshold", type=float, default=0.5)
+    live_vad.add_argument("--negative-threshold", type=float, default=0.35)
+    live_vad.add_argument("--min-silence-ms", type=int, default=600)
+    live_vad.add_argument("--speech-pad-ms", type=int, default=100)
+    live_vad.add_argument("--pre-roll-ms", type=int, default=250)
+    live_vad.add_argument("--min-segment-ms", type=int, default=300)
+    live_vad.add_argument("--max-segment-seconds", type=float, default=15.0)
+    live_vad.add_argument(
+        "--output-dir",
+        help="optional root for a unique session directory of PCM16 segments; default saves nothing",
+    )
+    live_vad.add_argument(
+        "--show-probabilities",
+        action="store_true",
+        help="print each VAD probability from the worker thread (diagnostic only)",
+    )
+    live_vad.set_defaults(handler=_live_vad)
 
     translate_audio = subparsers.add_parser(
         "translate-audio",
@@ -457,6 +608,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         VadAssetError,
         VadInferenceError,
         VadFileError,
+        LiveVadError,
+        MicrophoneCaptureError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)

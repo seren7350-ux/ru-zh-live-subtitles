@@ -364,3 +364,58 @@ Validated on 2026-07-27 on `feat/live-vad-terminal-pipeline`:
 The inspection wheel under ignored `data/dependency-inspection/`, the generated
 two-utterance WAV, all source WAVs, the user cache, and coverage data remain
 outside Git.
+
+## Live microphone VAD development
+
+Started on 2026-07-27 after PR #5 was marked ready and squash-merged as
+`a894244`. Work continues on `feat/live-microphone-vad`.
+
+- Python: 3.11.9 at the project `.venv` executable.
+- pip: 26.1.2 from the project `.venv`.
+- NumPy: 2.4.6.
+- sounddevice: 0.5.5.
+- ONNX Runtime: 1.28.0, CPU runtime retained.
+- onnx-asr: 0.12.0 (installed for the separate file-ASR path; not imported by
+  live VAD).
+- GPU detected: NVIDIA GeForce RTX 4060 Laptop GPU; not used by live VAD.
+- ffmpeg 8.1.1 detected; not used by live VAD.
+- `python -m pip check`: no broken requirements found before implementation.
+- Merged-branch baseline: 109 tests passed in 1.00 seconds.
+- No dependencies, models, system packages, environment variables, or global Git
+  configuration were changed for this milestone.
+
+The new unit tests replace microphone streams and VAD inference with deterministic
+fakes. They do not open a device, download/cache a model, use ASR/translation, or
+write outside pytest temporary directories. Real 60-second and 120-second
+validation results are recorded after the guided runs.
+
+### Final live-VAD validation
+
+- `python -m pytest -v`: 153 passed in 1.05 seconds.
+- Coverage run: 153 passed in 1.46 seconds, 80% total coverage.
+- New module coverage: `live_vad.py` 90%, `metrics.py` 96%, and
+  `microphone.py` 93%.
+- `python -m pip check`: no broken requirements found.
+- `vad-doctor`: cached model/SHA valid; CPU session load 0.068191 seconds.
+- Real input: device 1, `麦克风 (HyperX Cloud III)`; native 16 kHz mono float32
+  settings accepted.
+- 60 seconds: five prompted sentences became five segments, 1,874/1,874 blocks,
+  queue HWM 1/320, dropped 0, gaps 0, statuses 0, average 0.525 ms, P95 0.757
+  ms, one session, clean worker/device shutdown, and five valid ignored WAVs.
+- Fully offline boundary check: independent file ASR exactly reproduced all five
+  prompted Russian sentences; no evident beginning/end loss, merge, or split.
+- 120 seconds: eight prompted sentences became eight segments, 3,750/3,750
+  blocks, queue HWM 1/320, dropped 0, gaps 0, statuses 0, average 0.476 ms, P95
+  0.694 ms, one session, clean timed shutdown, and no saved files.
+- 120-second process-tree memory: 78.51 to 80.08 MiB; stable-window averages
+  78.78 to 80.08 MiB (+1.29 MiB), with no obvious runaway growth.
+- A final two-second no-save smoke run after bounding metric storage processed
+  62/62 blocks with no loss/status, P95 0.734 ms, and clean resource release.
+
+One first attempt to enumerate saved WAVs for offline ASR used an invalid
+PowerShell path concatenation and reported `Second path fragment must not be a
+drive or UNC name`; it did not run ASR or modify files. The corrected
+`Join-Path` command completed all five cached transcriptions. The monitoring
+wrapper's `Process.ExitCode` property rendered blank on this PowerShell host,
+but both CLI commands and their enclosing shell calls returned success and the
+application summaries reported normal duration-based shutdown.

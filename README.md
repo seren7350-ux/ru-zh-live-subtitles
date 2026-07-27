@@ -1,9 +1,9 @@
 # Russian–Chinese Live Subtitles
 
 An offline-first Windows prototype for Russian lecture subtitles. The current
-milestone accepts local WAV files for two independent workflows: direct Silero
-ONNX speech segmentation, and short-file GigaAM recognition plus offline
-Russian-to-Chinese translation.
+milestone includes a terminal-only live microphone-to-VAD diagnostic path, plus
+the existing local-file Silero segmentation and short-file GigaAM recognition /
+offline Russian-to-Chinese translation experiments.
 
 ## Current scope
 
@@ -13,11 +13,17 @@ The complete short-file path is now:
 WAV -> GigaAM ASR -> Russian text -> NLLB translation -> Chinese text
 ```
 
-The VAD foundation is separate and currently stops after segmentation:
+The live VAD path is separate and intentionally stops after segmentation:
 
 ```text
-PCM16 mono 16 kHz WAV -> 512-sample chunks -> Silero ONNX probabilities -> speech segments
+Microphone -> float32 mono 16 kHz blocks -> bounded queue -> Silero ONNX -> speech segments
 ```
+
+`live-vad` uses `sounddevice.InputStream` with exactly 512 samples per 32 ms
+block. Its PortAudio callback only validates, copies, timestamps, and attempts a
+non-blocking queue write. A single worker owns the stateful VAD and segmenter.
+Queue overflow, input overflow, and sequence gaps are fatal diagnostic errors;
+the command never silently discards audio.
 
 Silero VAD 6.2.1 is obtained from its official PyPI wheel by `vad-prepare`.
 The project does not install or execute the `silero-vad` package and does not
@@ -32,9 +38,10 @@ model choice. T5 and M2M100 remain available through CLI overrides and their
 comparison results are retained as research history.
 
 Mathematical terminology optimization is not a core acceptance requirement for
-this project. The current milestone does not implement microphone VAD,
-continuous recognition, streaming ASR, VAD-to-GigaAM integration, live subtitle
-state, Chinese subtitle display, GUI, PowerPoint overlays, or Windows packaging.
+this project. The current milestone does not connect live VAD to GigaAM or
+translation and does not implement continuous recognition, streaming ASR, live
+subtitle state, Chinese subtitle display, GUI, PowerPoint overlays, system-audio
+capture, resampling, or Windows packaging.
 
 NLLB is licensed CC-BY-NC-4.0. It is used here only as a learning, research, and
 non-commercial candidate; licensing and model suitability must be reviewed
@@ -76,6 +83,8 @@ python -m live_subtitles record --seconds 8 --output data/sample.wav
 python -m live_subtitles vad-prepare
 python -m live_subtitles vad-doctor
 python -m live_subtitles vad-file data/sample.wav
+python -m live_subtitles live-vad --device 1 --duration 60
+python -m live_subtitles live-vad --device 1 --duration 60 --output-dir data/live-vad-segments
 python -m live_subtitles transcribe-file data/sample.wav
 python -m live_subtitles translate-audio data/sample.wav
 python -m live_subtitles translation-doctor
@@ -93,6 +102,14 @@ silently falling back. T5 and M2M100 compatibility can be checked with
 segment boundaries and per-chunk timing without writing files by default. Use
 `--output-dir data/vad-segments` only when ignored diagnostic WAV segments are
 needed; do not commit them.
+
+Run `vad-doctor` and `devices` before `live-vad`. The selected microphone must
+natively accept mono float32 at 16 kHz; this command does not resample. Duration
+`0` runs until Ctrl+C. The default bounded queue contains 320 blocks (10.24
+seconds). Segment audio is not written unless `--output-dir` is supplied; when
+enabled, each run gets a unique session subdirectory containing PCM16 mono 16 kHz
+WAV files. `--show-probabilities` is a verbose diagnostic switch and should not
+be used for normal latency measurements.
 
 ## Cached offline use
 
@@ -113,13 +130,15 @@ and recognized text stay in the local process. The `.venv`, `data`, WAV files,
 model caches, weights, and generated benchmark output are ignored by Git and
 must not be committed.
 
-After one successful `vad-prepare`, both `vad-doctor` and `vad-file` use only the
-verified local VAD cache and never access the network.
+After one successful `vad-prepare`, `vad-doctor`, `vad-file`, and `live-vad` use
+only the verified local VAD cache and never access the network.
 
 ## Limitations and troubleshooting
 
-- Only short, local WAV files are supported; this is not a live subtitle loop.
-- VAD currently segments files only and is not connected to GigaAM or a microphone.
+- `live-vad` is a terminal segmentation diagnostic, not a live subtitle loop.
+- Live VAD is not connected to GigaAM, translation, or subtitle presentation.
+- A queue overflow, input overflow, or sequence discontinuity stops the session;
+  use the printed summary to diagnose device/host load rather than accepting loss.
 - Recording depends on Windows microphone permission and a free input device.
 - GigaAM uses CPU ONNX Runtime; NLLB CUDA needs a compatible PyTorch wheel.
 - Cache-only mode fails if either model snapshot is incomplete.
@@ -132,4 +151,6 @@ See [architecture](docs/architecture.md),
 [pipeline validation](docs/offline-audio-translation-pipeline.md), and the
 [translation comparison](docs/translation-model-comparison.md). Direct VAD
 design and measurements are in
-[direct Silero ONNX VAD](docs/direct-silero-onnx-vad.md).
+[direct Silero ONNX VAD](docs/direct-silero-onnx-vad.md); the live capture design
+and operational checks are in
+[live microphone VAD](docs/live-microphone-vad.md).

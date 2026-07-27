@@ -62,8 +62,28 @@ Microphone
   -> always-on-top GUI
 ```
 
-File VAD is now available, but it is not connected to microphone capture or
-GigaAM. The current implementation is neither streaming ASR nor continuous subtitles.
+Live microphone VAD is now available as a bounded-queue terminal diagnostic, but
+it is not connected to GigaAM. The current implementation is neither streaming
+ASR nor continuous subtitles.
 ASR, translation, subtitle state, and GUI must remain decoupled so they can be
 profiled and replaced independently. Future performance work must report ASR,
 translation, and orchestration latency separately as well as end-to-end delay.
+
+## Live capture concurrency boundary
+
+```text
+PortAudio callback
+  -> immutable sequenced AudioBlock
+  -> bounded FIFO queue
+  -> single VAD/segmenter worker
+  -> immutable AudioSegment results
+  -> main-thread reporting and optional post-session WAV saving
+```
+
+The callback has a strict real-time boundary: validate, copy, timestamp, and
+`put_nowait` only. Queue full, PortAudio input overflow, and sequence gaps are
+fatal because continuing would hide missing audio. The worker is the sole owner
+of VAD recurrent state and the segmentation state machine. The coordinator owns
+stream lifetime, termination, joining, summary generation, and optional writes.
+This separation keeps microphone transport independent from future ASR,
+translation, subtitle state, and GUI components.
