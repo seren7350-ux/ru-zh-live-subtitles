@@ -287,6 +287,24 @@ def test_ctrl_c_still_joins_worker_and_releases_microphone(tmp_path: Path) -> No
     assert result.metrics.microphone_closed
 
 
+def test_stop_requested_before_run_never_opens_microphone(tmp_path: Path) -> None:
+    vad = FakeVad(tmp_path)
+    sd = FakeSoundDevice(blocks=1)
+    session = LiveVadSession(
+        duration=0,
+        queue_size=16,
+        vad=vad,
+        sounddevice_module=sd,
+    )
+    session.request_stop("window closed")
+    session.request_stop("duplicate request")
+    result = session.run()
+    assert result.stop_reason == "window closed"
+    assert sd.stream is None
+    assert result.metrics.microphone_closed
+    assert result.metrics.worker_exited
+
+
 def test_runtime_inference_failure_is_returned_after_cleanup(tmp_path: Path) -> None:
     vad = FakeVad(tmp_path)
     vad.raise_inference = True

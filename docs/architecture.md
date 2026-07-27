@@ -77,10 +77,40 @@ Both queues use non-blocking producer writes and explicit fatal backpressure;
 the PortAudio callback remains unchanged. Percentile windows and retained
 subtitle results are capped at 8,192 entries.
 
+## Current subtitle overlay
+
+```text
+GUI main thread
+  -> one Tk root
+     -> persistent control bar
+     -> subtitle content area
+     -> one optional persistent SettingsPanel Toplevel
+  <- immutable events from one bounded queue
+Background controller
+  -> at most one live session
+```
+
+The overlay has no compact, expanded, or captions-only layout state. Its main
+control bar remains present in both borderless and normal-window modes. Settings
+and root right-click both call the same panel toggle; they do not alter the
+subtitle layout or session state.
+
+The SettingsPanel is created lazily, retained, and closed with `withdraw()`.
+Reopening uses `deiconify()`, reapplies the current topmost value once, and calls
+`lift()` once. A destroyed or stale panel reference is discarded before a new
+panel is created. Borderless changes use one `overrideredirect()` call on the
+existing root followed by one idle callback that restores geometry, topmost,
+and opacity. Neither operation rebuilds widgets or creates a new live session.
+
+Tk calls stay on the main thread. Background work emits immutable queue events;
+subtitle rendering never changes focus, grabs input, or repeatedly reapplies
+window-manager state. Stop is a non-blocking request and Exit polls completion
+from the Tk event loop before destroying the root.
+
 ## Future target
 
 ```text
-terminal results -> subtitle state management -> always-on-top GUI
+always-on-top GUI -> external application validation -> packaging
 ```
 
 The current implementation is not native streaming ASR. GigaAM starts only

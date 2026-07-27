@@ -19,6 +19,14 @@ Microphone -> bounded audio queue -> Silero ONNX VAD -> immutable speech segment
   -> bounded segment queue -> one GigaAM/NLLB worker -> Russian and Chinese terminal text
 ```
 
+The current GUI spike adds an always-on-top Tk subtitle surface around that
+pipeline. Its layout is deliberately fixed: a persistent control bar remains
+visible above the subtitle content, while the optional Settings panel opens in
+one reusable `Toplevel`. The main bar always exposes Start/Stop, Pinned/Unpinned,
+Settings, and Exit. Settings only shows or hides the settings panel; right-click
+is a shortcut to the same action. The earlier compact, expanded, and
+captions-only modes have been removed.
+
 This is a **VAD 分段后调用短音频离线 ASR 的近实时终端字幕原型**. GigaAM is
 called only after VAD closes a segment and receives a temporary WAV; it is not
 native streaming ASR.
@@ -89,6 +97,8 @@ python -m live_subtitles vad-file data/sample.wav
 python -m live_subtitles live-vad --device 1 --duration 60
 python -m live_subtitles live-vad --device 1 --duration 60 --output-dir data/live-vad-segments
 python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cuda --num-beams 1
+python -m live_subtitles overlay-demo --duration 0
+python -m live_subtitles live-overlay --device 1 --duration 0 --translation-engine nllb --translation-device cuda --num-beams 1
 python -m live_subtitles transcribe-file data/sample.wav
 python -m live_subtitles translate-audio data/sample.wav
 python -m live_subtitles translation-doctor
@@ -160,6 +170,13 @@ only the verified local VAD cache and never access the network.
 - NLLB is a current candidate, not a quality guarantee or production approval.
 - Run `vad-doctor`, `doctor`, and `translation-doctor` for the corresponding
   model, runtime, device, or cache checks.
+- `overlay-demo` opens no microphone and loads no model; it is the safe command
+  for checking Settings, borderless/windowed, topmost, fonts, opacity, position,
+  Start/Stop, and Exit behavior.
+- Closing the settings panel withdraws it without stopping the session. Switching
+  borderless mode keeps the same root, controls, subtitle state, and session.
+- PowerPoint and Acrobat compatibility still require user validation. The GUI
+  is not finally accepted, packaged, or claimed to reserve Windows work area.
 
 See [architecture](docs/architecture.md),
 [development notes](docs/development.md),
@@ -171,3 +188,5 @@ and operational checks are in
 [live microphone VAD](docs/live-microphone-vad.md).
 The integrated terminal prototype, latency definitions, and guided offline
 validation are in [live terminal subtitles](docs/live-terminal-subtitles.md).
+The overlay lifecycle, controls, crash analysis, and remaining manual checks are
+in [always-on-top subtitle overlay](docs/always-on-top-subtitle-overlay.md).

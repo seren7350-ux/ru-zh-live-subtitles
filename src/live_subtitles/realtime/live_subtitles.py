@@ -110,6 +110,11 @@ class LiveTerminalSession:
         )
         self._prepare_metrics: PipelinePrepareMetrics | None = None
 
+    def request_stop(self, reason: str = "user requested stop") -> None:
+        """Request a normal, idempotent stop without blocking the caller."""
+
+        self.vad_session.request_stop(reason)
+
     def prepare(self) -> PipelinePrepareMetrics:
         """Validate VAD/device first, then preload ASR and translation exactly once."""
 

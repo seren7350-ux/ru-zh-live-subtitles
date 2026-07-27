@@ -459,3 +459,52 @@ Known validation warnings:
   late-session window showed no growth and observed the Python process release.
 - PowerShell `Tee-Object` surfaced native stderr progress under a
   `NativeCommandError` heading even though the application exit code was zero.
+
+## Subtitle overlay stabilization
+
+Developed on 2026-07-27 on `feat/always-on-top-subtitle-overlay` without adding
+dependencies or changing ASR, translation, VAD, Torch, ONNX Runtime, or audio
+configuration. Python remained 3.11.9; Tk and Tcl both reported 8.6. `pip check`
+continued to report no broken requirements.
+
+The pre-fix GUI was exercised through real screen input. Opening its transient
+settings window and changing Borderless terminated Python immediately. The
+redirected stderr file remained empty because Python did not raise a Tk callback
+exception. Windows Application Error event 1000 recorded `python.exe` failing in
+`tk86t.dll` 8.6.2.12 with exception `0xc0000005`, fault offset
+`0x0000000000024391`, and report ID
+`b3147d68-cd48-4a91-82e7-9c8dc9393cf9`. The pre-fix callback applied
+`overrideredirect()` while an active transient Toplevel also had a FocusOut
+destroy callback pending. That native root/transient lifecycle collision—not a
+generic or caught `TclError`—invalidated the Tk window state before another
+context request could safely reuse it.
+
+The fix removes compact/expanded/captions-only, keeps one persistent control
+bar, keeps one withdrawn SettingsPanel, installs one root right-click binding,
+and defers borderless restoration to `after_idle`. Topmost is applied only on an
+explicit pin change, panel show, initial construction, or borderless restoration;
+the 50 ms render poll does not call `attributes`, `lift`, or focus methods.
+
+Real screen-control checks completed Settings show/hide/reopen, subtitle-area
+and control-bar right-click, direct Stop/Start, Unpinned/Pinned, 20 rounds of
+mixed Settings/right-click/pin/session operations (40 clicks), and two clean
+Exit/restart/Exit cycles. Only one settings window was visible at a time, the
+main bar stayed visible, both exact test process trees exited, and the retained
+stderr logs were empty. A real Windowed-to-Borderless transition also remained
+responsive with no new Windows Application Error event.
+
+The desktop-control API does not enumerate or target Tk roots after
+`overrideredirect(True)`. Consequently it could not perform the reverse
+Borderless-to-Windowed click or ten full screen-driven round trips. The fake-Tk
+regression performs ten transitions and verifies geometry/topmost/opacity,
+binding count, root identity, and session identity, but this is not represented
+as a substitute for the missing screen clicks. PowerPoint, Acrobat, and final
+visual acceptance remain user work; no 60/120-second live subtitle run was
+started in this stabilization task.
+
+Final local checks: 235 tests passed in 1.40 seconds; the coverage run passed the
+same 235 tests in 2.20 seconds with 79% total coverage. GUI module coverage was
+65% for `app.py`, 95% for `controller.py`, 100% for `events.py`, 62% for
+`overlay.py`, and 98% for `state.py`. `git diff --check` completed without
+whitespace errors. `.coverage`, pytest/Python caches, `.venv`, `data`, WAV,
+models, and downloaded artifacts remained ignored and untracked.

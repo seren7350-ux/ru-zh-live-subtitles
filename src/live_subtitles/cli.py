@@ -615,6 +615,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    from .gui.app import add_gui_subcommands
+
+    add_gui_subcommands(subparsers)
+
     doctor = subparsers.add_parser("doctor", help="report local runtime readiness without loading a model")
     doctor.set_defaults(handler=_doctor)
 
