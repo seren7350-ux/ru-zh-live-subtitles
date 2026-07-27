@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Any, Callable
 
+from ..diagnostic_logging import diagnostic_logger
 from ..config import (
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
@@ -182,6 +183,7 @@ class GuiRuntime:
         self.close_started_at: float | None = None
         self._last_heartbeat = self.clock()
         self._queue_fatal_seen = False
+        self._logger = diagnostic_logger()
         self.overlay = SubtitleOverlay(
             root,
             state,
@@ -200,12 +202,14 @@ class GuiRuntime:
     ) -> None:
         """Print developer details and request a normal background stop."""
 
-        traceback.print_exception(
-            exception_type,
-            exception,
-            traceback_object,
-            file=sys.stderr,
-        )
+        self._logger.error("Tk callback failed; type=%s", exception_type.__name__)
+        if sys.stderr is not None:
+            traceback.print_exception(
+                exception_type,
+                exception,
+                traceback_object,
+                file=sys.stderr,
+            )
         self.exit_code = 2
         self.state.set_status("Fatal error")
         self.state.latest_error = f"GUI error: {type(exception).__name__}: {exception}"
@@ -213,12 +217,15 @@ class GuiRuntime:
             self.overlay.set_running(self.controller.running, closing=self.closing)
             self.overlay.render()
         except Exception:
-            traceback.print_exc(file=sys.stderr)
+            self._logger.error("Tk error recovery failed")
+            if sys.stderr is not None:
+                traceback.print_exc(file=sys.stderr)
         self.controller.request_stop("GUI callback error")
 
     def start(self) -> None:
         if self.closing or self.controller.running:
             return
+        self._logger.info("Subtitle session start requested")
         self.state.begin_session()
         self.overlay.set_running(True)
         self.overlay.render()
@@ -229,6 +236,7 @@ class GuiRuntime:
     def stop(self) -> None:
         if not self.controller.running:
             return
+        self._logger.info("Subtitle session stop requested")
         self.state.set_status("Stopping...")
         self.overlay.set_running(True)
         self.overlay.render()
@@ -241,6 +249,7 @@ class GuiRuntime:
     def close(self) -> None:
         if self.closing:
             return
+        self._logger.info("Application close requested")
         self.closing = True
         self.close_started_at = self.clock()
         self.state.set_status("Stopping...")
@@ -255,6 +264,7 @@ class GuiRuntime:
     def _poll_close(self) -> None:
         self._consume_events()
         if not self.controller.running:
+            self._logger.info("Background session stopped; destroying GUI")
             self.root.destroy()
             return
         assert self.close_started_at is not None
@@ -270,10 +280,13 @@ class GuiRuntime:
     def _consume_event(self, event: Any) -> bool:
         subtitle_added = False
         if isinstance(event, PreparingEvent):
+            self._logger.info("Model preparation started")
             self.state.set_status("Preparing...")
         elif isinstance(event, ModelsReadyEvent):
+            self._logger.info("Models ready")
             self.state.set_status("Models ready")
         elif isinstance(event, ListeningEvent):
+            self._logger.info("Microphone listening started")
             self.state.set_status(f"Listening... {event.device_name}")
         elif isinstance(event, SubtitleEvent):
             added = self.state.add_subtitle(
@@ -290,17 +303,21 @@ class GuiRuntime:
                 self.controller.metrics.displayed_subtitles += 1
                 subtitle_added = True
         elif isinstance(event, SegmentErrorEvent):
+            self._logger.warning("Segment infrastructure failure; stage=%s", event.stage)
             self.controller.metrics.failed_segments += 1
             self.state.set_segment_error(
                 f"Segment {event.index}: {event.stage} failed — {event.message}"
             )
         elif isinstance(event, SessionFinishedEvent):
+            self._logger.info("Subtitle session finished")
             self.state.set_status("Stopped")
             self.overlay.set_running(False, closing=self.closing)
         elif isinstance(event, StoppedEvent):
+            self._logger.info("Subtitle session stopped")
             self.state.set_status("Stopped")
             self.overlay.set_running(False, closing=self.closing)
         elif isinstance(event, FatalErrorEvent):
+            self._logger.error("Background session reported a fatal error")
             self.exit_code = 2
             self.state.set_status("Fatal error")
             self.state.latest_error = event.message
@@ -314,6 +331,7 @@ class GuiRuntime:
                 rendered_subtitle_events.append(event)
         fatal_message = self.controller.events.fatal_message
         if fatal_message and not self._queue_fatal_seen:
+            self._logger.error("GUI event queue overflow")
             self._queue_fatal_seen = True
             self.exit_code = 2
             self.state.set_status("Fatal error")
@@ -339,10 +357,12 @@ class GuiRuntime:
         self.root.after(self.ui_poll_ms, self.poll)
 
     def run(self, *, auto_start: bool) -> int:
+        self._logger.info("Tk mainloop starting")
         self.root.after(self.ui_poll_ms, self.poll)
         if auto_start:
             self.root.after(0, self.start)
         self.root.mainloop()
+        self._logger.info("Tk mainloop exited")
         return self.exit_code
 
 
@@ -422,11 +442,71 @@ def _live_overlay(args: argparse.Namespace) -> int:
         )
     )
     exit_code = _run_tk(state, controller, args)
+    _log_live_exit_metrics(controller)
     for index, summary in enumerate(controller.summaries, start=1):
         print(f"Live session {index}")
         _print_live_worker_summary(summary)
     result = controller.last_result
     return max(exit_code, 2 if result is not None and result.errors else 0)
+
+
+def _log_live_exit_metrics(controller: LiveProcessOverlayController) -> None:
+    """Log aggregate exit metrics without recording subtitle or audio content."""
+
+    logger = diagnostic_logger()
+    gui = controller.metrics.snapshot()
+    logger.info(
+        "Session exit metrics; gui_events=%d/%d; gui_queue=%d/%d; "
+        "gui_overflow=%d; displayed_failed=%d/%d; render_p95=%.3f; heartbeat=%.3f",
+        gui.events_enqueued,
+        gui.events_dequeued,
+        gui.event_queue_high_watermark,
+        gui.event_queue_capacity,
+        gui.event_queue_overflows,
+        gui.displayed_subtitles,
+        gui.failed_segments,
+        gui.p95_render_latency_seconds,
+        gui.maximum_mainloop_delay_seconds,
+    )
+    for index, summary in enumerate(controller.summaries, start=1):
+        result = summary.result
+        vad = result.vad.metrics
+        metrics = result.subtitle_metrics
+        logger.info(
+            "Live session %d exit metrics; duration=%.3f; subtitles=%d/%d; "
+            "audio_blocks=%d/%d; audio_queue=%d/%d; segment_queue=%d/%d; "
+            "dropped_gaps_status_backlog=%d/%d/%d/%d; rtf_p95=%.3f; "
+            "ru_latency_p95=%.3f; zh_latency_p95=%.3f; loads=%d/%d/%d/%d; "
+            "cuda_peak_mib=%.1f; temp_wav=%d/%d/%d; workers=%s/%s; microphone=%s",
+            index,
+            vad.session_seconds,
+            metrics.successful_segments,
+            metrics.failed_segments,
+            vad.captured_blocks,
+            vad.processed_blocks,
+            vad.queue_high_watermark,
+            vad.queue_capacity,
+            metrics.queue_high_watermark,
+            metrics.queue_capacity,
+            vad.dropped_blocks,
+            vad.sequence_gaps,
+            vad.portaudio_status_count,
+            metrics.backlog_failures,
+            metrics.p95_rtf,
+            metrics.p95_russian_latency_seconds,
+            metrics.p95_chinese_latency_seconds,
+            summary.vad_session_creation_count,
+            summary.asr_model_load_count,
+            summary.translation_tokenizer_load_count,
+            summary.translation_model_load_count,
+            summary.cuda_peak_memory_bytes / (1024**2),
+            metrics.temp_files_created,
+            metrics.temp_files_deleted,
+            metrics.temp_files_remaining,
+            vad.worker_exited,
+            metrics.worker_exited,
+            vad.microphone_closed,
+        )
 
 
 def _print_live_worker_summary(summary: LiveWorkerSummary) -> None:

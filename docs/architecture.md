@@ -131,6 +131,27 @@ ASR, translation, subtitle state, and GUI must remain decoupled so they can be
 profiled and replaced independently. Future performance work must report ASR,
 translation, and orchestration latency separately as well as end-to-end delay.
 
+## Frozen Windows boundary
+
+The onedir spike adds a thin frozen shell around the same architecture. A
+minimal entrypoint calls `multiprocessing.freeze_support()` before importing
+the project, then dispatches to the existing CLI. Tk remains in the parent EXE;
+the existing spawned live worker re-enters that EXE through PyInstaller's child
+argument handler and never creates another GUI.
+
+Bundled resources, writable user data, and models remain separate:
+
+```text
+onedir static code/runtime -> unified frozen resource helper
+Hugging Face models        -> external user Hugging Face cache
+Silero VAD                 -> external LocalAppData cache
+temporary segments         -> system temporary directory
+diagnostics                -> LocalAppData rotating log
+```
+
+No model lookup uses `_MEIPASS`, no runtime output targets `dist`, and current
+working directory is not an architectural dependency.
+
 ## Live capture concurrency boundary
 
 ```text

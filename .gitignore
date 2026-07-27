@@ -1,4 +1,5 @@
 .venv/
+.venv-packaging/
 venv/
 **pycache**/
 __pycache__/
@@ -28,3 +29,4 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+/packaging-manifest.json

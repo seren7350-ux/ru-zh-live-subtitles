@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .runtime_paths import bundled_resource_path, is_frozen
+
 DEFAULT_ASR_MODEL = "gigaam-v3-e2e-rnnt"
 DEFAULT_PROVIDER = "CPUExecutionProvider"
 DEFAULT_T5_TRANSLATION_MODEL = "utrobinmv/t5_translate_en_ru_zh_base_200"
@@ -15,7 +17,9 @@ DEFAULT_TRANSLATION_MODEL = DEFAULT_NLLB_MODEL
 DEFAULT_SOURCE_LANGUAGE = "rus_Cyrl"
 DEFAULT_TARGET_LANGUAGE = "zho_Hans"
 DEFAULT_TRANSLATION_DEVICE = "auto"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = (
+    bundled_resource_path(".") if is_frozen() else Path(__file__).resolve().parents[2]
+)
 
 
 def hugging_face_cache_dir() -> Path:

@@ -15,7 +15,12 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install development dependencies
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -e ".[dev,packaging]"
+      - name: Validate packaging sources
+        run: |
+          python -m py_compile packaging/entrypoint.py packaging/build_manifest.py packaging/hooks/hook-live_subtitles.py packaging/hooks/hook-onnx_asr.py packaging/hooks/hook-sounddevice.py packaging/hooks/hook-torch.py
+          python -c "compile(open('packaging/console.spec', encoding='utf-8').read(), 'console.spec', 'exec'); compile(open('packaging/windowed.spec', encoding='utf-8').read(), 'windowed.spec', 'exec')"
+          python -c "import runpy; runpy.run_path('packaging/hooks/hook-onnx_asr.py'); runpy.run_path('packaging/hooks/hook-sounddevice.py')"
       - name: Run unit tests
         env:
           HF_HUB_OFFLINE: "1"
