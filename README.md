@@ -217,8 +217,19 @@ in [always-on-top subtitle overlay](docs/always-on-top-subtitle-overlay.md).
 The shared console/GUI onedir design, exact size evidence, DLL sampling, PE
 closure, pruning experiments, and final offline measurements are in
 [Windows onedir size optimization](docs/windows-package-size-optimization.md).
+The network-disabled Windows Sandbox staging boundary, exact local-only cache
+allowlist, generated configuration workflow, and current host-edition blocker
+are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
 The current Windows packaging candidate is one onedir with two launchers and a
 single dependency set. It is not an installer, onefile build, signed release,
 or production distribution. All model weights remain outside the repository and
 outside the frozen directory.
+
+The clean-machine validation kit is under `packaging/clean_machine/`. Generated
+packages, model staging, machine-specific `.wsb` files, WAVs, logs, manifests,
+and results remain in ignored `data/clean-machine-validation/`. This host runs
+Windows 11 Home and does not have Windows Sandbox, so the kit is prepared but no
+clean Sandbox compatibility result is claimed. Use an eligible
+Pro/Enterprise/Education machine and follow the documented three-fresh-instance
+sequence before starting installer work.

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ru-zh-live-subtitles/clean-machine-result.schema.json",
+  "title": "Windows Sandbox clean-machine validation result",
+  "type": "object",
+  "required": ["schema_version", "phase", "completed_at_utc"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "phase": {"enum": ["package-only", "offline-cache"]},
+    "completed_at_utc": {"type": "string", "format": "date-time"},
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "exit_code", "timed_out", "duration_seconds"],
+        "properties": {
+          "name": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "timed_out": {"type": "boolean"},
+          "duration_seconds": {"type": "number", "minimum": 0},
+          "output": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

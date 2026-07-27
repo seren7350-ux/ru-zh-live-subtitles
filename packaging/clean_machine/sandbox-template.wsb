@@ -1,0 +1,34 @@
+<Configuration>
+  <VGpu>Enable</VGpu>
+  <Networking>Disable</Networking>
+  <AudioInput>Enable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <ProtectedClient>Enable</ProtectedClient>
+  <MemoryInMB>MEMORY_IN_MB</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>PACKAGE_HOST_FOLDER</HostFolder>
+      <SandboxFolder>PACKAGE_SANDBOX_FOLDER</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>MODEL_HOST_FOLDER</HostFolder>
+      <SandboxFolder>MODEL_SANDBOX_FOLDER</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>SCRIPTS_HOST_FOLDER</HostFolder>
+      <SandboxFolder>SCRIPTS_SANDBOX_FOLDER</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>RESULTS_HOST_FOLDER</HostFolder>
+      <SandboxFolder>RESULTS_SANDBOX_FOLDER</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>STARTUP_COMMAND</Command>
+  </LogonCommand>
+</Configuration>

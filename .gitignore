@@ -18,6 +18,7 @@ models/
 model_cache/
 cache/
 data/
+/data/clean-machine-validation/
 *.wav
 *.mp3
 *.flac

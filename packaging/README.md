@@ -63,3 +63,17 @@ results, for example:
 ```powershell
 .\.venv-packaging\Scripts\python.exe packaging\build_manifest.py dist\ru-zh-subtitles ru-zh-subtitles.exe --mode onedir-windowed --test-result "pytest=253 passed" --test-result "frozen_live=5 passed, 0 failed"
 ```
+
+## Windows Sandbox validation kit
+
+`packaging/clean_machine/` prepares a local-only, Git-ignored validation tree
+and two network-disabled `.wsb` configurations. It validates the current commit,
+both EXEs, relative SHA manifests, package privacy, exact approved cache files,
+read-only package/model/script mappings, and a unique writable results mapping.
+It never downloads models, enables Sandbox, maps the repository/user profile, or
+infers CUDA support from vGPU.
+
+See `packaging/clean_machine/README.md` and
+`docs/windows-sandbox-clean-machine-validation.md`. Real generated `.wsb` files,
+package/model copies, WAVs, manifests, logs, and results must stay under ignored
+`data/clean-machine-validation/`; they must not be published or committed.

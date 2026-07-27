@@ -659,3 +659,43 @@ After the new size/PE tests were included, the complete suite passed 271/271 in
 1.69 seconds; coverage passed 271/271 in 2.68 seconds at 80%. The packaging
 environment passed its 32/32 focused tests. Both virtual environments again
 reported no broken requirements.
+
+## Windows Sandbox clean-machine validation kit
+
+PR #10 passed GitHub Actions and was squash-merged as
+`34e7cab275dc6fa6a92d7c71ee9aba56de5ae076`. The independent branch
+`test/windows-sandbox-clean-machine` was then created from the updated `main`.
+No dependency changed: development and packaging Python are 3.11.9; PyInstaller
+is 6.21.0; Torch is 2.12.1+cu130 with CUDA build 13.0; Transformers 5.14.1,
+ONNX Runtime 1.28.0, onnx-asr 0.12.0, Hugging Face Hub 1.24.0, NumPy 2.4.6,
+and sounddevice 0.5.5 remain installed. Both environments passed `pip check`.
+
+The host survey found Windows 11 Home Build 26200, 16,783,233,024 bytes of RAM,
+firmware virtualization/VM extensions/SLAT/DEP enabled, 308,870,168,576 bytes
+free on C:, no Windows Sandbox AppX, and an optional-feature query that would
+require elevation. No elevation, feature change, Hyper-V/BIOS change, restart,
+or security change was attempted. The exact status is **Clean-machine
+validation kit prepared; Windows Sandbox unavailable**; no minimal-PATH
+substitute was used.
+
+The optimized combined rebuild succeeded in 106.747 seconds at 3,064,138,625
+bytes, 5,463 files, and 98 DLLs. Console/GUI SHA-256 values are respectively
+`863b7b05ef5abcdd1e2e1a98a69cbe56faf921ea820f9b0f277c5857732bf496` and
+`026faadff7daec362f0155a27e81fb3117e07d67015fee447eb7142628fabfba`.
+An initial COLLECT retry was needed after Windows could not fully remove a prior
+output directory; no owning project process remained, and the unchanged,
+non-concurrent retry passed. The full staging design, cache revisions, tests,
+manual eligible-host checklist, warnings, and unexecuted Sandbox fields are in
+`windows-sandbox-clean-machine-validation.md`.
+
+The ignored local staging completed in 313.604 seconds. Its package manifest
+covers 3,064,138,625 bytes/5,463 files/98 DLLs; the exact three-model manifest
+covers 17 files and 3,377,386,298 bytes. Generated package-only and offline-cache
+configs use 8,192 MB, disabled networking, read-only package/scripts/model
+mappings, and separate unique empty writable results directories. They were not
+launched because the host prerequisites failed.
+
+Post-copy hash validation matched package 5,463/5,463 and model 17/17 with zero
+failures. The final source suite passed 308/308 in 2.34 seconds; the coverage run
+passed 308/308 in 3.33 seconds at 80%; the packaging environment passed its
+69/69 focused tests. Both `pip check` commands remained clean.
