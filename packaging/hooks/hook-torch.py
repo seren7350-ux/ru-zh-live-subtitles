@@ -1,5 +1,7 @@
 """Conservative Windows Torch hook with evidence-based test-module filtering."""
 
+import os
+
 from PyInstaller.utils.hooks import (
     PY_DYLIB_PATTERNS,
     collect_data_files,
@@ -49,5 +51,9 @@ binaries = collect_dynamic_libs(
     search_patterns=PY_DYLIB_PATTERNS + ["*.so.*"],
 )
 
-module_collection_mode = "pyz+py"
+module_collection_mode = os.environ.get("RU_ZH_TORCH_COLLECTION_MODE", "pyz+py")
+if module_collection_mode not in {"pyz", "pyz+py"}:
+    raise RuntimeError(
+        "RU_ZH_TORCH_COLLECTION_MODE must be either 'pyz' or 'pyz+py'"
+    )
 warn_on_missing_hiddenimports = False

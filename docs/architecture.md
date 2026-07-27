@@ -171,3 +171,19 @@ of VAD recurrent state and the segmentation state machine. The coordinator owns
 stream lifetime, termination, joining, summary generation, and optional writes.
 This separation keeps microphone transport independent from future ASR,
 translation, subtitle state, and GUI components.
+
+## Frozen Windows layout
+
+```text
+ru-zh-subtitles.exe (windowed) -------+
+                                      +--> one shared _internal dependency tree
+ru-zh-subtitles-console.exe ----------+    (Python, Tk, ONNX Runtime, Torch/CUDA)
+```
+
+`packaging/combined.spec` deliberately uses one analysis/PYZ/dependency collect
+for both launchers. The executable basename still selects console or windowed
+dispatch in the existing entrypoint, whose first runtime action remains
+`multiprocessing.freeze_support()`. Model caches and runtime logs remain outside
+the distribution. The size-analysis and PE tools are packaging-time utilities,
+not application dependencies. Detailed boundaries and validation are in
+`windows-package-size-optimization.md`.
