@@ -4,6 +4,7 @@ import queue
 import multiprocessing
 import threading
 import time
+from dataclasses import asdict
 from types import SimpleNamespace
 
 from live_subtitles.gui.events import ListeningEvent, StoppedEvent, SubtitleEvent
@@ -195,6 +196,7 @@ class FakeProcess:
 class FakeContext:
     def __init__(self) -> None:
         self.processes: list[FakeProcess] = []
+        self.process_kwargs: list[dict[str, object]] = []
 
     @staticmethod
     def Queue(maxsize: int) -> queue.Queue[object]:
@@ -210,6 +212,7 @@ class FakeContext:
 
     def Process(self, **kwargs: object) -> FakeProcess:
         assert kwargs["name"] == "subtitle-overlay-live-process"
+        self.process_kwargs.append(dict(kwargs))
         process = FakeProcess(**kwargs)
         self.processes.append(process)
         return process
@@ -229,6 +232,41 @@ def test_process_controller_prevents_concurrent_start_and_restarts_cleanly() -> 
     assert controller.start()
     assert context.processes[0].closed
     assert len(context.processes) == 2
+
+
+def test_set_device_index_rejects_running_controller_without_mutation() -> None:
+    context = FakeContext()
+    controller = LiveProcessOverlayController(config(), context=context)
+    original = controller.config
+    assert controller.start()
+    assert not controller.set_device_index(9)
+    assert controller.config is original
+    assert controller.config.device_index == 1
+
+
+def test_set_device_index_replaces_only_device_field_while_stopped() -> None:
+    controller = LiveProcessOverlayController(config(), context=FakeContext())
+    original = asdict(controller.config)
+    assert controller.set_device_index(9)
+    updated = asdict(controller.config)
+    assert updated.pop("device_index") == 9
+    assert original.pop("device_index") == 1
+    assert updated == original
+
+
+def test_restart_passes_latest_device_index_to_new_child_process() -> None:
+    context = FakeContext()
+    controller = LiveProcessOverlayController(config(), context=context)
+    assert controller.start()
+    first_args = context.process_kwargs[0]["args"]
+    assert isinstance(first_args, tuple)
+    assert first_args[0].device_index == 1
+    context.processes[0].alive = False
+    assert controller.set_device_index(7)
+    assert controller.start()
+    second_args = context.process_kwargs[1]["args"]
+    assert isinstance(second_args, tuple)
+    assert second_args[0].device_index == 7
 
 
 def _spawn_emit_stopped(transport: ProcessEventTransport) -> None:

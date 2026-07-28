@@ -219,3 +219,31 @@ read-only, and validated twice from the same restored, network-disabled VMware
 snapshot. The GUI uses prepared short-file ASR/translation workers; it is still
 not native streaming ASR. Cold model-start RTF and prepared live-segment latency
 are recorded separately. See `cpu-clean-machine-recovery-validation.md`.
+
+## GUI microphone selection boundary
+
+The live settings panel does not query PortAudio directly and does not own the
+process controller:
+
+```text
+recording.list_input_devices/select_input_device
+  -> no-Tk MicrophoneSelectorModel (identity = PortAudio index)
+  -> GuiRuntime callbacks
+  -> persistent SettingsPanel ttk.Combobox
+  -> LiveProcessOverlayController.set_device_index
+  -> dataclasses.replace(frozen LiveWorkerConfig)
+  -> next spawned live worker
+```
+
+Enumeration occurs only when the live SettingsPanel is first created or the
+user clicks Refresh. Rendering does not poll devices. Labels are presentation
+only; duplicate names remain distinct because combobox positions map to device
+indexes. `System default` maps to `None`, so startup uses
+`select_input_device(None)` instead of pinning an earlier default.
+
+GuiRuntime validates the selection before `begin_session()` and before child
+process creation. A disconnected or invalid endpoint cannot enter Preparing,
+load models, or open a microphone. Config replacement is allowed only after the
+worker fully stops. The panel contains no controller reference, background Tk
+thread, or device poll. The demo controller receives no selector callbacks, so
+`overlay-demo` retains its model-free and microphone-free boundary.

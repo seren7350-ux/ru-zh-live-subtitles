@@ -30,6 +30,16 @@ Settings only shows or hides the settings panel; right-click is a shortcut to
 the same action. The earlier compact, expanded, and captions-only modes have
 been removed.
 
+`live-overlay` Settings also provides a **Microphone input** selector backed by
+the existing PortAudio discovery layer. `System default` stores `None` and is
+resolved again when each new session starts; `--device N` supplies only the
+initial GUI choice. Refresh re-enumerates input-capable endpoints and preserves
+an explicit choice by device index. The selector and Refresh button are disabled
+while preparing, listening, stopping, or closing. Stop the current session,
+choose a device, and Start again to apply it. Selection is process-local: there
+is no mid-session hot switching or cross-restart persistence. `overlay-demo`
+does not show this selector and remains model-free and microphone-free.
+
 **GUI overlay prototype accepted for packaging evaluation.** This status is
 based on the documented user interaction/PowerPoint acceptance and real offline
 60/120-second microphone validation. It does not mean production ready.

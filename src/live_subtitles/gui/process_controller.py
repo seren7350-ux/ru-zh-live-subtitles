@@ -6,7 +6,7 @@ import multiprocessing
 import queue
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from ..pipeline.offline_file import OfflineAudioTranslationPipeline
@@ -376,6 +376,14 @@ class LiveProcessOverlayController:
     @property
     def running(self) -> bool:
         return self._process is not None and bool(self._process.is_alive())
+
+    def set_device_index(self, device_index: int | None) -> bool:
+        """Replace only the next worker's device index while fully stopped."""
+
+        if self.running:
+            return False
+        self.config = replace(self.config, device_index=device_index)
+        return True
 
     def start(self) -> bool:
         if self.running:

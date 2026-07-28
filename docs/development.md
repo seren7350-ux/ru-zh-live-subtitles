@@ -726,3 +726,49 @@ The complete environment, timings, memory, package comparison, preserved CUDA
 failure evidence and warnings are in
 `cpu-clean-machine-recovery-validation.md`. This result is not an installer,
 release, GPU clean-machine validation or sustained-load performance guarantee.
+
+## GUI microphone input selector (2026-07-28)
+
+Branch `feat/gui-microphone-selector` added a no-Tk selector model, readonly live
+Settings combobox, explicit Refresh action, startup validation, and immutable
+`LiveWorkerConfig` replacement. It reused `AudioDevice`, `AudioDeviceError`,
+`list_input_devices()` and `select_input_device()` without adding a dependency.
+`--device` is the initial choice only; `System default` remains `None`. Device
+identity is the PortAudio index, not the label.
+
+The development host reported 15 input-capable PortAudio endpoints. Two
+distinct physical inputs were exercised: index 1, `麦克风 (HyperX Cloud III)`
+(the default), and index 2, `麦克风阵列 (2- Realtek(R) Audio)`. Source Settings
+showed both, retained index 1 across Refresh, disabled both controls during
+Preparing/Listening/Stopping, and re-enabled them after worker exit. Stop ->
+change to index 2 -> Start opened the new device. Source displayed 5/5 subtitles
+across two sessions, including `Здравствуйте.`, `Сейчас проверка.`, `Привет!`,
+and `До свидания.` with Chinese output. GUI render P95 was 0.035 s and heartbeat
+maximum 0.177 s. Audio blocks were 2535/2535 and 763/763; loss, gaps, PortAudio
+status, backlog, overflow, and temporary WAV residue were zero. Workers and
+microphones released.
+
+Fresh frozen builds ran from `%TEMP%\字幕 包测试` with PATH limited to Windows and
+System32. The CPU onedir contained 5,527 files and 658,366,169 bytes (0.613
+GiB), `torch_cpu.dll`, zero CUDA runtime DLLs, Torch `2.12.1+cpu`, runtime family
+`cpu`, `torch.version.cuda=None`, and `torch.cuda.is_available()=False`. Two GUI
+sessions applied index 1 then index 2 and displayed 6 successful captions. The
+first Stop boundary also reported one ASR segment failure; the second session
+was 3/3. Aggregate render P95 was 0.039 s and heartbeat 0.123 s. Both sessions
+had zero dropped blocks/gaps/PortAudio/backlog, removed all 7 temporary WAVs,
+and left no process.
+
+The GPU onedir contained 5,550 files and 3,066,444,470 bytes (2.856 GiB), 22
+CUDA runtime DLLs, Torch `2.12.1+cu130`, CUDA 13.0, and selected the RTX 4060.
+System default resolved to HyperX for session 1; session 2 explicitly used
+Realtek index 2. The package displayed 4/4 captions. Render P95 was 0.041 s,
+heartbeat 0.147 s, RTF P95 at most 0.906, RU P95 at most 0.614 s, and ZH P95 at
+most 1.431 s. Both sessions had zero loss/gaps/status/backlog/overflow, 4/4/0
+temporary WAV create/delete/remain, released workers/microphones, and left no
+process. Neither frozen directory contains application model weights; the small
+onnx-asr resampling graphs remain runtime assets.
+
+This selector revision was not run in VMware, Windows Sandbox, or another clean
+machine. The earlier CPU clean-VMware result remains the PR #12 baseline only.
+GPU clean-machine validation still requires a separate Windows host with a real
+NVIDIA GPU.

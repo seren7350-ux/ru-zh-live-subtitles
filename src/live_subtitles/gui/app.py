@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Any, Callable
 
+from ..audio.recording import AudioDeviceError
 from ..diagnostic_logging import diagnostic_logger
 from ..config import (
     DEFAULT_ASR_MODEL,
@@ -16,7 +17,7 @@ from ..config import (
     DEFAULT_TRANSLATION_ENGINE,
 )
 from ..translation.factory import TRANSLATION_ENGINES
-from .controller import DemoOverlayController, GuiMetricsSnapshot
+from .controller import DemoOverlayController, GuiMetricsSnapshot, sanitize_message
 from .events import (
     FatalErrorEvent,
     ListeningEvent,
@@ -27,7 +28,8 @@ from .events import (
     StoppedEvent,
     SubtitleEvent,
 )
-from .overlay import SubtitleOverlay
+from .microphone_selector import MicrophoneSelectorModel, MicrophoneSelectorSnapshot
+from .overlay import MicrophonePanelCallbacks, SubtitleOverlay
 from .process_controller import (
     LiveProcessOverlayController,
     LiveWorkerConfig,
@@ -171,11 +173,13 @@ class GuiRuntime:
         controller: Any,
         *,
         ui_poll_ms: int,
+        microphone_selector: MicrophoneSelectorModel | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.root = root
         self.state = state
         self.controller = controller
+        self.microphone_selector = microphone_selector
         self.ui_poll_ms = ui_poll_ms
         self.clock = clock
         self.exit_code = 0
@@ -184,6 +188,14 @@ class GuiRuntime:
         self._last_heartbeat = self.clock()
         self._queue_fatal_seen = False
         self._logger = diagnostic_logger()
+        microphone_callbacks = None
+        if microphone_selector is not None:
+            microphone_callbacks = MicrophonePanelCallbacks(
+                refresh=self.refresh_microphones,
+                select=self.select_microphone,
+                snapshot=microphone_selector.snapshot,
+                can_change=self.can_change_microphone,
+            )
         self.overlay = SubtitleOverlay(
             root,
             state,
@@ -191,6 +203,7 @@ class GuiRuntime:
             on_stop=self.stop,
             on_clear=self.clear,
             on_exit=self.close,
+            microphone=microphone_callbacks,
         )
         self.root.report_callback_exception = self._handle_tk_callback_exception
 
@@ -222,9 +235,67 @@ class GuiRuntime:
                 traceback.print_exc(file=sys.stderr)
         self.controller.request_stop("GUI callback error")
 
+    def can_change_microphone(self) -> bool:
+        return not (
+            self.closing
+            or self.controller.running
+            or self.state.preparing
+            or self.state.stopping
+        )
+
+    def refresh_microphones(self) -> MicrophoneSelectorSnapshot:
+        if self.microphone_selector is None:
+            raise RuntimeError("Microphone selection is not available in this mode.")
+        snapshot = self.microphone_selector.refresh()
+        if snapshot.query_error_type is not None:
+            self._logger.warning(
+                "Input device enumeration failed; type=%s",
+                snapshot.query_error_type,
+            )
+        return snapshot
+
+    def select_microphone(self, device_index: int | None) -> MicrophoneSelectorSnapshot:
+        if self.microphone_selector is None:
+            raise RuntimeError("Microphone selection is not available in this mode.")
+        if not self.can_change_microphone():
+            return self.microphone_selector.snapshot()
+        if not self.controller.set_device_index(device_index):
+            return self.microphone_selector.snapshot()
+        snapshot = self.microphone_selector.select(device_index)
+        self._logger.info(
+            "Input device selection changed; mode=%s; index=%s",
+            "default" if device_index is None else "explicit",
+            "none" if device_index is None else device_index,
+        )
+        return snapshot
+
     def start(self) -> None:
         if self.closing or self.controller.running:
             return
+        if self.microphone_selector is not None:
+            try:
+                self.microphone_selector.validate_selection()
+            except AudioDeviceError as exc:
+                self._logger.warning(
+                    "Input device validation failed; type=%s", type(exc).__name__
+                )
+                self.state.set_status("Ready")
+                self.state.latest_error = (
+                    f"Unable to start with the selected microphone: {sanitize_message(exc)}"
+                )
+                self.overlay.set_running(False)
+                self.overlay.render()
+                return
+            if not self.controller.set_device_index(
+                self.microphone_selector.selected_index
+            ):
+                self.state.set_status("Ready")
+                self.state.latest_error = (
+                    "Unable to change the microphone while a subtitle session is running."
+                )
+                self.overlay.set_running(False)
+                self.overlay.render()
+                return
         self._logger.info("Subtitle session start requested")
         self.state.begin_session()
         self.overlay.set_running(True)
@@ -400,11 +471,23 @@ def _print_gui_summary(snapshot: GuiMetricsSnapshot) -> None:
     )
 
 
-def _run_tk(state: SubtitleViewState, controller: Any, args: argparse.Namespace) -> int:
+def _run_tk(
+    state: SubtitleViewState,
+    controller: Any,
+    args: argparse.Namespace,
+    *,
+    microphone_selector: MicrophoneSelectorModel | None = None,
+) -> int:
     import tkinter as tk
 
     root = tk.Tk()
-    runtime = GuiRuntime(root, state, controller, ui_poll_ms=args.ui_poll_ms)
+    runtime = GuiRuntime(
+        root,
+        state,
+        controller,
+        ui_poll_ms=args.ui_poll_ms,
+        microphone_selector=microphone_selector,
+    )
     exit_code = runtime.run(auto_start=args.auto_start)
     _print_gui_summary(controller.metrics.snapshot())
     return exit_code
@@ -441,7 +524,12 @@ def _live_overlay(args: argparse.Namespace) -> int:
             max_new_tokens=args.max_new_tokens,
         )
     )
-    exit_code = _run_tk(state, controller, args)
+    exit_code = _run_tk(
+        state,
+        controller,
+        args,
+        microphone_selector=MicrophoneSelectorModel(args.device),
+    )
     _log_live_exit_metrics(controller)
     for index, summary in enumerate(controller.summaries, start=1):
         print(f"Live session {index}")

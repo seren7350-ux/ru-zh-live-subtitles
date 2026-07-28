@@ -7,12 +7,17 @@ from typing import Any
 import pytest
 
 from live_subtitles.gui.overlay import (
+    MicrophonePanelCallbacks,
     OverlayRenderer,
     SettingsPanel,
     SubtitleOverlay,
     position_coordinates,
 )
 from live_subtitles.gui.state import SubtitleEntry, SubtitleViewState
+from live_subtitles.gui.microphone_selector import (
+    MicrophoneChoice,
+    MicrophoneSelectorSnapshot,
+)
 
 
 class FakeWidget:
@@ -41,6 +46,11 @@ class FakeWidget:
 
     def set(self, value: object) -> None:
         self.value = value
+
+    def current(self, value: int | None = None) -> int:
+        if value is not None:
+            self.value = value
+        return int(self.value if self.value is not None else -1)
 
 
 class FakeToplevel(FakeWidget):
@@ -119,6 +129,10 @@ class FakeTk:
     Scale = FakeWidget
 
 
+class FakeTtk:
+    Combobox = FakeWidget
+
+
 class FakeRoot(FakeWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -188,7 +202,10 @@ class FakeRoot(FakeWidget):
 
 
 def build_panel(
-    *, state: SubtitleViewState | None = None, running: bool = False
+    *,
+    state: SubtitleViewState | None = None,
+    running: bool = False,
+    microphone: MicrophonePanelCallbacks | None = None,
 ) -> tuple[SettingsPanel, FakeRoot, FakeTk, list[str]]:
     view_state = state or SubtitleViewState()
     root = FakeRoot()
@@ -209,9 +226,52 @@ def build_panel(
         on_russian_font=no_op,
         on_exit=no_op,
         is_running=lambda: running,
+        microphone=microphone,
         tk_module=tk,
+        ttk_module=FakeTtk,
     )
     return panel, root, tk, calls
+
+
+def microphone_callbacks(
+    *, can_change: bool = True
+) -> tuple[MicrophonePanelCallbacks, list[str], dict[str, MicrophoneSelectorSnapshot]]:
+    snapshot = MicrophoneSelectorSnapshot(
+        choices=(
+            MicrophoneChoice(None, "System default"),
+            MicrophoneChoice(1, "1 — Input (1 channel, 48000 Hz) [default]"),
+        ),
+        selected_index=None,
+        selected_position=0,
+        status="Selected for next session: System default",
+    )
+    holder = {"snapshot": snapshot}
+    calls: list[str] = []
+
+    def refresh() -> MicrophoneSelectorSnapshot:
+        calls.append("refresh")
+        return holder["snapshot"]
+
+    def select(index: int | None) -> MicrophoneSelectorSnapshot:
+        calls.append(f"select:{index}")
+        holder["snapshot"] = MicrophoneSelectorSnapshot(
+            choices=snapshot.choices,
+            selected_index=index,
+            selected_position=0 if index is None else 1,
+            status=f"Selected for next session: {index}",
+        )
+        return holder["snapshot"]
+
+    return (
+        MicrophonePanelCallbacks(
+            refresh=refresh,
+            select=select,
+            snapshot=lambda: holder["snapshot"],
+            can_change=lambda: can_change,
+        ),
+        calls,
+        holder,
+    )
 
 
 def test_renderer_updates_bilingual_text_without_window_manager_calls() -> None:
@@ -305,6 +365,83 @@ def test_settings_panel_inherits_topmost_when_shown_without_polling_wm_state() -
     panel.hide()
     panel.show()
     assert panel.window.attribute_calls[-1] == ("-topmost", False)
+
+
+def test_live_settings_has_readonly_microphone_selector_and_refreshes_once() -> None:
+    callbacks, calls, _holder = microphone_callbacks()
+    panel, _root, _tk, _calls = build_panel(microphone=callbacks)
+    assert panel.microphone_combobox is not None
+    assert panel.microphone_combobox.options["state"] == "readonly"
+    assert panel.microphone_refresh_button is not None
+    assert calls == ["refresh"]
+    panel.show()
+    panel.sync()
+    assert calls == ["refresh"]
+
+
+def test_overlay_demo_settings_omits_microphone_region() -> None:
+    panel, _root, _tk, _calls = build_panel(microphone=None)
+    assert panel.microphone_combobox is None
+    assert panel.microphone_refresh_button is None
+    assert panel.microphone_status is None
+
+
+def test_microphone_combobox_maps_position_to_index_without_parsing_label() -> None:
+    callbacks, calls, _holder = microphone_callbacks()
+    panel, _root, _tk, _calls = build_panel(microphone=callbacks)
+    assert panel.microphone_combobox is not None
+    panel.microphone_combobox.current(1)
+    panel._on_microphone_selected()
+    assert calls == ["refresh", "select:1"]
+
+
+@pytest.mark.parametrize(
+    ("status", "running"),
+    [
+        ("Preparing...", False),
+        ("Stopping...", False),
+        ("Listening...", True),
+    ],
+)
+def test_microphone_controls_are_disabled_until_fully_stopped(
+    status: str, running: bool
+) -> None:
+    state = SubtitleViewState()
+    state.set_status(status)
+    callbacks, _calls, _holder = microphone_callbacks()
+    panel, _root, _tk, _panel_calls = build_panel(
+        state=state,
+        running=running,
+        microphone=callbacks,
+    )
+    assert panel.microphone_combobox is not None
+    assert panel.microphone_refresh_button is not None
+    assert panel.microphone_status is not None
+    assert panel.microphone_combobox.options["state"] == "disabled"
+    assert panel.microphone_refresh_button.options["state"] == "disabled"
+    assert panel.microphone_status.options["text"] == (
+        "Stop subtitles before changing the microphone."
+    )
+
+
+def test_microphone_controls_enable_when_stopped() -> None:
+    callbacks, _calls, _holder = microphone_callbacks()
+    panel, _root, _tk, _panel_calls = build_panel(microphone=callbacks)
+    assert panel.microphone_combobox is not None
+    assert panel.microphone_refresh_button is not None
+    assert panel.microphone_combobox.options["state"] == "readonly"
+    assert panel.microphone_refresh_button.options["state"] == "normal"
+
+
+def test_refresh_button_reenumerates_without_starting_or_stopping() -> None:
+    callbacks, calls, _holder = microphone_callbacks()
+    panel, _root, _tk, panel_calls = build_panel(microphone=callbacks)
+    assert panel.microphone_refresh_button is not None
+    command = panel.microphone_refresh_button.options["command"]
+    assert callable(command)
+    command()
+    assert calls == ["refresh", "refresh"]
+    assert panel_calls == []
 
 
 def overlay_stub() -> tuple[SubtitleOverlay, FakeRoot]:
