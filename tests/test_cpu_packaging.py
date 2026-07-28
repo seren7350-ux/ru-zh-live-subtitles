@@ -172,6 +172,7 @@ def test_cpu_spec_has_shared_two_exe_onedir_and_no_gpu_profile() -> None:
     assert "CPU_BUILD_METADATA.json" in source
     assert 'project_root / "build" / "cpu-provenance"' in source
     assert "WORKPATH" not in source
+    assert "shutil.copy2(source, cpu_distribution / name)" in source
     assert "onefile" not in source.casefold()
 
 

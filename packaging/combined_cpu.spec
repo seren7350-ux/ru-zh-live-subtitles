@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import importlib.metadata
+import shutil
 import site
 import sys
 from pathlib import Path
@@ -24,10 +25,6 @@ a = Analysis(
     pathex=[str(project_root / "src")],
     binaries=[],
     datas=[
-        (str(project_root / "README.md"), "."),
-        (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
-        (str(project_root / "packaging" / "installer" / "MODEL_SETUP.txt"), "."),
-        (str(cpu_build_metadata), "."),
         (str(Path(sys.base_prefix) / "LICENSE.txt"), "licenses/python"),
         (str(Path(sys.base_prefix) / "tcl" / "tk8.6" / "license.terms"), "licenses/tk"),
     ],
@@ -103,4 +100,13 @@ coll = COLLECT(
     name="ru-zh-subtitles-cpu",
 )
 
-cpu_package_policy.validate_cpu_distribution(Path(DISTPATH) / "ru-zh-subtitles-cpu")
+cpu_distribution = Path(DISTPATH) / "ru-zh-subtitles-cpu"
+for source, name in (
+    (project_root / "README.md", "README.md"),
+    (project_root / "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
+    (project_root / "packaging" / "installer" / "MODEL_SETUP.txt", "MODEL_SETUP.txt"),
+    (cpu_build_metadata, "CPU_BUILD_METADATA.json"),
+):
+    shutil.copy2(source, cpu_distribution / name)
+
+cpu_package_policy.validate_cpu_distribution(cpu_distribution)
