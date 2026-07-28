@@ -105,6 +105,7 @@ for source, name in (
     (project_root / "README.md", "README.md"),
     (project_root / "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
     (project_root / "packaging" / "installer" / "MODEL_SETUP.txt", "MODEL_SETUP.txt"),
+    (project_root / "packaging" / "installer" / "MODEL_LICENSES.txt", "MODEL_LICENSES.txt"),
     (cpu_build_metadata, "CPU_BUILD_METADATA.json"),
 ):
     shutil.copy2(source, cpu_distribution / name)

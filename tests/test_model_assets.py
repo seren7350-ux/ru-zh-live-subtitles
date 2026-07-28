@@ -179,3 +179,22 @@ def test_model_doctor_reports_nonzero_without_importing_model_runtimes(
     assert "import torch" not in source
     assert "import transformers" not in source
     assert "import onnxruntime" not in source
+
+
+def test_model_doctor_reports_ready_for_installer_managed_layout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    models, hub = make_ready_tree(tmp_path, monkeypatch)
+    report = model_assets.quick_check_model_assets(
+        model_root=models,
+        hf_cache_roots=(hub,),
+    )
+    monkeypatch.setattr(cli, "quick_check_model_assets", lambda: report)
+    assert cli.main(["model-doctor"]) == 0
+    output = capsys.readouterr().out
+    assert "Offline readiness: READY" in output
+    assert "[OK] silero-vad/6.2.1" in output
+    assert f"revision={model_assets.GIGAAM_REVISION}" in output
+    assert f"revision={model_assets.NLLB_REVISION}" in output

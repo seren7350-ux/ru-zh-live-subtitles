@@ -1,10 +1,10 @@
 # CPU-only distribution policy
 
-The sole end-user distribution candidate is the Windows x64 CPU-only onedir and
-its per-user installer. `packaging/combined_cpu.spec` is the only source for
-that candidate. The installed CPU application is approximately 658 MB; separate
-local model assets of approximately 3.4 GB are required before transcription
-and translation can run.
+The sole course-delivery candidate is the Windows x64 self-contained CPU-only
+offline installer. `packaging/combined_cpu.spec` remains the only source for its
+approximately 658 MB application payload. A separately validated model bundle
+adds exactly 3,377,386,294 bytes of pinned model assets to the installer without
+placing model weights in the CPU onedir.
 
 The GPU spec and supporting hook/profile remain in the repository only for
 internal development, historical benchmarks, and possible future experiments.
@@ -20,7 +20,7 @@ The current application version continues to come only from
 The spec first rejects a dirty Git worktree, then writes a path-safe
 `CPU_BUILD_METADATA.json` under ignored `build/cpu-provenance`. After COLLECT,
 it publishes that file at the CPU onedir root beside `README.md`,
-`THIRD_PARTY_NOTICES.md`, and `MODEL_SETUP.txt`. The metadata binds the onedir
+`THIRD_PARTY_NOTICES.md`, `MODEL_SETUP.txt`, and `MODEL_LICENSES.txt`. The metadata binds the onedir
 to the clean lowercase Git HEAD, version `0.1.0`, CPU runtime family, Windows
 x64 platform, and `packaging/combined_cpu.spec`. The GPU spec is unchanged and
 does not collect CPU provenance.
@@ -29,12 +29,13 @@ does not collect CPU provenance.
 all cross-check the embedded version and commit against the current clean HEAD
 and explicit expected commit. A stale or missing provenance file is rejected
 before frozen doctor or ISCC compilation. The full release manifest includes
-the provenance file and the three root documents.
+the provenance file and the four root documents.
 
-Model weights, Hugging Face caches, VAD assets, recordings, logs, staging,
-virtual environments, and Git metadata are outside the application package.
-The installer performs no download and starts the GUI in offline, no-auto-start
-mode. See [model assets setup](model-assets-setup.md).
+Model weights remain outside the application package, but the offline installer
+copies the verified bundle to the per-user managed model root. Recordings, logs,
+staging, virtual environments, and Git metadata are never bundled. The installer
+performs no download and starts the GUI in CPU, offline, no-auto-start mode. See
+[model assets setup](model-assets-setup.md).
 
 This candidate is unsigned and has only been validated on the development
 machine. It has not been validated on a clean Windows machine and is not a

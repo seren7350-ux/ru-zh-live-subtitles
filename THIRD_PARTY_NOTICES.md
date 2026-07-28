@@ -42,11 +42,11 @@ are included in `dist`.
 | GigaAM-v3 E2E RNN-T ONNX | `istupakov/gigaam-v3-onnx`, derived from the GigaAM project | MIT, stated by the [ONNX model card](https://huggingface.co/istupakov/gigaam-v3-onnx) and [upstream GigaAM license](https://github.com/salute-developers/GigaAM/blob/main/LICENSE) |
 | NLLB-200 distilled 600M | `facebook/nllb-200-distilled-600M` | CC-BY-NC-4.0; non-commercial research model. See the [official model card](https://huggingface.co/facebook/nllb-200-distilled-600M). |
 
-NLLB is a non-commercial candidate. The package does not include its weights;
-the user must prepare an external model cache. No statement here approves
-commercial distribution. A full license, attribution, export-control, privacy,
-and dependency audit remains required before any distribution beyond this
-feasibility evaluation.
+NLLB is a non-commercial candidate. Its weights remain outside the CPU onedir,
+but the self-contained course-delivery installer includes them in the managed
+model payload. No statement here approves commercial distribution. A full
+export-control, privacy, and dependency audit remains required before any
+distribution beyond this non-commercial feasibility evaluation.
 
 ## Shared onedir size work
 
@@ -63,11 +63,16 @@ The sole end-user distribution candidate uses the official PyTorch
 `2.12.1+cpu` wheel
 in a separate build environment and onedir. It does not mix CPU and CUDA Torch
 runtimes, and its scan contains no CUDA runtime DLL. This changes neither the
-PyTorch license boundary nor the external-model boundary above. The existing
-CUDA spec remains an internal development and historical benchmark artifact;
+PyTorch license boundary nor the separate model-license boundary above. The
+existing CUDA spec remains an internal development and historical benchmark artifact;
 it is not an end-user candidate and no GPU installer is produced.
 
-The per-user CPU installer includes the runtime notices but no Silero, GigaAM,
-NLLB weight, Hugging Face cache, or download credential. NLLB remains
-CC-BY-NC-4.0 and non-commercial. The installer is unsigned, locally validated
-only, not a public Release, and not an approved commercial distribution.
+The self-contained per-user CPU offline installer includes the pinned Silero
+VAD 6.2.1 assets (MIT), `istupakov/gigaam-v3-onnx` at revision
+`322c3b29492673eb7d0b434bfa9dfb8653e34d02` (MIT), and
+`facebook/nllb-200-distilled-600M` at revision
+`f8d333a098d19b4fd9a8b18f94170487ad3f821d` (CC-BY-NC-4.0). Attribution and
+license details are installed as `MODEL_LICENSES.txt`. NLLB remains restricted
+to non-commercial use. No credential is included. The installer is unsigned,
+locally validated only, not a public Release, and not an approved commercial
+distribution.
