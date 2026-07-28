@@ -247,3 +247,31 @@ load models, or open a microphone. Config replacement is allowed only after the
 worker fully stops. The panel contains no controller reference, background Tk
 thread, or device poll. The demo controller receives no selector callbacks, so
 `overlay-demo` retains its model-free and microphone-free boundary.
+
+## Installed offline model boundary
+
+The installed application keeps code and models separate:
+
+```text
+per-user CPU {app}
+  -> process-local offline policy
+  -> fast model-assets preflight (no ML imports)
+  -> user-controlled Start
+  -> CPU VAD / ASR / NLLB workers
+
+%LOCALAPPDATA%\ru-zh-live-subtitles\models
+or an explicit/default Hugging Face cache
+  -> pinned Silero, GigaAM and NLLB assets
+```
+
+`ModelAssetsModel` performs a one-shot check after the Tk root exists and again
+before Start. It checks fixed revisions, exact `refs/main` form, required files,
+and known sizes without importing Torch, Transformers, ONNX Runtime, or model
+modules. Missing assets leave the GUI alive but prevent worker and microphone
+creation. Settings owns Recheck/Open-folder/Open-instructions callbacks; it adds
+no second Tk, grab, focus forcing, background Tk calls, or polling.
+
+`--offline` sets only process-local `HF_HUB_OFFLINE` and
+`TRANSFORMERS_OFFLINE` before worker creation. The installer contains no model
+weights and uninstall never targets the external model root. The CPU installer
+is the end-user candidate; the GPU graph remains internal only.

@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from live_subtitles.model_assets import MODEL_SPECS, ModelAssetSpec
+
 
 class AssetPreparationError(RuntimeError):
     """Raised when a candidate asset violates the clean-machine boundary."""
@@ -77,14 +79,7 @@ CPU_FORBIDDEN_CUDA_DLL_PATTERNS = (
 )
 
 
-@dataclass(frozen=True)
-class ModelSpec:
-    key: str
-    model_id: str
-    cache_name: str | None
-    revision: str
-    required_files: tuple[str, ...]
-    license_id: str
+ModelSpec = ModelAssetSpec
 
 
 @dataclass(frozen=True)
@@ -105,48 +100,6 @@ class ApprovedModelSource:
 
     snapshot: Path
     revision_ref: SourceRevisionRef | None
-
-
-MODEL_SPECS = (
-    ModelSpec(
-        key="silero-vad",
-        model_id="silero-vad/6.2.1",
-        cache_name=None,
-        revision="6.2.1",
-        required_files=("LICENSE", "metadata.json", "silero_vad.onnx"),
-        license_id="MIT",
-    ),
-    ModelSpec(
-        key="gigaam-v3-e2e-rnnt",
-        model_id="istupakov/gigaam-v3-onnx",
-        cache_name="models--istupakov--gigaam-v3-onnx",
-        revision="322c3b29492673eb7d0b434bfa9dfb8653e34d02",
-        required_files=(
-            "config.json",
-            "v3_e2e_rnnt_decoder.onnx",
-            "v3_e2e_rnnt_encoder.onnx",
-            "v3_e2e_rnnt_joint.onnx",
-            "v3_e2e_rnnt_vocab.txt",
-        ),
-        license_id="MIT",
-    ),
-    ModelSpec(
-        key="nllb-200-distilled-600m",
-        model_id="facebook/nllb-200-distilled-600M",
-        cache_name="models--facebook--nllb-200-distilled-600M",
-        revision="f8d333a098d19b4fd9a8b18f94170487ad3f821d",
-        required_files=(
-            "config.json",
-            "generation_config.json",
-            "pytorch_model.bin",
-            "sentencepiece.bpe.model",
-            "special_tokens_map.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
-        ),
-        license_id="CC-BY-NC-4.0",
-    ),
-)
 
 
 def _relative(path: Path, root: Path) -> str:

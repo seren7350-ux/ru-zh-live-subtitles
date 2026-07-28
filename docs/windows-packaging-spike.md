@@ -317,3 +317,12 @@ It adds a separate CPU PyTorch onedir and reproduces offline ASR/NLLB plus GUI
 checks in two restored VMware snapshots. The original GPU spec and runtime are
 unchanged. This is a packaging compatibility result, not installer, signing,
 release or production readiness.
+
+The later distribution decision makes the CPU-only x64 onedir the sole end-user
+candidate and keeps the GPU path internal for development/history only. A
+per-user Inno Setup candidate now packages that CPU onedir without model weights
+or CUDA runtime. It is unsigned and locally validated only; see
+[CPU-only distribution policy](cpu-only-distribution.md) and
+[CPU-only installer validation](cpu-only-installer-validation.md). This does not
+retroactively turn the earlier packaging spike into a clean-machine, signed, or
+public Release result.

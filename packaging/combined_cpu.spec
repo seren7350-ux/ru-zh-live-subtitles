@@ -23,6 +23,7 @@ a = Analysis(
     datas=[
         (str(project_root / "README.md"), "."),
         (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
+        (str(project_root / "packaging" / "installer" / "MODEL_SETUP.txt"), "."),
         (str(Path(sys.base_prefix) / "LICENSE.txt"), "licenses/python"),
         (str(Path(sys.base_prefix) / "tcl" / "tk8.6" / "license.terms"), "licenses/tk"),
     ],

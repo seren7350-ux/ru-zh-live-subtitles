@@ -57,11 +57,17 @@ license files, notices, SBOM material, Python/Tk licenses, and every runtime DLL
 remain included. See `docs/windows-package-size-optimization.md` for the exact
 retained/excluded evidence. No claim of redistribution approval is made.
 
-## Separate CPU validation package
+## CPU distribution candidate
 
-The CPU-only validation candidate uses the official PyTorch `2.12.1+cpu` wheel
+The sole end-user distribution candidate uses the official PyTorch
+`2.12.1+cpu` wheel
 in a separate build environment and onedir. It does not mix CPU and CUDA Torch
 runtimes, and its scan contains no CUDA runtime DLL. This changes neither the
 PyTorch license boundary nor the external-model boundary above. The existing
-CUDA package remains a separate candidate; neither package is an installer,
-signed release, or approved commercial distribution.
+CUDA spec remains an internal development and historical benchmark artifact;
+it is not an end-user candidate and no GPU installer is produced.
+
+The per-user CPU installer includes the runtime notices but no Silero, GigaAM,
+NLLB weight, Hugging Face cache, or download credential. NLLB remains
+CC-BY-NC-4.0 and non-commercial. The installer is unsigned, locally validated
+only, not a public Release, and not an approved commercial distribution.

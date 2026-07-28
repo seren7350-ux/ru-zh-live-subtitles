@@ -772,3 +772,103 @@ This selector revision was not run in VMware, Windows Sandbox, or another clean
 machine. The earlier CPU clean-VMware result remains the PR #12 baseline only.
 GPU clean-machine validation still requires a separate Windows host with a real
 NVIDIA GPU.
+
+## CPU-only installer candidate validation
+
+Branch `feat/cpu-only-installer` started at main commit
+`8a0af13a22622a6721f2d83e535ac10959c484a4`. The end-user support matrix was
+narrowed to Windows x64 CPU-only; the GPU spec remains internal and was not
+rebuilt or modified. The application remains version 0.1.0.
+
+The official Inno Setup 7.0.2 x64 installer was downloaded from the immutable
+`jrsoftware/issrc` GitHub release. The 17,020,192-byte download had SHA-256
+`5AD54CA3DEF786F8F4212552E54CC6D8D61329E2D24A1CFEE0571D42C2684FF1`
+and valid Pyrsys B.V. Authenticode. It was installed for the current user without
+elevation. `ISCC.exe /?` displayed help but returned shell exit code 1; registry
+and signature checks independently confirmed version 7.0.2.
+
+The rebuilt CPU onedir measured 658,392,446 bytes, 5,528 files, 70 DLLs,
+374,051,194 Torch bytes, and 329,579,216 bytes under `torch\lib`.
+`torch_cpu.dll` was 307,778,048 bytes. Both application executables were
+present; CUDA DLL and model-weight counts were zero. PyInstaller warned that
+TensorBoard was absent, emitted Torch distributed deprecations, and ignored a
+Linux `libgomp` path. The first build attempt left a single exact PyInstaller
+process after the caller timeout; that process was identified by command line
+and stopped before the clean rebuild. No unrelated process or artifact was
+removed.
+
+The final Inno compile took 96.972 seconds with zero warnings. The unsigned
+`ru-zh-live-subtitles-cpu-0.1.0-setup.exe` measured 215,924,985 bytes and had
+SHA-256
+`DE0B535D123B2470F680737CB10F635433612E29D8C90DE44A31F65BF6A895CC`.
+Its Authenticode status is `NotSigned`. The distributable release metadata uses
+only relative file names and contains no developer path, credential, model
+weight, or CUDA DLL. An initial evidence-log implementation failed after a
+successful compile because empty ISCC output did not create a file; the script
+was corrected to create an empty log and the complete build was rerun.
+
+The installed shortcut arguments were exactly
+`live-overlay --translation-device cpu --offline --no-auto-start`. Interactive
+installation used `%LOCALAPPDATA%\Programs\RuZhLiveSubtitles`, required no UAC,
+showed a 633.3 MB disk requirement, left the optional desktop shortcut unchecked,
+created two Start Menu shortcuts, and registered one HKCU uninstall entry. A
+Computer Use launch isolated HKCU from the shell view during an initial test;
+that installation was removed and repeated from the current PowerShell user,
+after which the expected uninstall entry was present.
+
+With isolated empty process-local `LOCALAPPDATA`/`HF_HOME`, the installed GUI
+opened without a console, reported all three missing model sets and the model
+root, blocked Start, created no worker, loaded no model, opened no microphone,
+made zero network connections, and exited without residue. `model-doctor`
+returned 2 and `Offline readiness: NOT READY`. With the real pinned cache,
+`model-doctor` returned 0 and all Silero/GigaAM/NLLB checks passed.
+
+The real installed CPU GUI selected HyperX index 1 and displayed:
+
+```text
+RU: Здравствуйте, это проверка распознавания русской речи.
+ZH: 你好,这是一个俄罗斯语识别检查.
+```
+
+Its first session had RTF P95 0.484, RU latency P95 0.659 seconds, ZH latency
+P95 2.411 seconds, render P95 0.039 seconds, heartbeat 0.226 seconds, one
+successful subtitle, and zero failed subtitles. Dropped blocks, gaps, PortAudio
+status, and backlog were all zero; temporary WAVs were 1/1/0. After Stop, the
+selector changed to Realtek index 2; the next Start used that device and reached
+Listening, then stopped with no temporary WAV. Both sessions released workers
+and microphones and the application left no process. A separate listening-state
+sample observed two processes with combined Working Set 2,684,854,272 bytes,
+Private Memory 5,339,525,120 bytes, and Peak Working Set 2,684,919,808 bytes.
+
+Same-version silent repair returned 0 in 16.132 seconds, required no restart,
+kept one uninstall entry, one Start Menu group/two links, the same directory,
+and a complete manifest. A current-user Chinese-and-space directory was then
+installed silently; the confirmed rerun returned 0 in 19.858 seconds, preserved
+quoted paths, created the optional desktop shortcut, passed `model-doctor`,
+launched a Ready GUI, and uninstalled silently with exit code 0. The first
+attempt's surrounding evidence command had PowerShell spacing errors; actual
+state was inspected before the controlled confirmed rerun. Interactive and
+silent uninstall both succeeded without restart or residual application files.
+
+The selected Silero and two Hugging Face repository caches contained 25 physical
+files and 5,837,750,053 bytes before and after uninstall. The higher physical
+cache total reflects the Windows no-symlink degraded cache; the portable model
+staging remains approximately 3.4 GB. SHA-256 for Silero ONNX, both 40-byte refs,
+GigaAM encoder, and NLLB weight matched before/after. Staging, logs, settings,
+model caches, and diagnostic evidence were preserved.
+
+Defender stayed enabled with real-time protection and signature 1.455.385.0.
+Custom scans of the CPU onedir, setup executable, and installed directory all
+completed; the final CPU/installer scan took 17.022/0.055 seconds and added zero
+threat detections. No exclusion or third-party upload was used. The installer
+revision was not run in VMware, Windows Sandbox, or another clean machine, and
+no Release, signing, onefile, installer publication, or GPU installer was
+performed.
+
+Final automated validation completed 419/419 source tests twice (normal and
+coverage), with 80% total coverage. The existing GPU packaging environment and
+the CPU packaging environment each completed 219/219 focused packaging,
+clean-machine, GUI, installer, and model-preflight regression tests without
+building a GPU artifact. `pip check` reported no broken requirements in all
+three environments. The installer PowerShell script parsed without errors and
+the final Inno compiler warning count was zero.

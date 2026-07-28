@@ -19,6 +19,11 @@ from .config import (
     DEFAULT_TRANSLATION_ENGINE,
 )
 from .diagnostics import collect_diagnostics, format_report
+from .model_assets import (
+    ModelAssetError,
+    format_model_report,
+    quick_check_model_assets,
+)
 from .pipeline.offline_file import (
     OfflineAudioTranslationPipeline,
     OfflinePipelineError,
@@ -103,6 +108,12 @@ def _translation_doctor(_: argparse.Namespace) -> int:
     report = collect_translation_diagnostics()
     print(format_report(report))
     return report.exit_code
+
+
+def _model_doctor(_: argparse.Namespace) -> int:
+    report = quick_check_model_assets()
+    print(format_model_report(report))
+    return 0 if report.ready else 2
 
 
 def _translate_audio(args: argparse.Namespace) -> int:
@@ -803,6 +814,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     translation_doctor.set_defaults(handler=_translation_doctor)
 
+    model_doctor = subparsers.add_parser(
+        "model-doctor",
+        help="quickly check pinned external model assets without loading models",
+    )
+    model_doctor.set_defaults(handler=_model_doctor)
+
     translate = subparsers.add_parser("translate-text", help="translate one Russian text to Chinese")
     translate.add_argument("text", help="Russian source text")
     translate.add_argument("--engine", choices=TRANSLATION_ENGINES, default=DEFAULT_TRANSLATION_ENGINE)
@@ -847,6 +864,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         LiveVadError,
         SegmentProcessorError,
         MicrophoneCaptureError,
+        ModelAssetError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)

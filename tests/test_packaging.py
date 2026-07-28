@@ -95,7 +95,13 @@ def test_windowed_no_arguments_uses_live_overlay_defaults(
     finally:
         _close_test_logger()
     assert result == 0
-    assert received == [["live-overlay"]]
+    assert received == [[
+        "live-overlay",
+        "--translation-device",
+        "cpu",
+        "--offline",
+        "--no-auto-start",
+    ]]
     assert (tmp_path / "ru-zh-live-subtitles" / "logs" / "application.log").is_file()
 
 

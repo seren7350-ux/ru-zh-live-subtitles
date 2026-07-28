@@ -108,3 +108,19 @@ DLLs). Both were run from a Chinese-and-space temp directory with a minimal PATH
 and external offline model caches. These local checks do not renew the earlier
 CPU clean-VMware result for the selector revision and do not establish GPU
 clean-machine portability.
+
+## End-user installer candidate
+
+`combined_cpu.spec` is the only end-user package source. The GPU spec, Torch
+hook, and optimization profile remain internal development/historical assets
+and are not inputs to an installer. `packaging/installer/build_installer.ps1`
+accepts only a policy-valid CPU onedir and the expected Git commit, verifies the
+official Inno Setup 7.0.2 compiler, runs the frozen CPU doctor, creates a full
+relative SHA manifest, and compiles `cpu-only.iss` into ignored
+`dist/installer` output.
+
+The installer is per-user, non-administrative, x64, offline by default, and
+contains no CUDA runtime or model weights. Its stable AppId supports
+same-version repair and removal. Uninstall targets only the application,
+installer-created shortcuts, and its uninstall key; model assets remain in the
+user model/cache locations. See `docs/cpu-only-installer-validation.md`.

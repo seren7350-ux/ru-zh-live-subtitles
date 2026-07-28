@@ -36,6 +36,7 @@ def test_python_module_help_starts() -> None:
         "live-terminal",
         "translate-audio",
         "translation-doctor",
+        "model-doctor",
         "translate-text",
         "benchmark-translation",
     ],
