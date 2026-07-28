@@ -16,7 +16,7 @@ cpu_runtime = cpu_package_policy.validate_cpu_environment(
     torch,
     [Path(path) for path in site.getsitepackages()],
 )
-cpu_build_metadata = Path(WORKPATH) / "cpu-provenance" / "CPU_BUILD_METADATA.json"
+cpu_build_metadata = project_root / "build" / "cpu-provenance" / "CPU_BUILD_METADATA.json"
 cpu_build_provenance.write_metadata(project_root, cpu_build_metadata)
 
 a = Analysis(
