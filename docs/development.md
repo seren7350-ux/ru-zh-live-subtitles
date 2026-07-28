@@ -699,3 +699,30 @@ Post-copy hash validation matched package 5,463/5,463 and model 17/17 with zero
 failures. The final source suite passed 308/308 in 2.34 seconds; the coverage run
 passed 308/308 in 3.33 seconds at 80%; the packaging environment passed its
 69/69 focused tests. Both `pip check` commands remained clean.
+
+## CPU-only clean-machine recovery validation
+
+Branch `fix/cpu-clean-machine-validation` fixed exact 40-byte Hugging Face refs,
+added a CPython 3.11.9 CPU packaging environment, and built a distinct
+658,296,022-byte onedir with PyTorch `2.12.1+cpu`. The CPU dist contains 5,527
+files and 70 DLLs, includes `torch_cpu.dll`, and contains zero CUDA runtime
+DLLs. CPU `pip check` passed.
+
+The final ignored staging was regenerated from the original Silero, GigaAM and
+NLLB host caches plus the CPU onedir and fixed test WAV. Host SHA validation
+passed for 5,527 package files, 17 model files and one audio file. No guest ref
+or model file was edited.
+
+Two independently restored VMware Windows 11 Pro snapshot runs completed the
+offline ASR/NLLB pipeline with every required command exiting 0. Cold
+end-to-end file RTF was 5.953 and 5.997. The first live GUI produced 13/13
+successful captions across two deliberate Start/Stop cycles; the reproduced
+GUI produced 1/1. All live sessions recorded zero dropped blocks, sequence
+gaps, PortAudio events, backlog failures and temporary WAV remnants. Defender
+reported no threats, logs contained no caption/token/user-path marker, and no
+application process remained.
+
+The complete environment, timings, memory, package comparison, preserved CUDA
+failure evidence and warnings are in
+`cpu-clean-machine-recovery-validation.md`. This result is not an installer,
+release, GPU clean-machine validation or sustained-load performance guarantee.

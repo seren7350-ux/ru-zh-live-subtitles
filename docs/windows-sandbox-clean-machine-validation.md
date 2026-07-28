@@ -212,3 +212,19 @@ not begin an installer or make portability/production claims until the clean
 package-only and offline-cache runs are reproducible. Translation runtime
 migration remains a separate evaluation and should not be started merely to work
 around this host-edition limitation.
+
+## VMware CPU-only recovery result
+
+Windows Sandbox itself remains unavailable and therefore remains unvalidated.
+An independent VMware Windows 11 Pro guest was used for the separate CPU package
+instead of changing this host's Windows edition or weakening the clean-machine
+boundary. The guest was restored twice from
+`00-Clean-Windows-Tools-NoNetwork`, used the same read-only package/model/script
+staging and a separate writable results share, and had no network route.
+
+Both restored runs completed offline GigaAM and NLLB CPU inference; GUI startup,
+microphone processing, Stop/Exit, log privacy, temporary-file cleanup and
+process release were reproduced. The exact scope and evidence are in
+[CPU-only clean-machine recovery validation](cpu-clean-machine-recovery-validation.md).
+This does not retroactively mark any `.wsb` run as complete and does not validate
+the CUDA package.

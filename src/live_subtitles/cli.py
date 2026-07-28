@@ -787,6 +787,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     translate_audio.add_argument(
         "--device",
+        "--translation-device",
+        dest="device",
         choices=("auto", "cpu", "cuda"),
         default=DEFAULT_TRANSLATION_DEVICE,
         help="translation device; auto prefers CUDA and falls back to CPU",

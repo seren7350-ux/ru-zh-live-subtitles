@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ru-zh-live-subtitles/failure-evidence.schema.json",
+  "title": "Local clean-machine failure evidence manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "immutable_evidence",
+    "must_not_commit",
+    "must_not_upload",
+    "primary_result",
+    "primary_result_sha256",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "vmware-cuda13-failure-evidence"},
+    "immutable_evidence": {"const": true},
+    "must_not_commit": {"const": true},
+    "must_not_upload": {"const": true},
+    "primary_result": {"type": "string", "pattern": "^(?![A-Za-z]:)(?!/).+"},
+    "primary_result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "size_bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^(?![A-Za-z]:)(?!/).+"},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

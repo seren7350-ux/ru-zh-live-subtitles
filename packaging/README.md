@@ -77,3 +77,17 @@ See `packaging/clean_machine/README.md` and
 `docs/windows-sandbox-clean-machine-validation.md`. Real generated `.wsb` files,
 package/model copies, WAVs, manifests, logs, and results must stay under ignored
 `data/clean-machine-validation/`; they must not be published or committed.
+
+## CPU-only onedir
+
+`combined_cpu.spec` is an independent two-launcher/shared-COLLECT build for the
+official PyTorch CPU wheel. Create and maintain it in `.venv-packaging-cpu`;
+use `requirements-cpu.txt` and `constraints-cpu.txt` so pip cannot replace the
+CPU wheel with a CUDA build. Run `validate_cpu_distribution.py` against the
+finished onedir. The validator requires `torch_cpu.dll` and rejects CUDA,
+cuDNN, cuBLAS, NVRTC, NVJitLink, CUPTI and NVPerf runtime files.
+
+Do not build CPU and GPU candidates into one directory. `combined.spec`,
+`optimization_profile.py` and `hooks/hook-torch.py` remain the GPU path.
+Clean-machine results and exact inventory are documented in
+`docs/cpu-clean-machine-recovery-validation.md`.

@@ -56,3 +56,12 @@ bookkeeping files such as wheel `RECORD`; package `METADATA`, entry points,
 license files, notices, SBOM material, Python/Tk licenses, and every runtime DLL
 remain included. See `docs/windows-package-size-optimization.md` for the exact
 retained/excluded evidence. No claim of redistribution approval is made.
+
+## Separate CPU validation package
+
+The CPU-only validation candidate uses the official PyTorch `2.12.1+cpu` wheel
+in a separate build environment and onedir. It does not mix CPU and CUDA Torch
+runtimes, and its scan contains no CUDA runtime DLL. This changes neither the
+PyTorch license boundary nor the external-model boundary above. The existing
+CUDA package remains a separate candidate; neither package is an installer,
+signed release, or approved commercial distribution.
