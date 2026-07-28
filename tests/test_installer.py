@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -365,6 +366,16 @@ def _quote_powershell(value: Path | str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _windows_powershell_env() -> dict[str, str]:
+    """Let Windows PowerShell construct its own module discovery path."""
+
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.casefold() != "psmodulepath"
+    }
+
+
 def _run_builder(
     *,
     repo: Path,
@@ -395,6 +406,7 @@ def _run_builder(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=_windows_powershell_env(),
     )
 
 
@@ -405,6 +417,16 @@ def _final_builder_paths(output: Path) -> list[Path]:
         output / "build-report.json",
         output / "ru-zh-live-subtitles-cpu-0.1.0-setup.exe",
     ]
+
+
+def test_builder_windows_powershell_env_drops_inherited_module_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PSModulePath", r"C:\Program Files\PowerShell\7\Modules")
+
+    environment = _windows_powershell_env()
+
+    assert not any(key.casefold() == "psmodulepath" for key in environment)
 
 
 def test_builder_dirty_tree_removes_old_candidate_before_compiler(tmp_path: Path) -> None:
