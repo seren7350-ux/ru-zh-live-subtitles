@@ -9,12 +9,15 @@ project_root = Path(SPECPATH).parent
 sys.path.insert(0, str(project_root / "packaging"))
 
 import cpu_package_policy
+import cpu_build_provenance
 import torch
 
 cpu_runtime = cpu_package_policy.validate_cpu_environment(
     torch,
     [Path(path) for path in site.getsitepackages()],
 )
+cpu_build_metadata = Path(WORKPATH) / "cpu-provenance" / "CPU_BUILD_METADATA.json"
+cpu_build_provenance.write_metadata(project_root, cpu_build_metadata)
 
 a = Analysis(
     [str(project_root / "packaging" / "entrypoint.py")],
@@ -24,6 +27,7 @@ a = Analysis(
         (str(project_root / "README.md"), "."),
         (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
         (str(project_root / "packaging" / "installer" / "MODEL_SETUP.txt"), "."),
+        (str(cpu_build_metadata), "."),
         (str(Path(sys.base_prefix) / "LICENSE.txt"), "licenses/python"),
         (str(Path(sys.base_prefix) / "tcl" / "tk8.6" / "license.terms"), "licenses/tk"),
     ],

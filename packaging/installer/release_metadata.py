@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import hashlib
 import json
-import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+PACKAGING_ROOT = Path(__file__).resolve().parents[1]
+if str(PACKAGING_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGING_ROOT))
+
+import cpu_build_provenance
 
 CPU_RUNTIME_FAMILY = "cpu"
 PUBLIC_DISTRIBUTION = "Windows x64 CPU-only"
@@ -23,27 +28,17 @@ class ReleaseMetadataError(RuntimeError):
 
 
 def read_application_version(version_source: Path) -> str:
-    tree = ast.parse(version_source.read_text(encoding="utf-8"), filename=str(version_source))
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "__version__":
-                    value = ast.literal_eval(node.value)
-                    if isinstance(value, str) and value:
-                        return value
-    raise ReleaseMetadataError(f"Unable to read __version__ from {version_source}.")
+    try:
+        return cpu_build_provenance.read_application_version(version_source)
+    except cpu_build_provenance.CpuBuildProvenanceError as exc:
+        raise ReleaseMetadataError(str(exc)) from exc
 
 
 def git_commit(repo_root: Path) -> str:
-    completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    return completed.stdout.strip()
+    try:
+        return cpu_build_provenance.git_commit(repo_root)
+    except cpu_build_provenance.CpuBuildProvenanceError as exc:
+        raise ReleaseMetadataError(str(exc)) from exc
 
 
 def sha256_file(path: Path) -> str:
@@ -54,13 +49,27 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def inspect_cpu_distribution(root: Path, *, full_manifest: bool = False) -> dict[str, object]:
+def inspect_cpu_distribution(
+    root: Path,
+    *,
+    expected_version: str | None = None,
+    expected_commit: str | None = None,
+    full_manifest: bool = False,
+) -> dict[str, object]:
     resolved = root.resolve()
     if not resolved.is_dir():
         raise ReleaseMetadataError(f"CPU distribution does not exist: {resolved}")
     missing_exes = [name for name in APPLICATION_EXES if not (resolved / name).is_file()]
     if missing_exes:
         raise ReleaseMetadataError("CPU distribution is missing: " + ", ".join(missing_exes))
+    try:
+        provenance = cpu_build_provenance.load_metadata(
+            resolved / cpu_build_provenance.METADATA_NAME,
+            expected_version=expected_version,
+            expected_commit=expected_commit,
+        )
+    except cpu_build_provenance.CpuBuildProvenanceError as exc:
+        raise ReleaseMetadataError(str(exc)) from exc
 
     records: list[dict[str, object]] = []
     total_bytes = 0
@@ -129,6 +138,7 @@ def inspect_cpu_distribution(root: Path, *, full_manifest: bool = False) -> dict
         "model_weights": [],
         "torch_cpu_dll_present": True,
         "application_exes": list(APPLICATION_EXES),
+        "cpu_build_provenance": provenance,
         "files": records,
     }
 
@@ -147,6 +157,16 @@ def create_metadata(
         raise ReleaseMetadataError(
             f"Git commit mismatch: expected {expected_commit}, found {commit}."
         )
+    try:
+        cpu_build_provenance.ensure_clean_worktree(repo_root)
+    except cpu_build_provenance.CpuBuildProvenanceError as exc:
+        raise ReleaseMetadataError(str(exc)) from exc
+    distribution = inspect_cpu_distribution(
+        cpu_dist,
+        expected_version=version,
+        expected_commit=commit,
+        full_manifest=full_manifest,
+    )
     return {
         "schema_version": 1,
         "application_name": "Russian–Chinese Live Subtitles",
@@ -158,7 +178,8 @@ def create_metadata(
         "gpu_distribution_status": GPU_DISTRIBUTION_STATUS,
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "inno_setup_version": inno_version,
-        "cpu_distribution": inspect_cpu_distribution(cpu_dist, full_manifest=full_manifest),
+        "cpu_build_provenance": distribution["cpu_build_provenance"],
+        "cpu_distribution": distribution,
     }
 
 

@@ -168,7 +168,18 @@ def test_cpu_spec_has_shared_two_exe_onedir_and_no_gpu_profile() -> None:
     assert "validate_cpu_environment" in source
     assert "validate_pyinstaller_entries" in source
     assert "validate_cpu_distribution" in source
+    assert "cpu_build_provenance.write_metadata" in source
+    assert "CPU_BUILD_METADATA.json" in source
     assert "onefile" not in source.casefold()
+
+
+def test_cpu_provenance_is_collected_only_by_cpu_spec() -> None:
+    cpu = (PACKAGING / "combined_cpu.spec").read_text(encoding="utf-8")
+    gpu = (PACKAGING / "combined.spec").read_text(encoding="utf-8")
+    assert "cpu_build_provenance" in cpu
+    assert "cpu_build_metadata" in cpu
+    assert "cpu_build_provenance" not in gpu
+    assert "CPU_BUILD_METADATA.json" not in gpu
 
 
 def test_gpu_packaging_files_are_byte_identical_to_main() -> None:

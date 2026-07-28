@@ -9,9 +9,6 @@
 #ifndef CpuDist
   #error CpuDist must be provided by build_installer.ps1
 #endif
-#ifndef RepoRoot
-  #error RepoRoot must be provided by build_installer.ps1
-#endif
 #ifndef ReleaseMetadata
   #error ReleaseMetadata must be provided by build_installer.ps1
 #endif
@@ -46,9 +43,6 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#CpuDist}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#RepoRoot}\README.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
-Source: "{#RepoRoot}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; DestName: "THIRD_PARTY_NOTICES.md"; Flags: ignoreversion
-Source: "{#SourcePath}\MODEL_SETUP.txt"; DestDir: "{app}"; DestName: "MODEL_SETUP.txt"; Flags: ignoreversion
 Source: "{#ReleaseMetadata}"; DestDir: "{app}"; DestName: "RELEASE_METADATA.json"; Flags: ignoreversion
 
 [Icons]
