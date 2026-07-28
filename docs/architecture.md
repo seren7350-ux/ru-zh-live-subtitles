@@ -205,3 +205,17 @@ exposes a possible graphics path: actual frozen Torch CUDA detection determines
 CUDA versus CPU validation, never the vGPU setting itself. See
 `windows-sandbox-clean-machine-validation.md` for the exact trust boundary and
 the current Windows Home blocker.
+
+## Separate CPU and GPU package families
+
+The frozen runtime now has two deliberately separate candidate families. The
+existing `combined.spec` route remains the CUDA/GPU development-machine build.
+`combined_cpu.spec` is built from an independent CPU-wheel environment and
+rejects CUDA runtime DLLs before and after collection. Neither route silently
+falls back into the other, and they never share one dist directory.
+
+The accepted CPU staging was generated from original host caches, exposed
+read-only, and validated twice from the same restored, network-disabled VMware
+snapshot. The GUI uses prepared short-file ASR/translation workers; it is still
+not native streaming ASR. Cold model-start RTF and prepared live-segment latency
+are recorded separately. See `cpu-clean-machine-recovery-validation.md`.

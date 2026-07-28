@@ -14,6 +14,39 @@ function Protect-ValidationText {
     return $value
 }
 
+function ConvertTo-ProcessArgument {
+    param([AllowEmptyString()][string]$Value)
+
+    if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+
+    $builder = [Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes++
+        }
+        elseif ($character -eq '"') {
+            [void]$builder.Append(('\' * (($backslashes * 2) + 1)))
+            [void]$builder.Append('"')
+            $backslashes = 0
+        }
+        else {
+            if ($backslashes -gt 0) {
+                [void]$builder.Append(('\' * $backslashes))
+                $backslashes = 0
+            }
+            [void]$builder.Append($character)
+        }
+    }
+    if ($backslashes -gt 0) {
+        [void]$builder.Append(('\' * ($backslashes * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
 function Invoke-ValidationCommand {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -22,28 +55,40 @@ function Invoke-ValidationCommand {
         [int]$TimeoutSeconds = 120
     )
 
-    $stdout = [IO.Path]::GetTempFileName()
-    $stderr = [IO.Path]::GetTempFileName()
     $started = [Diagnostics.Stopwatch]::StartNew()
+    $process = [Diagnostics.Process]::new()
     try {
-        $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $argumentLine = (@($Arguments) | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' '
+        $startInfo = [Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $FilePath
+        $startInfo.Arguments = $argumentLine
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $process.StartInfo = $startInfo
+        [void]$process.Start()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
         $exited = $process.WaitForExit($TimeoutSeconds * 1000)
         if (-not $exited) {
             $process.Kill()
-            $process.WaitForExit()
         }
+        $process.WaitForExit()
+        [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdoutTask, $stderrTask))
+        $exitCode = if ($exited) { [int]$process.ExitCode } else { -1 }
         $started.Stop()
-        $output = (Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content -LiteralPath $stderr -Raw -ErrorAction SilentlyContinue)
+        $output = $stdoutTask.Result + $stderrTask.Result
         [pscustomobject]@{
             name = $Name
-            exit_code = if ($exited) { $process.ExitCode } else { -1 }
+            exit_code = $exitCode
             timed_out = -not $exited
             duration_seconds = [math]::Round($started.Elapsed.TotalSeconds, 3)
             output = Protect-ValidationText $output
         }
     }
     finally {
-        Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+        $process.Dispose()
     }
 }
 
@@ -61,6 +106,9 @@ function Test-AssetManifest {
     else {
         @($manifest.files)
     }
+    # PowerShell enumerates output from conditional statements, which unwraps a
+    # single manifest record even when a branch uses @(...).
+    $records = @($records)
     $failures = [Collections.Generic.List[string]]::new()
     foreach ($record in $records) {
         if ([IO.Path]::IsPathRooted([string]$record.path)) {

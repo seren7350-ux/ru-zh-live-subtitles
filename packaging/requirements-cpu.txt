@@ -1,0 +1,13 @@
+# Direct runtime requirements used by the CPU-only onedir.
+onnx-asr[cpu,hub]==0.12.0
+numpy==2.4.6
+sounddevice==0.5.5
+transformers==5.14.1
+sentencepiece==0.2.2
+safetensors==0.8.0
+
+# Build and validation requirements; never bundled as application features.
+PyInstaller==6.21.0
+pytest==9.1.1
+pytest-cov==7.1.0
+sacrebleu==2.6.0

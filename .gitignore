@@ -1,5 +1,6 @@
 .venv/
 .venv-packaging/
+.venv-packaging-cpu/
 venv/
 **pycache**/
 __pycache__/

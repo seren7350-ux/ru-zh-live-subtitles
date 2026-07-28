@@ -228,8 +228,12 @@ outside the frozen directory.
 
 The clean-machine validation kit is under `packaging/clean_machine/`. Generated
 packages, model staging, machine-specific `.wsb` files, WAVs, logs, manifests,
-and results remain in ignored `data/clean-machine-validation/`. This host runs
-Windows 11 Home and does not have Windows Sandbox, so the kit is prepared but no
-clean Sandbox compatibility result is claimed. Use an eligible
-Pro/Enterprise/Education machine and follow the documented three-fresh-instance
-sequence before starting installer work.
+and results remain in ignored `data/clean-machine-validation/`. Windows Sandbox
+is still unavailable on the Windows 11 Home development host, but the separate
+CPU-only package has now completed offline file and live-GUI validation twice
+in a network-disabled VMware Windows 11 Pro guest restored from the same clean
+snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machine-recovery-validation.md).
+
+The CPU result does not validate the existing CUDA package, establish universal
+Windows portability, or make the project installer/release ready. Model weights
+remain external, and NLLB remains a non-commercial research candidate.

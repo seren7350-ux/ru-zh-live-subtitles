@@ -310,3 +310,10 @@ No feature enablement, elevation, restart, or reduced-PATH substitute was used,
 and no clean-machine pass is claimed. See
 [Windows Sandbox clean-machine validation](windows-sandbox-clean-machine-validation.md)
 for the exact cache boundary and manual eligible-host sequence.
+
+Follow-up CPU recovery is documented in
+[CPU-only clean-machine recovery validation](cpu-clean-machine-recovery-validation.md).
+It adds a separate CPU PyTorch onedir and reproduces offline ASR/NLLB plus GUI
+checks in two restored VMware snapshots. The original GPU spec and runtime are
+unchanged. This is a packaging compatibility result, not installer, signing,
+release or production readiness.

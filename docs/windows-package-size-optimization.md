@@ -261,3 +261,15 @@ writable results mapping, and actual CUDA-versus-CPU classification.
 This host is Windows 11 Home and has no Windows Sandbox AppX, so no clean-machine
 run is claimed. Details and the eligible-host checklist are in
 [Windows Sandbox clean-machine validation](windows-sandbox-clean-machine-validation.md).
+
+## CPU-only comparison follow-up
+
+A separate CPU PyTorch build was subsequently measured at 658,296,022 bytes,
+5,527 files and 70 DLLs, versus 3,064,138,625 bytes, 5,463 files and 98 DLLs for
+the existing CUDA candidate. The reduction is 2,405,842,603 bytes (78.52%); the
+CPU package contains zero CUDA DLL bytes while retaining `torch_cpu.dll`.
+
+That CPU package completed two restored VMware clean-snapshot runs. The result
+does not replace the GPU route or prove universal CPU performance. See
+[CPU-only clean-machine recovery validation](cpu-clean-machine-recovery-validation.md)
+for the cold/live timing distinction and full evidence.

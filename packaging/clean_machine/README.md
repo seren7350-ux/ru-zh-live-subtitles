@@ -125,3 +125,24 @@ emails, absolute paths, and Russian/Chinese caption fields. Review every JSON
 file before moving it outside the dedicated results directory. Defender may be
 run inside Sandbox when its CLI is available, but the toolkit never disables
 Defender, changes exclusions, or uploads binaries to third-party scanners.
+
+## VMware CPU validation notes
+
+The same package/model/script/results boundary can be mapped into a disposable
+VMware Windows guest when Sandbox is unavailable. Restore the guest snapshot
+before each accepted run, keep networking disconnected, and map package,
+scripts and model-assets read-only. Do not copy files back from the guest or
+repair a staged ref there.
+
+`offline_cache_startup.ps1` copies approved model assets into a disposable
+guest cache and sets `HF_HOME` only within its own script process. A later
+manual GUI launch from the parent PowerShell must explicitly set `HF_HOME` to
+that already populated validation cache as well as both offline variables. A
+missing `HF_HOME` is a validation-procedure error; do not enable network or
+download models to work around it.
+
+PowerShell command execution uses Windows argument escaping and direct .NET
+`ProcessStartInfo` so UNC paths containing spaces remain one argument and exit
+codes are integers. The offline script writes its result and then fails if a
+required command timed out or returned nonzero. See
+`docs/cpu-clean-machine-recovery-validation.md` for the two reproduced runs.

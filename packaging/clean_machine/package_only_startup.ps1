@@ -23,8 +23,8 @@ $result = [ordered]@{
 }
 
 foreach ($name in @('python.exe', 'py.exe', 'pip.exe', 'git.exe')) {
-    & where.exe $name *> $null
-    $result.clean_environment[$name] = ($LASTEXITCODE -ne 0)
+    $command = Get-Command -Name $name -CommandType Application -ErrorAction SilentlyContinue
+    $result.clean_environment[$name] = ($null -eq $command)
 }
 $result.clean_environment['project_source_absent'] = -not (Test-Path 'C:\Users\WDAGUtilityAccount\ru-zh-live-subtitles')
 $result.clean_environment['venv_absent'] = -not (Test-Path 'C:\Validation\.venv')
