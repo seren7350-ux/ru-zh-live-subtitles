@@ -15,11 +15,45 @@ per-user CPU installer. It must not be read as clean-machine validation.
 - compiler: official Inno Setup 7.0.2 x64, with a valid Pyrsys B.V. signature;
 - output is intentionally unsigned; SmartScreen behavior is not guaranteed.
 
-The rebuilt CPU onedir contained 5,528 files and 70 DLLs, occupied 658,392,446
-bytes, contained `torch_cpu.dll`, and contained zero CUDA DLLs and zero model
-weights. The compressed installer was 215,924,985 bytes and built in 96.972
-seconds with no Inno warnings. Its SHA-256 was
-`DE0B535D123B2470F680737CB10F635433612E29D8C90DE44A31F65BF6A895CC`.
+Every accepted CPU onedir now carries a top-level `CPU_BUILD_METADATA.json`.
+Its fixed schema binds application version, a 40-character lowercase Git SHA,
+CPU runtime family, a clean-worktree assertion, Windows x64, and
+`packaging/combined_cpu.spec`. The file is UTF-8 without a BOM and contains no
+checkout, user, virtual-environment, remote, model, or machine path. The CPU
+validator and installer metadata generator independently require the embedded
+version and commit to match the clean current repository and the explicit
+`ExpectedCommit`.
+
+The hardened development-machine rebuild contained 5,529 files and 70 DLLs,
+occupied 658,394,024 bytes, contained `torch_cpu.dll`, and contained zero CUDA
+DLLs and zero model weights. `README.md`, `THIRD_PARTY_NOTICES.md`,
+`MODEL_SETUP.txt`, and `CPU_BUILD_METADATA.json` were present at the onedir
+root. Exact final setup size, SHA-256, compiler timing, and provenance SHA are
+kept in the ignored `dist\installer\build-report.json` and release metadata,
+not copied into tracked documentation.
+
+## Fail-closed build transaction
+
+`build_installer.ps1` rejects every tracked modification, staged change,
+conflict, and non-ignored untracked file using
+`git status --porcelain=v1 --untracked-files=all`. Ignored build, dist, data,
+model, log, and virtual-environment content remains permitted. There is no
+bypass parameter.
+
+CPU policy, provenance, the frozen translation doctor, release metadata, ISCC
+compilation, installer hashing/signature inspection, compiler logging, and the
+build report all complete inside one unique ignored temporary directory. The
+old same-version setup and its three companion outputs are removed before the
+attempt. Success publishes release metadata, compiler log, and build report
+first, then publishes setup last as the success marker. Catch/finally removes
+all four same-version outputs and the temporary directory after any failure;
+different-version historical candidates are not removed.
+
+An active stale-provenance test used a separate minimal CPU fixture whose
+metadata commit was deliberately wrong. It failed before ISCC, removed the old
+same-version setup/metadata/report/log, left no transaction directory, and
+preserved a different-version candidate. Real temporary-Git-repository tests
+also cover dirty worktrees and injected CPU-policy, ISCC, and report failures.
 
 ## Validation scope
 
@@ -30,10 +64,15 @@ absence of elevation. The silent path uses `/VERYSILENT`,
 Chinese characters and a space is also exercised. Same-version reinstall is a
 repair check, not a cross-version upgrade test.
 
-Installed files are compared against the full CPU manifest. Only installer
-documentation, release metadata, and `unins000` files may be additional. The
+Installed files are compared against the full CPU manifest. Only release
+metadata and `unins000` files may be additional. The
 installed runtime must still pass the CPU translation doctor and contain no
 CUDA DLL or model weight.
+
+The installer no longer overwrites documentation from the repository or Inno
+source directory. The three installed documents come only from the
+provenance-bound CPU onedir, and their installed SHA-256 values must equal the
+corresponding full-manifest records.
 
 The missing-model GUI is run with isolated process-local `LOCALAPPDATA` and
 `HF_HOME`. It must open without a console, display `Model setup required`, block

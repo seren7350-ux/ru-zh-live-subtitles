@@ -872,3 +872,70 @@ clean-machine, GUI, installer, and model-preflight regression tests without
 building a GPU artifact. `pip check` reported no broken requirements in all
 three environments. The installer PowerShell script parsed without errors and
 the final Inno compiler warning count was zero.
+
+## 2026-07-28 CPU installer provenance and fail-closed hardening
+
+The CPU packaging path now creates top-level `CPU_BUILD_METADATA.json` from the
+single application version source and a clean 40-character lowercase Git HEAD.
+The fixed schema records only version, commit, CPU family, clean status,
+Windows x64, and `packaging/combined_cpu.spec`; UTF-8 output has no BOM or
+absolute/user/remote/model path. CPU validation and release metadata both
+cross-check it against clean current HEAD and explicit `ExpectedCommit`.
+
+The first real rebuild exposed two implementation defects that unit tests had
+not hidden. PyInstaller does not expose a `WORKPATH` global to this spec, so the
+ignored generation path was corrected to `build/cpu-provenance`. PyInstaller 6
+also places normal datas under `_internal`; the spec now publishes provenance
+and the three documents directly at the onedir root after COLLECT. Both defects
+were committed before rebuilding, and neither failed build was accepted as an
+installer input.
+
+The development-machine hardened onedir rehearsal was bound to clean commit
+`4a2bb4ab0bde73119df57792a8b986ff9b9d6460`: 658,394,024 bytes, 5,529 files,
+70 DLLs, zero CUDA DLLs, and zero model weights. Provenance was 253 bytes,
+without BOM, and its SHA-256 was
+`0F3AAE5879657E94C41C83AA7616D2042C685BAF83E8D0E9AA494D0ADFA86066`.
+The pre-documentation installer rehearsal was 215,890,142 bytes, had SHA-256
+`BCA2DE4F4014DF95AFF8DEF009F7D12A9A690CD8A6456FC8B70911E65D812D1C`,
+compiled with official signed Inno Setup 7.0.2 in 226.099 seconds, produced zero
+Inno warnings, and was intentionally `NotSigned`. These values are rehearsal
+evidence; the ignored final build report is authoritative after the documentation
+commit and mandatory final rebuild.
+
+The builder now rejects any porcelain record including non-ignored untracked
+files. It validates and compiles in a unique temporary directory, removes old
+same-version final outputs at the start, and publishes release metadata, ISCC
+log, and build report before setup. Setup is the last success marker. Real
+temporary Git repository/subprocess tests covered dirty, stale, CPU-policy,
+ISCC, report, and success paths. An additional active stale fixture failed on a
+wrong metadata commit before ISCC, left zero same-version final outputs and zero
+transaction directories, and preserved a different-version candidate.
+
+`cpu-only.iss` no longer sources README, third-party notices, or model setup
+instructions separately. Installed SHA-256 values for all three matched both
+the CPU onedir and full release manifest. Silent current-user install ran from
+a non-elevated process; both EXEs and both metadata files were present, commit
+and version pairs matched, and the installed tree contained zero CUDA DLLs and
+zero model weights. With isolated empty model paths the GUI displayed `Model
+setup required`; it created no child worker, microphone session, or TCP
+connection, and exited normally with zero GUI events and no warning/error.
+
+Same-version silent repair returned 0 and retained exactly one AppId uninstall
+entry. Silent uninstall returned 0 and removed the application directory,
+Start Menu group, uninstall entry, and application processes. The managed model
+directory remained 3 files / 2,329,081 bytes, and the Hugging Face cache
+remained 171 files / 14,732,154,993 bytes. Defender custom scans of the new CPU
+onedir, setup, and installed directory each reported zero detections; no
+exclusion was added or changed.
+
+The direct local `.ps1` launch was blocked by the existing Windows execution
+policy. No execution policy was modified. The known local script was executed
+as an in-process ScriptBlock with all production provenance, CPU policy,
+frozen-doctor, ISCC version, and Authenticode checks enabled. Source tests were
+448 passed with 80% coverage; both GPU and CPU packaging-focused suites were
+234 passed; all three pip checks reported no broken requirements. The final
+post-documentation commit is rebuilt and rechecked before push.
+
+No VMware, Windows Sandbox, GPU build, installer signing, public Release, or
+clean-machine validation was performed. This remains an unsigned per-user
+development-machine installer candidate and must remain Draft.

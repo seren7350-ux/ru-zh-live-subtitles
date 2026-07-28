@@ -87,6 +87,14 @@ CPU wheel with a CUDA build. Run `validate_cpu_distribution.py` against the
 finished onedir. The validator requires `torch_cpu.dll` and rejects CUDA,
 cuDNN, cuBLAS, NVRTC, NVJitLink, CUPTI and NVPerf runtime files.
 
+The CPU build also requires a clean Git worktree. It generates ignored
+`build/cpu-provenance/CPU_BUILD_METADATA.json`, then publishes that path-safe
+metadata and the three end-user documents at the onedir root after COLLECT.
+The metadata commit must match both clean HEAD and the installer
+`ExpectedCommit`; rebuilding from a new commit is mandatory even when the old
+onedir otherwise appears valid. `combined.spec` remains byte-identical and
+contains no CPU provenance.
+
 Do not build CPU and GPU candidates into one directory. `combined.spec`,
 `optimization_profile.py` and `hooks/hook-torch.py` remain the GPU path.
 Clean-machine results and exact inventory are documented in
@@ -118,6 +126,13 @@ accepts only a policy-valid CPU onedir and the expected Git commit, verifies the
 official Inno Setup 7.0.2 compiler, runs the frozen CPU doctor, creates a full
 relative SHA manifest, and compiles `cpu-only.iss` into ignored
 `dist/installer` output.
+
+The build is fail-closed: dirty Git state or stale CPU provenance fails before
+ISCC, while later compiler/report failures remove every same-version final
+output. Successful publication moves release metadata, compiler log, and build
+report first and setup last. The `.iss` gets README, third-party notices, and
+model setup instructions only from the CPU onedir; it adds only release
+metadata as an extra file.
 
 The installer is per-user, non-administrative, x64, offline by default, and
 contains no CUDA runtime or model weights. Its stable AppId supports

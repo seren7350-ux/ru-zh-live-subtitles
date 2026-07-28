@@ -17,6 +17,20 @@ executables, `torch_cpu.dll`, `torch.version.cuda is None`,
 The current application version continues to come only from
 `live_subtitles.__version__`.
 
+The spec first rejects a dirty Git worktree, then writes a path-safe
+`CPU_BUILD_METADATA.json` under ignored `build/cpu-provenance`. After COLLECT,
+it publishes that file at the CPU onedir root beside `README.md`,
+`THIRD_PARTY_NOTICES.md`, and `MODEL_SETUP.txt`. The metadata binds the onedir
+to the clean lowercase Git HEAD, version `0.1.0`, CPU runtime family, Windows
+x64 platform, and `packaging/combined_cpu.spec`. The GPU spec is unchanged and
+does not collect CPU provenance.
+
+`validate_cpu_distribution.py`, `release_metadata.py`, and the installer build
+all cross-check the embedded version and commit against the current clean HEAD
+and explicit expected commit. A stale or missing provenance file is rejected
+before frozen doctor or ISCC compilation. The full release manifest includes
+the provenance file and the three root documents.
+
 Model weights, Hugging Face caches, VAD assets, recordings, logs, staging,
 virtual environments, and Git metadata are outside the application package.
 The installer performs no download and starts the GUI in offline, no-auto-start
