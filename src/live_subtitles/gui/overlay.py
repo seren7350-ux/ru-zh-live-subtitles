@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable
 
+from .microphone_selector import MicrophoneSelectorSnapshot
 from .state import SubtitleViewState
 
 
@@ -16,6 +18,16 @@ STATUS_COLORS = {
     "Fatal error": "#ff6b6b",
     "Ready": "#b0b0b0",
 }
+
+
+@dataclass(frozen=True)
+class MicrophonePanelCallbacks:
+    """Callbacks that keep the settings panel independent of the controller."""
+
+    refresh: Callable[[], MicrophoneSelectorSnapshot]
+    select: Callable[[int | None], MicrophoneSelectorSnapshot]
+    snapshot: Callable[[], MicrophoneSelectorSnapshot]
+    can_change: Callable[[], bool]
 
 
 def position_coordinates(
@@ -110,7 +122,9 @@ class SettingsPanel:
         on_russian_font: Callable[[int], None],
         on_exit: Callable[[], None],
         is_running: Callable[[], bool],
+        microphone: MicrophonePanelCallbacks | None = None,
         tk_module: Any | None = None,
+        ttk_module: Any | None = None,
     ) -> None:
         if tk_module is None:
             import tkinter as tk_module
@@ -120,6 +134,7 @@ class SettingsPanel:
         self.state_model = state
         self.on_start_stop = on_start_stop
         self.is_running = is_running
+        self.microphone = microphone
         self.last_geometry: str | None = None
         self.window = tk_module.Toplevel(root)
         self.window.title("Subtitle settings")
@@ -128,6 +143,46 @@ class SettingsPanel:
         self.window.attributes("-topmost", bool(state.topmost))
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
         self.window.bind("<Escape>", lambda _event: self.hide())
+
+        self.microphone_combobox: Any | None = None
+        self.microphone_refresh_button: Any | None = None
+        self.microphone_status: Any | None = None
+        self._microphone_snapshot: MicrophoneSelectorSnapshot | None = None
+        if microphone is not None:
+            if ttk_module is None:
+                from tkinter import ttk as ttk_module
+
+            self._label("Microphone input")
+            microphone_row = tk_module.Frame(self.window, background="#20242c")
+            microphone_row.pack(fill="x", pady=(2, 2))
+            self.microphone_combobox = ttk_module.Combobox(
+                microphone_row,
+                state="readonly",
+            )
+            self.microphone_combobox.pack(side="left", fill="x", expand=True)
+            self.microphone_combobox.bind(
+                "<<ComboboxSelected>>", self._on_microphone_selected
+            )
+            self.microphone_refresh_button = tk_module.Button(
+                microphone_row,
+                text="Refresh",
+                command=self._refresh_microphones,
+                **self._button_style(),
+            )
+            self.microphone_refresh_button.pack(side="left", padx=(6, 0))
+            self.microphone_status = tk_module.Label(
+                self.window,
+                text="",
+                anchor="w",
+                justify="left",
+                wraplength=360,
+                background="#20242c",
+                foreground="#c8ccd4",
+            )
+            self.microphone_status.pack(fill="x", pady=(0, 7))
+            # Enumeration is deliberately limited to first creation and the
+            # explicit Refresh button. Rendering and showing do not poll.
+            self._refresh_microphones(initial=True)
 
         self.start_stop_button = self._button("", on_start_stop)
         self._button("Clear", on_clear)
@@ -168,6 +223,67 @@ class SettingsPanel:
         )
         self._button("Exit", on_exit, danger=True)
         self.sync()
+
+    def _refresh_microphones(self, *, initial: bool = False) -> None:
+        if self.microphone is None:
+            return
+        if not initial and not self._can_change_microphone():
+            self.sync()
+            return
+        self._microphone_snapshot = self.microphone.refresh()
+        self._sync_microphone_controls()
+
+    def _on_microphone_selected(self, _event: Any = None) -> None:
+        if (
+            self.microphone is None
+            or self.microphone_combobox is None
+            or not self._can_change_microphone()
+        ):
+            self.sync()
+            return
+        position = int(self.microphone_combobox.current())
+        snapshot = self._microphone_snapshot or self.microphone.snapshot()
+        if not 0 <= position < len(snapshot.choices):
+            return
+        self._microphone_snapshot = self.microphone.select(
+            snapshot.choices[position].device_index
+        )
+        self._sync_microphone_controls()
+
+    def _can_change_microphone(self) -> bool:
+        return bool(
+            self.microphone is not None
+            and self.microphone.can_change()
+            and not self.is_running()
+            and not self.state_model.preparing
+            and not self.state_model.stopping
+        )
+
+    def _sync_microphone_controls(self) -> None:
+        if (
+            self.microphone is None
+            or self.microphone_combobox is None
+            or self.microphone_refresh_button is None
+            or self.microphone_status is None
+        ):
+            return
+        snapshot = self.microphone.snapshot()
+        self._microphone_snapshot = snapshot
+        can_change = self._can_change_microphone()
+        self.microphone_combobox.config(
+            values=tuple(choice.label for choice in snapshot.choices),
+            state="readonly" if can_change else "disabled",
+        )
+        self.microphone_combobox.current(snapshot.selected_position)
+        self.microphone_refresh_button.config(
+            state="normal" if can_change else "disabled"
+        )
+        status = (
+            snapshot.status
+            if can_change
+            else "Stop subtitles before changing the microphone."
+        )
+        self.microphone_status.config(text=status)
 
     @staticmethod
     def _button_style() -> dict[str, Any]:
@@ -261,6 +377,7 @@ class SettingsPanel:
         self.border_button.config(
             text=f"Borderless: {'on' if self.state_model.borderless else 'off'}"
         )
+        self._sync_microphone_controls()
 
     def show(self) -> None:
         if not self.exists():
@@ -296,6 +413,7 @@ class SubtitleOverlay:
         on_stop: Callable[[], None],
         on_clear: Callable[[], None],
         on_exit: Callable[[], None],
+        microphone: MicrophonePanelCallbacks | None = None,
     ) -> None:
         import tkinter as tk
 
@@ -306,6 +424,7 @@ class SubtitleOverlay:
         self.on_stop = on_stop
         self.on_clear = on_clear
         self.on_exit = on_exit
+        self.microphone_callbacks = microphone
         self.running = False
         self.closing = False
         self.settings_panel: SettingsPanel | None = None
@@ -499,6 +618,7 @@ class SubtitleOverlay:
             on_russian_font=self.set_russian_font,
             on_exit=self.on_exit,
             is_running=lambda: self.running,
+            microphone=self.microphone_callbacks,
         )
         self.settings_panel = panel
         return panel

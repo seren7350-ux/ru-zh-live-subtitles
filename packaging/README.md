@@ -91,3 +91,20 @@ Do not build CPU and GPU candidates into one directory. `combined.spec`,
 `optimization_profile.py` and `hooks/hook-torch.py` remain the GPU path.
 Clean-machine results and exact inventory are documented in
 `docs/cpu-clean-machine-recovery-validation.md`.
+
+## GUI microphone selector packaging check
+
+Both combined specs discover the selector through the normal
+`live_subtitles.gui.app -> overlay -> microphone_selector` import graph; no
+hidden import or new package dependency is required. For a local frozen check,
+launch the windowed executable from a repository-external directory, open
+Settings, and verify System default, an explicit device index, Refresh, running
+lockout, and Stop -> change -> Start. Use `translation-doctor` from the same
+external current directory to confirm the frozen runtime family.
+
+The 2026-07-28 development-machine rebuild measured 658,366,169 bytes for the
+CPU onedir (0 CUDA DLLs) and 3,066,444,470 bytes for the GPU onedir (22 CUDA
+DLLs). Both were run from a Chinese-and-space temp directory with a minimal PATH
+and external offline model caches. These local checks do not renew the earlier
+CPU clean-VMware result for the selector revision and do not establish GPU
+clean-machine portability.

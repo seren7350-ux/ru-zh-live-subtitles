@@ -296,3 +296,13 @@ Do not start installer, onefile, release, signing or updater work from this
 result alone. A later decision may compare the independently validated CPU and
 GPU candidates on supported target hardware. GPU clean-machine validation on a
 machine with a real NVIDIA device remains recommended and separate.
+
+## Later microphone-selector revision boundary
+
+The two accepted network-disabled VMware runs in this document validate the
+PR #12 CPU baseline. The later `feat/gui-microphone-selector` revision was
+rebuilt and validated only on the development machine in source, CPU onedir,
+and GPU onedir forms. It was not copied into or executed in VMware, Windows
+Sandbox, or another clean machine. Therefore this document does not claim that
+the CPU package containing the selector has completed clean-machine validation;
+GPU clean-machine validation also remains pending.

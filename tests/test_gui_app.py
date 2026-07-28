@@ -6,10 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from live_subtitles.audio.recording import AudioDevice, AudioDeviceError
 from live_subtitles.cli import build_parser, main
 from live_subtitles.gui import app
 from live_subtitles.gui.controller import GuiEventQueue, GuiMetrics
 from live_subtitles.gui.events import FatalErrorEvent, SegmentErrorEvent, StoppedEvent, SubtitleEvent
+from live_subtitles.gui.microphone_selector import MicrophoneSelectorModel
 from live_subtitles.gui.state import SubtitleViewState
 
 
@@ -45,6 +47,7 @@ class FakeController:
         self.metrics = GuiMetrics(self.events)
         self.started = 0
         self.stop_reasons: list[str] = []
+        self.device_indexes: list[int | None] = []
 
     def start(self) -> bool:
         if self.running:
@@ -58,6 +61,12 @@ class FakeController:
 
     def close(self) -> None:
         self.stop_reasons.append("window closed")
+
+    def set_device_index(self, device_index: int | None) -> bool:
+        if self.running:
+            return False
+        self.device_indexes.append(device_index)
+        return True
 
 
 @pytest.fixture
@@ -105,6 +114,136 @@ def test_start_does_not_duplicate_background_session(runtime: tuple[app.GuiRunti
     gui.start()
     gui.start()
     assert controller.started == 1
+
+
+def test_live_runtime_uses_cli_selection_for_first_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app, "SubtitleOverlay", FakeOverlay)
+    root = FakeRoot()
+    controller = FakeController()
+    resolved: list[int | None] = []
+
+    def resolve(index: int | None) -> AudioDevice:
+        resolved.append(index)
+        return AudioDevice(6, "Input", 1, 48_000.0, True)
+
+    selector = MicrophoneSelectorModel(6, resolve_device=resolve)
+    gui = app.GuiRuntime(
+        root,
+        SubtitleViewState(),
+        controller,
+        ui_poll_ms=50,
+        microphone_selector=selector,
+    )
+    gui.start()
+    assert resolved == [6]
+    assert controller.device_indexes == [6]
+    assert controller.started == 1
+
+
+def test_system_default_is_initial_selection_when_cli_device_is_omitted() -> None:
+    args = build_parser().parse_args(["live-overlay"])
+    assert args.device is None
+
+
+def test_live_overlay_passes_cli_device_to_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[MicrophoneSelectorModel | None] = []
+
+    class Controller:
+        def __init__(self, _config: object) -> None:
+            self.summaries: list[object] = []
+            self.last_result = None
+
+    def run_tk(
+        _state: object,
+        _controller: object,
+        _args: object,
+        *,
+        microphone_selector: MicrophoneSelectorModel | None = None,
+    ) -> int:
+        captured.append(microphone_selector)
+        return 0
+
+    monkeypatch.setattr(app, "LiveProcessOverlayController", Controller)
+    monkeypatch.setattr(app, "_run_tk", run_tk)
+    monkeypatch.setattr(app, "_log_live_exit_metrics", lambda _controller: None)
+    args = build_parser().parse_args(["live-overlay", "--device", "12"])
+    assert app._live_overlay(args) == 0
+    assert captured[0] is not None
+    assert captured[0].selected_index == 12
+
+
+def test_overlay_demo_has_no_microphone_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[MicrophoneSelectorModel | None] = []
+
+    def run_tk(
+        _state: object,
+        _controller: object,
+        _args: object,
+        *,
+        microphone_selector: MicrophoneSelectorModel | None = None,
+    ) -> int:
+        captured.append(microphone_selector)
+        return 0
+
+    monkeypatch.setattr(app, "_run_tk", run_tk)
+    args = build_parser().parse_args(["overlay-demo"])
+    assert app._overlay_demo(args) == 0
+    assert captured == [None]
+
+
+def test_invalid_microphone_blocks_start_before_preparing_or_process_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app, "SubtitleOverlay", FakeOverlay)
+    root = FakeRoot()
+    controller = FakeController()
+
+    def reject(_index: int | None) -> AudioDevice:
+        raise AudioDeviceError("Input device 99 is unavailable.")
+
+    gui = app.GuiRuntime(
+        root,
+        SubtitleViewState(),
+        controller,
+        ui_poll_ms=50,
+        microphone_selector=MicrophoneSelectorModel(99, resolve_device=reject),
+    )
+    gui.start()
+    assert controller.started == 0
+    assert controller.device_indexes == []
+    assert gui.state.status == "Ready"
+    assert not gui.state.preparing
+    assert "selected microphone" in gui.state.latest_error
+    assert gui.overlay.running_states[-1] == (False, False)
+
+
+def test_device_change_is_rejected_while_running_and_applies_after_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app, "SubtitleOverlay", FakeOverlay)
+    controller = FakeController()
+    selector = MicrophoneSelectorModel(1)
+    gui = app.GuiRuntime(
+        FakeRoot(),
+        SubtitleViewState(),
+        controller,
+        ui_poll_ms=50,
+        microphone_selector=selector,
+    )
+    controller.running = True
+    gui.select_microphone(2)
+    assert selector.selected_index == 1
+    controller.running = False
+    gui.state.set_status("Stopped")
+    gui.select_microphone(2)
+    assert selector.selected_index == 2
+    assert controller.device_indexes == [2]
 
 
 def test_stop_requests_nonfatal_stop(runtime: tuple[app.GuiRuntime, FakeRoot, FakeController]) -> None:

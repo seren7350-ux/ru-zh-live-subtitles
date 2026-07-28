@@ -298,3 +298,35 @@ captions, build footprint, logs, warning analysis, and security boundary are in
 `windows-packaging-spike.md`. The resulting status is **Onedir GUI build
 validated on development machine**, not a clean-machine, signed, installer, or
 production-ready claim.
+
+## Microphone selector follow-up (2026-07-28)
+
+Live Settings now begins with a readonly `ttk.Combobox`, Refresh button, and
+selection status. `System default` resolves at each Start; explicit entries show
+index, name, input channels, sample rate, and the default marker. Internally the
+combobox uses index-bearing choices and never infers identity from label text.
+Refresh preserves a surviving index and marks a disappeared selection
+unavailable instead of choosing another specific endpoint.
+
+Preparing, Listening, Stopping, closing, or an alive process disables both
+controls and displays `Stop subtitles before changing the microphone.` Stop,
+worker exit, selection change, and a new Start are required. Invalid startup
+selection is rejected before Preparing or child-process creation. The panel is
+still one lazy persistent Toplevel closed with `withdraw()` and does not hold
+the controller. `overlay-demo` receives no microphone callbacks, does not show
+the region, and does not enumerate or open audio devices.
+
+Screen testing exercised first enumeration, System default, explicit indexes 1
+and 2, Refresh retention, running lockout, Stop re-enable, and Stop -> change ->
+Start. Listening used the actual HyperX and Realtek names. Source, CPU onedir,
+and GPU onedir displayed real RU/ZH captions. Render P95 was
+0.035/0.039/0.041 s and heartbeat maximum 0.177/0.123/0.147 s for
+source/CPU/GPU. GPU RTF P95 was at most 0.906 with RU/ZH P95 at most
+0.614/1.431 s. All runs had zero loss, gaps, PortAudio status, backlog, GUI
+overflow, temporary WAV residue, and residual process. One CPU first-session
+ASR segment failed during Stop; the second CPU session and both GPU sessions had
+no failed caption.
+
+These are development-machine validations. This revision was not revalidated
+in VMware or another clean environment, and no selector persistence or hot
+switching was introduced.
