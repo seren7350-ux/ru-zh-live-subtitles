@@ -231,10 +231,20 @@ The network-disabled Windows Sandbox staging boundary, exact local-only cache
 allowlist, generated configuration workflow, and current host-edition blocker
 are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
-The current Windows packaging candidate is one onedir with two launchers and a
-single dependency set. It is not an installer, onefile build, signed release,
-or production distribution. All model weights remain outside the repository and
-outside the frozen directory.
+The sole end-user Windows distribution candidate is now the x64 CPU-only onedir
+with two launchers and its per-user Inno Setup installer. The installed
+application is approximately 658 MB. Separate local model assets of
+approximately 3.4 GB are required before transcription and translation can run;
+they are not in the package or installer. Installed shortcuts use CPU, offline,
+no-auto-start mode, so a missing cache never triggers a silent download.
+
+The installer requires no administrator access and defaults to
+`%LOCALAPPDATA%\Programs\RuZhLiveSubtitles`. Prepare the pinned assets as
+described in [model assets setup](docs/model-assets-setup.md), run
+`ru-zh-subtitles-console.exe model-doctor`, then open Settings, select a
+microphone, and choose **Recheck model assets**. Uninstall preserves external
+models and user caches. The installer is unsigned, may trigger SmartScreen, and
+has only been validated on the development machine.
 
 The clean-machine validation kit is under `packaging/clean_machine/`. Generated
 packages, model staging, machine-specific `.wsb` files, WAVs, logs, manifests,
@@ -244,6 +254,11 @@ CPU-only package has now completed offline file and live-GUI validation twice
 in a network-disabled VMware Windows 11 Pro guest restored from the same clean
 snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machine-recovery-validation.md).
 
-The CPU result does not validate the existing CUDA package, establish universal
-Windows portability, or make the project installer/release ready. Model weights
-remain external, and NLLB remains a non-commercial research candidate.
+The GPU spec remains an internal development/historical benchmark artifact; it
+is not distributed or supported as an end-user package and no GPU installer is
+produced. The earlier CPU clean-VMware result predates this installer revision.
+The installer has not been revalidated on a clean machine, is not signed, and is
+not a public or production-ready Release. Model weights remain external, and
+NLLB remains a non-commercial research candidate. See
+[CPU-only distribution policy](docs/cpu-only-distribution.md) and
+[installer validation](docs/cpu-only-installer-validation.md).

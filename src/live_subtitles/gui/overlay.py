@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
 from .state import SubtitleViewState
 
@@ -28,6 +29,16 @@ class MicrophonePanelCallbacks:
     select: Callable[[int | None], MicrophoneSelectorSnapshot]
     snapshot: Callable[[], MicrophoneSelectorSnapshot]
     can_change: Callable[[], bool]
+
+
+@dataclass(frozen=True)
+class ModelPanelCallbacks:
+    """Callbacks for explicit, non-polling model setup actions."""
+
+    recheck: Callable[[], ModelAssetsReport]
+    snapshot: Callable[[], ModelAssetsReport]
+    open_folder: Callable[[], None]
+    open_instructions: Callable[[], None]
 
 
 def position_coordinates(
@@ -123,6 +134,7 @@ class SettingsPanel:
         on_exit: Callable[[], None],
         is_running: Callable[[], bool],
         microphone: MicrophonePanelCallbacks | None = None,
+        models: ModelPanelCallbacks | None = None,
         tk_module: Any | None = None,
         ttk_module: Any | None = None,
     ) -> None:
@@ -135,6 +147,7 @@ class SettingsPanel:
         self.on_start_stop = on_start_stop
         self.is_running = is_running
         self.microphone = microphone
+        self.models = models
         self.last_geometry: str | None = None
         self.window = tk_module.Toplevel(root)
         self.window.title("Subtitle settings")
@@ -183,6 +196,26 @@ class SettingsPanel:
             # Enumeration is deliberately limited to first creation and the
             # explicit Refresh button. Rendering and showing do not poll.
             self._refresh_microphones(initial=True)
+
+        self.model_status: Any | None = None
+        self.model_recheck_button: Any | None = None
+        if models is not None:
+            self._label("Model assets")
+            self.model_status = tk_module.Label(
+                self.window,
+                text="",
+                anchor="w",
+                justify="left",
+                wraplength=360,
+                background="#20242c",
+                foreground="#c8ccd4",
+            )
+            self.model_status.pack(fill="x", pady=(1, 3))
+            self.model_recheck_button = self._button(
+                "Recheck model assets", self._recheck_models
+            )
+            self._button("Open model folder", models.open_folder)
+            self._button("Open model setup instructions", models.open_instructions)
 
         self.start_stop_button = self._button("", on_start_stop)
         self._button("Clear", on_clear)
@@ -285,6 +318,26 @@ class SettingsPanel:
         )
         self.microphone_status.config(text=status)
 
+    def _recheck_models(self) -> None:
+        if self.models is None:
+            return
+        self.models.recheck()
+        self._sync_model_controls()
+
+    def _sync_model_controls(self) -> None:
+        if self.models is None or self.model_status is None:
+            return
+        report = self.models.snapshot()
+        if report.ready:
+            status = "Ready. All pinned model assets passed the quick offline check."
+        else:
+            missing = ", ".join(item.model_id for item in report.missing_models)
+            status = (
+                f"Model setup required: {missing}. Root: "
+                f"{display_path(report.model_root)}"
+            )
+        self.model_status.config(text=status)
+
     @staticmethod
     def _button_style() -> dict[str, Any]:
         return {
@@ -378,6 +431,7 @@ class SettingsPanel:
             text=f"Borderless: {'on' if self.state_model.borderless else 'off'}"
         )
         self._sync_microphone_controls()
+        self._sync_model_controls()
 
     def show(self) -> None:
         if not self.exists():
@@ -414,6 +468,7 @@ class SubtitleOverlay:
         on_clear: Callable[[], None],
         on_exit: Callable[[], None],
         microphone: MicrophonePanelCallbacks | None = None,
+        models: ModelPanelCallbacks | None = None,
     ) -> None:
         import tkinter as tk
 
@@ -425,6 +480,7 @@ class SubtitleOverlay:
         self.on_clear = on_clear
         self.on_exit = on_exit
         self.microphone_callbacks = microphone
+        self.model_callbacks = models
         self.running = False
         self.closing = False
         self.settings_panel: SettingsPanel | None = None
@@ -619,6 +675,7 @@ class SubtitleOverlay:
             on_exit=self.on_exit,
             is_running=lambda: self.running,
             microphone=self.microphone_callbacks,
+            models=self.model_callbacks,
         )
         self.settings_panel = panel
         return panel

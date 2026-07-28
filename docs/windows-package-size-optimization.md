@@ -273,3 +273,13 @@ That CPU package completed two restored VMware clean-snapshot runs. The result
 does not replace the GPU route or prove universal CPU performance. See
 [CPU-only clean-machine recovery validation](cpu-clean-machine-recovery-validation.md)
 for the cold/live timing distinction and full evidence.
+
+## Final distribution direction
+
+The measured size gap drove a later policy decision: only the CPU x64 onedir and
+its installer are end-user candidates. The GPU package is retained solely for
+internal development, historical comparison, and future experiments. The
+installer still excludes all external models, so the approximately 658 MB
+installed footprint must not be advertised as a complete offline deployment;
+approximately 3.4 GB of separately prepared pinned model assets are also
+required.

@@ -36,7 +36,13 @@ def default_arguments(mode: str) -> list[str]:
 
     if mode == "console":
         return ["--help"]
-    return ["live-overlay"]
+    return [
+        "live-overlay",
+        "--translation-device",
+        "cpu",
+        "--offline",
+        "--no-auto-start",
+    ]
 
 
 def run_frozen(

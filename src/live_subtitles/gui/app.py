@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import traceback
+from pathlib import Path
 from typing import Any, Callable
 
 from ..audio.recording import AudioDeviceError
 from ..diagnostic_logging import diagnostic_logger
+from ..model_assets import (
+    ModelAssetsModel,
+    ModelAssetsReport,
+    configure_offline_environment,
+    display_path,
+)
+from ..runtime_paths import bundled_resource_path, is_frozen
 from ..config import (
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
@@ -29,7 +38,7 @@ from .events import (
     SubtitleEvent,
 )
 from .microphone_selector import MicrophoneSelectorModel, MicrophoneSelectorSnapshot
-from .overlay import MicrophonePanelCallbacks, SubtitleOverlay
+from .overlay import ModelPanelCallbacks, MicrophonePanelCallbacks, SubtitleOverlay
 from .process_controller import (
     LiveProcessOverlayController,
     LiveWorkerConfig,
@@ -160,6 +169,12 @@ def add_gui_subcommands(subparsers: Any) -> None:
     live.add_argument(
         "--auto-start", action=argparse.BooleanOptionalAction, default=True
     )
+    live.add_argument(
+        "--offline",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="use local model assets only and block model downloads",
+    )
     live.set_defaults(handler=_live_overlay)
 
 
@@ -174,12 +189,16 @@ class GuiRuntime:
         *,
         ui_poll_ms: int,
         microphone_selector: MicrophoneSelectorModel | None = None,
+        model_assets: ModelAssetsModel | None = None,
+        offline: bool = False,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.root = root
         self.state = state
         self.controller = controller
         self.microphone_selector = microphone_selector
+        self.model_assets = model_assets
+        self.offline = offline
         self.ui_poll_ms = ui_poll_ms
         self.clock = clock
         self.exit_code = 0
@@ -196,6 +215,14 @@ class GuiRuntime:
                 snapshot=microphone_selector.snapshot,
                 can_change=self.can_change_microphone,
             )
+        model_callbacks = None
+        if model_assets is not None:
+            model_callbacks = ModelPanelCallbacks(
+                recheck=self.refresh_model_assets,
+                snapshot=model_assets.snapshot,
+                open_folder=self.open_model_folder,
+                open_instructions=self.open_model_instructions,
+            )
         self.overlay = SubtitleOverlay(
             root,
             state,
@@ -204,8 +231,11 @@ class GuiRuntime:
             on_clear=self.clear,
             on_exit=self.close,
             microphone=microphone_callbacks,
+            models=model_callbacks,
         )
         self.root.report_callback_exception = self._handle_tk_callback_exception
+        if model_assets is not None:
+            self.refresh_model_assets()
 
     def _handle_tk_callback_exception(
         self,
@@ -269,9 +299,67 @@ class GuiRuntime:
         )
         return snapshot
 
+    @staticmethod
+    def _model_setup_message(report: ModelAssetsReport) -> str:
+        missing = ", ".join(status.model_id for status in report.missing_models)
+        return (
+            f"Model setup required: {missing}. Model root: "
+            f"{display_path(report.model_root)}. Model assets are not included in the "
+            "installer. Offline mode will not download them. Prepare the assets and "
+            "choose Recheck model assets in Settings."
+        )
+
+    def refresh_model_assets(self) -> ModelAssetsReport:
+        if self.model_assets is None:
+            raise RuntimeError("Model asset checks are not available in this mode.")
+        report = self.model_assets.refresh()
+        if self.offline:
+            configure_offline_environment(report)
+        if report.ready:
+            if self.state.status == "Model setup required":
+                self.state.set_status("Ready")
+            if self.state.latest_error.startswith("Model setup required:"):
+                self.state.latest_error = ""
+        else:
+            self.state.set_status("Model setup required")
+            self.state.latest_error = self._model_setup_message(report)
+        self.overlay.render()
+        if self.overlay.settings_panel is not None:
+            self.overlay.settings_panel.sync()
+        return report
+
+    def _open_path(self, path: Path) -> None:
+        try:
+            path.mkdir(parents=True, exist_ok=True) if not path.suffix else None
+            opener = getattr(os, "startfile", None)
+            if opener is None:
+                raise OSError("Opening folders is supported only on Windows.")
+            opener(str(path))
+        except OSError as exc:
+            self.state.latest_error = f"Unable to open {display_path(path)}: {exc}"
+            self.overlay.render()
+
+    def open_model_folder(self) -> None:
+        if self.model_assets is not None:
+            self._open_path(self.model_assets.snapshot().model_root)
+
+    def open_model_instructions(self) -> None:
+        path = (
+            bundled_resource_path("MODEL_SETUP.txt")
+            if is_frozen()
+            else Path(__file__).resolve().parents[3] / "docs" / "model-assets-setup.md"
+        )
+        self._open_path(path)
+
     def start(self) -> None:
         if self.closing or self.controller.running:
             return
+        if self.model_assets is not None:
+            report = self.refresh_model_assets()
+            if not report.ready:
+                self.overlay.set_running(False)
+                self.overlay.render()
+                return
         if self.microphone_selector is not None:
             try:
                 self.microphone_selector.validate_selection()
@@ -477,6 +565,7 @@ def _run_tk(
     args: argparse.Namespace,
     *,
     microphone_selector: MicrophoneSelectorModel | None = None,
+    model_assets: ModelAssetsModel | None = None,
 ) -> int:
     import tkinter as tk
 
@@ -487,6 +576,8 @@ def _run_tk(
         controller,
         ui_poll_ms=args.ui_poll_ms,
         microphone_selector=microphone_selector,
+        model_assets=model_assets,
+        offline=bool(getattr(args, "offline", False)),
     )
     exit_code = runtime.run(auto_start=args.auto_start)
     _print_gui_summary(controller.metrics.snapshot())
@@ -529,6 +620,7 @@ def _live_overlay(args: argparse.Namespace) -> int:
         controller,
         args,
         microphone_selector=MicrophoneSelectorModel(args.device),
+        model_assets=ModelAssetsModel(),
     )
     _log_live_exit_metrics(controller)
     for index, summary in enumerate(controller.summaries, start=1):

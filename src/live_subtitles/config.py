@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from .model_assets import hugging_face_cache_candidates
 from .runtime_paths import bundled_resource_path, is_frozen
 
 DEFAULT_ASR_MODEL = "gigaam-v3-e2e-rnnt"
@@ -25,11 +25,7 @@ PROJECT_ROOT = (
 def hugging_face_cache_dir() -> Path:
     """Return the effective Hugging Face Hub cache directory without creating it."""
 
-    if cache := os.environ.get("HF_HUB_CACHE"):
-        return Path(cache).expanduser()
-    if home := os.environ.get("HF_HOME"):
-        return Path(home).expanduser() / "hub"
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    return hugging_face_cache_candidates()[0]
 
 
 def hugging_face_model_cache_dir(model_name: str) -> Path:

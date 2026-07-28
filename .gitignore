@@ -11,6 +11,7 @@ __pycache__/
 .coverage
 htmlcov/
 dist/
+/dist/installer/
 build/
 *.egg-info/
 .env
@@ -19,6 +20,7 @@ models/
 model_cache/
 cache/
 data/
+/data/tools/inno-setup/
 /data/clean-machine-validation/
 *.wav
 *.mp3

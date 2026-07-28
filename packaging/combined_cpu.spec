@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import importlib.metadata
+import shutil
 import site
 import sys
 from pathlib import Path
@@ -9,20 +10,21 @@ project_root = Path(SPECPATH).parent
 sys.path.insert(0, str(project_root / "packaging"))
 
 import cpu_package_policy
+import cpu_build_provenance
 import torch
 
 cpu_runtime = cpu_package_policy.validate_cpu_environment(
     torch,
     [Path(path) for path in site.getsitepackages()],
 )
+cpu_build_metadata = project_root / "build" / "cpu-provenance" / "CPU_BUILD_METADATA.json"
+cpu_build_provenance.write_metadata(project_root, cpu_build_metadata)
 
 a = Analysis(
     [str(project_root / "packaging" / "entrypoint.py")],
     pathex=[str(project_root / "src")],
     binaries=[],
     datas=[
-        (str(project_root / "README.md"), "."),
-        (str(project_root / "THIRD_PARTY_NOTICES.md"), "."),
         (str(Path(sys.base_prefix) / "LICENSE.txt"), "licenses/python"),
         (str(Path(sys.base_prefix) / "tcl" / "tk8.6" / "license.terms"), "licenses/tk"),
     ],
@@ -98,4 +100,13 @@ coll = COLLECT(
     name="ru-zh-subtitles-cpu",
 )
 
-cpu_package_policy.validate_cpu_distribution(Path(DISTPATH) / "ru-zh-subtitles-cpu")
+cpu_distribution = Path(DISTPATH) / "ru-zh-subtitles-cpu"
+for source, name in (
+    (project_root / "README.md", "README.md"),
+    (project_root / "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
+    (project_root / "packaging" / "installer" / "MODEL_SETUP.txt", "MODEL_SETUP.txt"),
+    (cpu_build_metadata, "CPU_BUILD_METADATA.json"),
+):
+    shutil.copy2(source, cpu_distribution / name)
+
+cpu_package_policy.validate_cpu_distribution(cpu_distribution)

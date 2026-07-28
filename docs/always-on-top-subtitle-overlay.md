@@ -330,3 +330,17 @@ no failed caption.
 These are development-machine validations. This revision was not revalidated
 in VMware or another clean environment, and no selector persistence or hot
 switching was introduced.
+
+## Installer model-assets state
+
+The installed shortcut opens the same overlay in CPU, offline, no-auto-start
+mode. After the root exists, a lightweight preflight sets the persistent status
+to Ready or Model setup required. The compact handle remains visible in both
+states. Settings contains a Model assets region with Recheck, Open model folder,
+and Open model setup instructions. These callbacks run on the existing GUI
+thread and do not add a second Tk, modal grab, focus force, or polling loop.
+
+Start repeats the preflight. If any pinned Silero/GigaAM/NLLB asset is missing,
+Start remains blocked before process, model, or microphone creation and offline
+mode performs no download. Once assets pass, microphone selection and the
+existing Stop -> change -> Start lifecycle are unchanged.

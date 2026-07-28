@@ -7,12 +7,14 @@ from typing import Any
 import pytest
 
 from live_subtitles.gui.overlay import (
+    ModelPanelCallbacks,
     MicrophonePanelCallbacks,
     OverlayRenderer,
     SettingsPanel,
     SubtitleOverlay,
     position_coordinates,
 )
+from live_subtitles.model_assets import ModelAssetsReport, ModelAssetStatus
 from live_subtitles.gui.state import SubtitleEntry, SubtitleViewState
 from live_subtitles.gui.microphone_selector import (
     MicrophoneChoice,
@@ -206,6 +208,7 @@ def build_panel(
     state: SubtitleViewState | None = None,
     running: bool = False,
     microphone: MicrophonePanelCallbacks | None = None,
+    models: ModelPanelCallbacks | None = None,
 ) -> tuple[SettingsPanel, FakeRoot, FakeTk, list[str]]:
     view_state = state or SubtitleViewState()
     root = FakeRoot()
@@ -227,6 +230,7 @@ def build_panel(
         on_exit=no_op,
         is_running=lambda: running,
         microphone=microphone,
+        models=models,
         tk_module=tk,
         ttk_module=FakeTtk,
     )
@@ -272,6 +276,27 @@ def microphone_callbacks(
         calls,
         holder,
     )
+
+
+def model_callbacks(tmp_path: Path, *, ready: bool) -> tuple[ModelPanelCallbacks, list[str]]:
+    status = ModelAssetStatus(
+        key="nllb",
+        model_id="facebook/nllb-200-distilled-600M",
+        revision="f" * 40,
+        ready=ready,
+        location=tmp_path / "snapshot",
+        cache_root=tmp_path / "hub",
+        missing_files=() if ready else ("pytorch_model.bin",),
+    )
+    report = ModelAssetsReport(tmp_path / "models", tmp_path / "hub", (status,))
+    calls: list[str] = []
+    callbacks = ModelPanelCallbacks(
+        recheck=lambda: calls.append("recheck") or report,
+        snapshot=lambda: report,
+        open_folder=lambda: calls.append("folder"),
+        open_instructions=lambda: calls.append("instructions"),
+    )
+    return callbacks, calls
 
 
 def test_renderer_updates_bilingual_text_without_window_manager_calls() -> None:
@@ -384,6 +409,26 @@ def test_overlay_demo_settings_omits_microphone_region() -> None:
     assert panel.microphone_combobox is None
     assert panel.microphone_refresh_button is None
     assert panel.microphone_status is None
+
+
+def test_live_settings_shows_model_assets_without_polling(tmp_path: Path) -> None:
+    callbacks, calls = model_callbacks(tmp_path, ready=False)
+    panel, _root, _tk, _calls = build_panel(models=callbacks)
+    assert panel.model_status is not None
+    assert "Model setup required" in str(panel.model_status.options["text"])
+    panel.sync()
+    assert calls == []
+    assert panel.model_recheck_button is not None
+    command = panel.model_recheck_button.options["command"]
+    assert callable(command)
+    command()
+    assert calls == ["recheck"]
+
+
+def test_demo_settings_omits_model_assets(tmp_path: Path) -> None:
+    panel, _root, _tk, _calls = build_panel(models=None)
+    assert panel.model_status is None
+    assert panel.model_recheck_button is None
 
 
 def test_microphone_combobox_maps_position_to_index_without_parsing_label() -> None:

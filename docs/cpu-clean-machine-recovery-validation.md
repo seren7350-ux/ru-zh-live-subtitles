@@ -306,3 +306,12 @@ and GPU onedir forms. It was not copied into or executed in VMware, Windows
 Sandbox, or another clean machine. Therefore this document does not claim that
 the CPU package containing the selector has completed clean-machine validation;
 GPU clean-machine validation also remains pending.
+
+## Installer revision boundary
+
+The later CPU-only installer revision reuses the CPU runtime family but adds
+model preflight, offline shortcut policy, installer metadata, and per-user
+installation. It has been validated only on the development machine. Nothing in
+this earlier VMware result establishes clean-machine validity for the installer
+revision. A new restored/clean Windows run remains required before any stronger
+portability claim.

@@ -12,6 +12,10 @@ from live_subtitles.gui import app
 from live_subtitles.gui.controller import GuiEventQueue, GuiMetrics
 from live_subtitles.gui.events import FatalErrorEvent, SegmentErrorEvent, StoppedEvent, SubtitleEvent
 from live_subtitles.gui.microphone_selector import MicrophoneSelectorModel
+from live_subtitles.model_assets import (
+    ModelAssetsReport,
+    ModelAssetStatus,
+)
 from live_subtitles.gui.state import SubtitleViewState
 
 
@@ -20,6 +24,7 @@ class FakeOverlay:
         self.callbacks = callbacks
         self.render_count = 0
         self.running_states: list[tuple[bool, bool]] = []
+        self.settings_panel = None
 
     def render(self) -> None:
         self.render_count += 1
@@ -163,6 +168,7 @@ def test_live_overlay_passes_cli_device_to_selector(
         _args: object,
         *,
         microphone_selector: MicrophoneSelectorModel | None = None,
+        model_assets: object | None = None,
     ) -> int:
         captured.append(microphone_selector)
         return 0
@@ -187,6 +193,7 @@ def test_overlay_demo_has_no_microphone_selector(
         _args: object,
         *,
         microphone_selector: MicrophoneSelectorModel | None = None,
+        model_assets: object | None = None,
     ) -> int:
         captured.append(microphone_selector)
         return 0
@@ -195,6 +202,84 @@ def test_overlay_demo_has_no_microphone_selector(
     args = build_parser().parse_args(["overlay-demo"])
     assert app._overlay_demo(args) == 0
     assert captured == [None]
+
+
+class FakeModelAssets:
+    def __init__(self, reports: list[ModelAssetsReport]) -> None:
+        self.reports = reports
+        self.index = 0
+        self.refresh_count = 0
+
+    def refresh(self) -> ModelAssetsReport:
+        self.refresh_count += 1
+        report = self.reports[min(self.index, len(self.reports) - 1)]
+        self.index += 1
+        return report
+
+    def snapshot(self) -> ModelAssetsReport:
+        return self.reports[min(max(self.index - 1, 0), len(self.reports) - 1)]
+
+
+def model_report(tmp_path: Path, *, ready: bool) -> ModelAssetsReport:
+    status = ModelAssetStatus(
+        key="nllb",
+        model_id="facebook/nllb-200-distilled-600M",
+        revision="f" * 40,
+        ready=ready,
+        location=tmp_path / "snapshot",
+        cache_root=tmp_path / "hub",
+        missing_files=() if ready else ("pytorch_model.bin",),
+    )
+    return ModelAssetsReport(tmp_path / "models", tmp_path / "hub", (status,))
+
+
+def test_missing_models_block_start_without_worker_or_microphone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app, "SubtitleOverlay", FakeOverlay)
+    controller = FakeController()
+    models = FakeModelAssets([model_report(tmp_path, ready=False)])
+    gui = app.GuiRuntime(
+        FakeRoot(),
+        SubtitleViewState(),
+        controller,
+        ui_poll_ms=50,
+        model_assets=models,  # type: ignore[arg-type]
+        offline=True,
+    )
+    gui.start()
+    assert controller.started == 0
+    assert controller.device_indexes == []
+    assert gui.state.status == "Model setup required"
+    assert "pinned" not in gui.state.latest_error.lower()
+    assert "not included" in gui.state.latest_error
+
+
+def test_recheck_success_allows_next_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app, "SubtitleOverlay", FakeOverlay)
+    controller = FakeController()
+    models = FakeModelAssets(
+        [model_report(tmp_path, ready=False), model_report(tmp_path, ready=True)]
+    )
+    gui = app.GuiRuntime(
+        FakeRoot(),
+        SubtitleViewState(),
+        controller,
+        ui_poll_ms=50,
+        model_assets=models,  # type: ignore[arg-type]
+        offline=True,
+    )
+    gui.start()
+    assert controller.started == 1
+    assert gui.state.preparing
+
+
+def test_offline_cli_boolean_options() -> None:
+    parser = build_parser()
+    assert parser.parse_args(["live-overlay", "--offline"]).offline is True
+    assert parser.parse_args(["live-overlay", "--no-offline"]).offline is False
 
 
 def test_invalid_microphone_blocks_start_before_preparing_or_process_creation(
