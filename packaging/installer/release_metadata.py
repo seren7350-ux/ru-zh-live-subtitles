@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 PACKAGING_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGING_ROOT) not in sys.path:
@@ -47,6 +48,53 @@ def sha256_file(path: Path) -> str:
         while block := source.read(4 * 1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
+
+
+def read_model_bundle_metadata(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ReleaseMetadataError(f"Model bundle metadata cannot be read: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ReleaseMetadataError("Model bundle metadata must be a JSON object.")
+    required = {
+        "schema_version": 1,
+        "bundle_type": "offline-model-assets",
+    }
+    for field, expected in required.items():
+        if payload.get(field) != expected:
+            raise ReleaseMetadataError(
+                f"Model bundle metadata {field} must be {expected!r}."
+            )
+    for field in ("manifest_sha256", "gigaam_revision", "nllb_revision"):
+        value = payload.get(field)
+        if not isinstance(value, str) or not value:
+            raise ReleaseMetadataError(f"Model bundle metadata is missing {field}.")
+    if re.fullmatch(r"[0-9a-f]{64}", str(payload["manifest_sha256"])) is None:
+        raise ReleaseMetadataError("Model bundle metadata has invalid manifest_sha256.")
+    for field in ("gigaam_revision", "nllb_revision"):
+        if re.fullmatch(r"[0-9a-f]{40}", str(payload[field])) is None:
+            raise ReleaseMetadataError(f"Model bundle metadata has invalid {field}.")
+    for field in ("file_count", "total_bytes"):
+        value = payload.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ReleaseMetadataError(f"Model bundle metadata has invalid {field}.")
+
+    def contains_absolute_path(value: object) -> bool:
+        if isinstance(value, dict):
+            return any(contains_absolute_path(item) for item in value.values())
+        if isinstance(value, list):
+            return any(contains_absolute_path(item) for item in value)
+        if isinstance(value, str):
+            return (
+                PureWindowsPath(value).is_absolute()
+                or PurePosixPath(value).is_absolute()
+            )
+        return False
+
+    if contains_absolute_path(payload):
+        raise ReleaseMetadataError("Model bundle metadata contains an absolute path.")
+    return payload
 
 
 def inspect_cpu_distribution(
@@ -149,6 +197,7 @@ def create_metadata(
     cpu_dist: Path,
     expected_commit: str,
     inno_version: str,
+    model_bundle_metadata: Path,
     full_manifest: bool,
 ) -> dict[str, object]:
     version = read_application_version(repo_root / "src" / "live_subtitles" / "__init__.py")
@@ -167,8 +216,9 @@ def create_metadata(
         expected_commit=commit,
         full_manifest=full_manifest,
     )
+    model_bundle = read_model_bundle_metadata(model_bundle_metadata)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "application_name": "Russian–Chinese Live Subtitles",
         "application_version": version,
         "version_info_version": f"{version}.0",
@@ -178,6 +228,9 @@ def create_metadata(
         "gpu_distribution_status": GPU_DISTRIBUTION_STATUS,
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "inno_setup_version": inno_version,
+        "self_contained": True,
+        "offline_ready": True,
+        "model_bundle": model_bundle,
         "cpu_build_provenance": distribution["cpu_build_provenance"],
         "cpu_distribution": distribution,
     }
@@ -189,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cpu-dist", type=Path)
     parser.add_argument("--expected-commit")
     parser.add_argument("--inno-version", default="unknown")
+    parser.add_argument("--model-bundle-metadata", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--full-manifest", action="store_true")
     parser.add_argument("--version-only", action="store_true")
@@ -196,13 +250,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.version_only:
         print(read_application_version(args.repo_root / "src" / "live_subtitles" / "__init__.py"))
         return 0
-    if args.cpu_dist is None or args.expected_commit is None:
-        parser.error("--cpu-dist and --expected-commit are required unless --version-only is used")
+    if (
+        args.cpu_dist is None
+        or args.expected_commit is None
+        or args.model_bundle_metadata is None
+    ):
+        parser.error(
+            "--cpu-dist, --expected-commit and --model-bundle-metadata are required "
+            "unless --version-only is used"
+        )
     payload = create_metadata(
         repo_root=args.repo_root.resolve(),
         cpu_dist=args.cpu_dist.resolve(),
         expected_commit=args.expected_commit,
         inno_version=args.inno_version,
+        model_bundle_metadata=args.model_bundle_metadata.resolve(),
         full_manifest=args.full_manifest,
     )
     rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"

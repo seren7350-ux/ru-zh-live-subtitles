@@ -1,8 +1,9 @@
 # Model assets setup
 
-The CPU application and installer do not contain model weights and never
-download them. Before transcription or translation can start, prepare all three
-pinned asset sets outside the application directory.
+The self-contained CPU offline installer includes all three pinned asset sets
+and never downloads them. Setup installs those assets automatically outside the
+application directory. Manual preparation is needed only for development runs
+or the historical model-less installer, not for the teacher delivery.
 
 The application-managed root is:
 
@@ -27,11 +28,12 @@ NLLB-200 distilled 600M is licensed CC-BY-NC-4.0 and is restricted to
 non-commercial use. This project remains a local research/non-commercial
 candidate; these instructions do not approve commercial use or redistribution.
 
-## Copy from verified staging
+## Installer-managed layout
 
-Copy the contents of a previously verified `model-assets` staging directory to
-the application-managed root. Do not copy the staging directory into `{app}`.
-The resulting structure is:
+The build accepts only an explicit, fully verified `model-assets` staging root.
+The installer copies its contents to the managed root. It never consults the
+builder's normal Hugging Face cache and never places models in `{app}`. The
+installed structure is:
 
 ```text
 models\
@@ -53,7 +55,7 @@ models\
 Each `refs\main` must be exactly the pinned 40-byte lowercase hexadecimal
 revision with no BOM, CR, LF, or trailing whitespace.
 
-## Verify and recheck
+## Verify after installation
 
 From the installed application directory run:
 
@@ -64,8 +66,8 @@ From the installed application directory run:
 Exit code 0 and `Offline readiness: READY` mean every path, revision, required
 file, and known file size passed the fast check. Exit code 2 reports the exact
 missing or invalid assets without importing Torch, Transformers, ONNX Runtime,
-or model code. In the GUI, open Settings and select **Recheck model assets**
-after copying or repairing files.
+or model code. A successful self-contained install is expected to be READY
+without copying files or setting `HF_HOME`.
 
 Installed shortcuts start with `--offline`. The process sets only its own
 `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; missing assets block Start and

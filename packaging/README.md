@@ -122,20 +122,21 @@ clean-machine portability.
 `combined_cpu.spec` is the only end-user package source. The GPU spec, Torch
 hook, and optimization profile remain internal development/historical assets
 and are not inputs to an installer. `packaging/installer/build_installer.ps1`
-accepts only a policy-valid CPU onedir and the expected Git commit, verifies the
-official Inno Setup 7.0.2 compiler, runs the frozen CPU doctor, creates a full
-relative SHA manifest, and compiles `cpu-only.iss` into ignored
-`dist/installer` output.
+accepts a policy-valid CPU onedir, a mandatory explicit verified
+`-ModelAssetsRoot`, and the expected Git commit. It verifies the official Inno
+Setup 7.0.2 compiler, runs the frozen CPU doctor, fully hashes the model bundle,
+creates release metadata, and compiles `cpu-only.iss` into ignored
+`dist/installer-offline` output.
 
-The build is fail-closed: dirty Git state or stale CPU provenance fails before
-ISCC, while later compiler/report failures remove every same-version final
-output. Successful publication moves release metadata, compiler log, and build
-report first and setup last. The `.iss` gets README, third-party notices, and
-model setup instructions only from the CPU onedir; it adds only release
-metadata as an extra file.
+The build is fail-closed: dirty Git state, stale CPU provenance, or an invalid
+manifest, ref, size, or SHA fails before ISCC. It never falls back to a user
+cache or downloads models. Successful publication moves release/model metadata,
+compiler log, build report, instructions and optional numbered slices before
+setup, which remains the final success marker.
 
 The installer is per-user, non-administrative, x64, offline by default, and
-contains no CUDA runtime or model weights. Its stable AppId supports
-same-version repair and removal. Uninstall targets only the application,
-installer-created shortcuts, and its uninstall key; model assets remain in the
-user model/cache locations. See `docs/cpu-only-installer-validation.md`.
+contains no CUDA runtime in the application onedir. The installer payload does
+include all pinned model weights and installs them to LocalAppData. Its stable
+AppId supports same-version repair and removal. Uninstall targets only the
+application, installer-created shortcuts, and its uninstall key; model assets
+are preserved. See `docs/cpu-only-installer-validation.md`.

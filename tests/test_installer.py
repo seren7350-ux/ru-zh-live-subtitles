@@ -49,8 +49,13 @@ def test_inno_policy_is_per_user_x64_cpu_offline_and_stable() -> None:
     assert "[Registry]" not in source
     assert "[UninstallDelete]" not in source
     assert "combined.spec" not in source
-    assert "ru-zh-subtitles-cpu" not in source
-    assert "model-assets" not in source
+    assert "OutputBaseFilename=ru-zh-live-subtitles-cpu-offline-{#AppVersion}-setup" in source
+    assert 'DestDir: "{localappdata}\\ru-zh-live-subtitles\\models"' in source
+    assert "uninsneveruninstall" in source
+    assert "MinimumFreeBytes = 8589934592" in source
+    assert "LZMANumBlockThreads=4" in source
+    assert "HF_HUB_CACHE" not in source
+    assert "HF_HOME" not in source
 
 
 def test_installer_source_has_no_gpu_cuda_download_service_or_startup_policy() -> None:
@@ -87,6 +92,7 @@ def make_cpu_dist(root: Path) -> Path:
     (root / "README.md").write_text("readme\n", encoding="utf-8")
     (root / "THIRD_PARTY_NOTICES.md").write_text("notices\n", encoding="utf-8")
     (root / "MODEL_SETUP.txt").write_text("models\n", encoding="utf-8")
+    (root / "MODEL_LICENSES.txt").write_text("licenses\n", encoding="utf-8")
     (root / "CPU_BUILD_METADATA.json").write_text(
         json.dumps(
             {
@@ -117,7 +123,7 @@ def test_release_inventory_supports_unicode_space_path_and_rejects_cuda(
     result = metadata.inspect_cpu_distribution(dist, full_manifest=True)
     assert result["cuda_dll_count"] == 0
     assert result["model_weight_count"] == 0
-    assert result["file_count"] == 7
+    assert result["file_count"] == 8
     assert result["distribution_name"] == "ru-zh-subtitles-cpu"
     assert "path" not in result
     assert str(dist.resolve()) not in str(result)
@@ -148,6 +154,8 @@ def test_release_metadata_rejects_wrong_git_commit(
     version = tmp_path / "src" / "live_subtitles"
     version.mkdir(parents=True)
     (version / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    bundle_metadata = tmp_path / "MODEL_BUNDLE_METADATA.json"
+    make_model_bundle_metadata(bundle_metadata)
     monkeypatch.setattr(metadata, "git_commit", lambda _root: "a" * 40)
     with pytest.raises(metadata.ReleaseMetadataError, match="mismatch"):
         metadata.create_metadata(
@@ -155,6 +163,7 @@ def test_release_metadata_rejects_wrong_git_commit(
             cpu_dist=dist,
             expected_commit="b" * 40,
             inno_version="7.0.2",
+            model_bundle_metadata=bundle_metadata,
             full_manifest=False,
         )
 
@@ -164,6 +173,9 @@ def test_build_script_has_strict_safe_atomic_policy() -> None:
     assert "Set-StrictMode -Version Latest" in source
     assert "$ErrorActionPreference = 'Stop'" in source
     assert "ExpectedCommit" in source
+    assert "ModelAssetsRoot" in source
+    assert "model_bundle.py" in source
+    assert "dist\\installer-offline" in source
     assert "status --porcelain=v1 --untracked-files=all" in source
     assert "Git working tree is not clean" in source
     assert "validate_cpu_distribution.py" in source
@@ -179,12 +191,40 @@ def test_build_script_has_strict_safe_atomic_policy() -> None:
     assert "Invoke-Expression" not in source
     assert "Set-ExecutionPolicy" not in source
     assert "Start-Process" not in source
+    assert "huggingface" not in source.casefold()
+    assert "Invoke-WebRequest" not in source
+    assert source.index("$bundleMetadata =") < source.index("$iscc = Find-Iscc $IsccPath")
+
+
+def test_model_bundle_validator_has_no_cache_or_network_fallback() -> None:
+    source = (PROJECT_ROOT / "packaging" / "model_bundle.py").read_text(
+        encoding="utf-8"
+    ).casefold()
+    for forbidden in (
+        "hf_hub_download",
+        "snapshot_download",
+        "requests",
+        "urllib",
+        "user_model_root",
+        "default_hf_hub_cache",
+    ):
+        assert forbidden not in source
 
 
 def test_cpu_spec_includes_model_setup_but_gpu_spec_is_not_deleted() -> None:
     cpu = (PROJECT_ROOT / "packaging" / "combined_cpu.spec").read_text(encoding="utf-8")
     assert "MODEL_SETUP.txt" in cpu
+    assert "MODEL_LICENSES.txt" in cpu
     assert (PROJECT_ROOT / "packaging" / "combined.spec").is_file()
+
+
+def test_installed_model_license_notice_contains_upstream_terms() -> None:
+    notice = (INSTALLER_ROOT / "MODEL_LICENSES.txt").read_text(encoding="utf-8")
+    assert "Copyright (c) 2020-present Silero Team" in notice
+    assert "Copyright (c) 2024 GigaChat Team" in notice
+    assert "Creative Commons Attribution-NonCommercial 4.0 International Public" in notice
+    assert "Section 8 -- Interpretation." in notice
+    assert "f8d333a098d19b4fd9a8b18f94170487ad3f821d" in notice
 
 
 def test_inno_uses_provenance_bound_cpu_docs_without_duplicate_sources() -> None:
@@ -194,6 +234,8 @@ def test_inno_uses_provenance_bound_cpu_docs_without_duplicate_sources() -> None
     ]
     assert len([line for line in source_lines if "{#CpuDist}\\*" in line]) == 1
     assert len([line for line in source_lines if "RELEASE_METADATA.json" in line]) == 1
+    assert len([line for line in source_lines if "MODEL_BUNDLE_METADATA.json" in line]) == 1
+    assert len([line for line in source_lines if "{#ModelAssetsRoot}\\*" in line]) == 1
     for document in ("README.md", "THIRD_PARTY_NOTICES.md", "MODEL_SETUP.txt"):
         assert all(document not in line for line in source_lines)
 
@@ -274,11 +316,14 @@ def test_release_metadata_cross_validates_real_git_repo_and_manifest_docs(
 ) -> None:
     metadata = load_release_metadata()
     repo, dist, commit = _make_real_git_release_repo(tmp_path)
+    bundle_metadata = tmp_path / "MODEL_BUNDLE_METADATA.json"
+    make_model_bundle_metadata(bundle_metadata)
     payload = metadata.create_metadata(
         repo_root=repo,
         cpu_dist=dist,
         expected_commit=commit,
         inno_version="7.0.2",
+        model_bundle_metadata=bundle_metadata,
         full_manifest=True,
     )
     assert payload["git_commit"] == commit
@@ -289,8 +334,43 @@ def test_release_metadata_cross_validates_real_git_repo_and_manifest_docs(
     }
     installed = tmp_path / "installed"
     shutil.copytree(dist, installed)
-    for document in ("README.md", "THIRD_PARTY_NOTICES.md", "MODEL_SETUP.txt"):
+    for document in (
+        "README.md",
+        "THIRD_PARTY_NOTICES.md",
+        "MODEL_SETUP.txt",
+        "MODEL_LICENSES.txt",
+    ):
         assert metadata.sha256_file(installed / document) == manifest[document]
+
+
+def make_model_bundle_metadata(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "bundle_type": "offline-model-assets",
+                "silero_version": "6.2.1",
+                "silero_model_sha256": "1" * 64,
+                "gigaam_model_id": "istupakov/gigaam-v3-onnx",
+                "gigaam_revision": "322c3b29492673eb7d0b434bfa9dfb8653e34d02",
+                "nllb_model_id": "facebook/nllb-200-distilled-600M",
+                "nllb_revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+                "file_count": 7,
+                "total_bytes": 123,
+                "manifest_sha256": "2" * 64,
+                "licenses": {
+                    "silero": "MIT",
+                    "gigaam": "MIT",
+                    "nllb": "CC-BY-NC-4.0",
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _copy_builder_inputs(repo: Path) -> None:
@@ -301,8 +381,11 @@ def _copy_builder_inputs(repo: Path) -> None:
         "packaging/cpu_package_policy.py",
         "packaging/analyze_distribution.py",
         "packaging/validate_cpu_distribution.py",
+        "packaging/model_bundle.py",
         "packaging/installer/release_metadata.py",
         "packaging/installer/cpu-only.iss",
+        "packaging/installer/README_INSTALL.txt",
+        "packaging/installer/MODEL_LICENSES.txt",
     ):
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -348,7 +431,7 @@ def _make_builder_repo(tmp_path: Path) -> tuple[Path, Path, Path, Path, str]:
     commit = _git(repo, "rev-parse", "HEAD")
     dist = make_cpu_dist(repo / "dist" / "ru-zh-subtitles-cpu")
     _write_cpu_provenance(dist, commit)
-    output = repo / "dist" / "installer"
+    output = repo / "dist" / "installer-offline"
     doctor = tmp_path / "doctor.txt"
     doctor.write_text(
         "Package runtime family: cpu\n"
@@ -357,6 +440,8 @@ def _make_builder_repo(tmp_path: Path) -> tuple[Path, Path, Path, Path, str]:
         "Selected translation device: cpu\n",
         encoding="utf-8",
     )
+    (tmp_path / "model-assets").mkdir()
+    make_model_bundle_metadata(tmp_path / "MODEL_BUNDLE_METADATA.json")
     iscc = tmp_path / "fake-iscc.cmd"
     _make_fake_iscc(iscc)
     return repo, dist, output, doctor, commit
@@ -392,11 +477,13 @@ def _run_builder(
         + ")); & $builder"
         + " -RepoRoot " + _quote_powershell(repo)
         + " -CpuDist " + _quote_powershell(dist)
+        + " -ModelAssetsRoot " + _quote_powershell(doctor.parent / "model-assets")
         + " -OutputDir " + _quote_powershell(output)
         + " -ExpectedCommit " + _quote_powershell(commit)
         + " -PythonPath " + _quote_powershell(Path(sys.executable))
         + " -IsccPath " + _quote_powershell(iscc)
         + " -TestMode -TestDoctorOutputPath " + _quote_powershell(doctor)
+        + " -TestModelBundleMetadataPath " + _quote_powershell(doctor.parent / "MODEL_BUNDLE_METADATA.json")
         + " -TestFailureStage " + _quote_powershell(failure_stage)
     )
     return subprocess.run(
@@ -413,9 +500,11 @@ def _run_builder(
 def _final_builder_paths(output: Path) -> list[Path]:
     return [
         output / "RELEASE_METADATA.json",
+        output / "MODEL_BUNDLE_METADATA.json",
         output / "iscc.log",
         output / "build-report.json",
-        output / "ru-zh-live-subtitles-cpu-0.1.0-setup.exe",
+        output / "README_INSTALL.txt",
+        output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe",
     ]
 
 
@@ -470,7 +559,7 @@ def test_builder_rejects_stale_cpu_dist_before_iscc_and_publishes_nothing(
     assert not any(path.exists() for path in _final_builder_paths(output))
 
 
-@pytest.mark.parametrize("failure_stage", ["CpuPolicy", "Iscc", "Report"])
+@pytest.mark.parametrize("failure_stage", ["CpuPolicy", "ModelBundle", "Iscc", "Report"])
 def test_builder_is_fail_closed_at_injected_stages(
     tmp_path: Path, failure_stage: str
 ) -> None:
@@ -499,6 +588,82 @@ def test_builder_success_publishes_all_outputs_with_setup_last(tmp_path: Path) -
     assert finals[-1].stat().st_mtime_ns > max(path.stat().st_mtime_ns for path in finals[:-1])
     report = json.loads((output / "build-report.json").read_text(encoding="utf-8-sig"))
     assert report["working_tree_change_count"] == 0
+    assert report["output_mode"] == "single-file"
+    assert report["model_bundle_bytes"] == 123
+    assert report["model_file_count"] == 7
+    assert report["model_manifest_sha256"] == "2" * 64
     assert report["setup_published_last"] is True
     assert report["publication_order"][-1].endswith("setup.exe")
     assert not list(output.glob(".build-*"))
+
+
+def test_builder_supports_unicode_and_space_paths(tmp_path: Path) -> None:
+    fixture_root = tmp_path / "俄中 安装器"
+    fixture_root.mkdir()
+    repo, dist, output, doctor, commit = _make_builder_repo(fixture_root)
+    completed = _run_builder(
+        repo=repo,
+        dist=dist,
+        output=output,
+        doctor=doctor,
+        commit=commit,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe").is_file()
+
+
+def test_release_metadata_contains_offline_bundle_flags(tmp_path: Path) -> None:
+    metadata = load_release_metadata()
+    repo, dist, commit = _make_real_git_release_repo(tmp_path)
+    bundle_metadata = make_model_bundle_metadata(tmp_path / "bundle.json")
+    payload = metadata.create_metadata(
+        repo_root=repo,
+        cpu_dist=dist,
+        expected_commit=commit,
+        inno_version="7.0.2",
+        model_bundle_metadata=bundle_metadata,
+        full_manifest=False,
+    )
+    assert payload["self_contained"] is True
+    assert payload["offline_ready"] is True
+    assert payload["model_bundle"]["manifest_sha256"] == "2" * 64
+
+
+def test_release_metadata_rejects_model_bundle_absolute_path(tmp_path: Path) -> None:
+    metadata = load_release_metadata()
+    bundle_metadata = make_model_bundle_metadata(tmp_path / "bundle.json")
+    payload = json.loads(bundle_metadata.read_text(encoding="utf-8"))
+    payload["staging_path"] = r"C:\Users\someone\models"
+    bundle_metadata.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(metadata.ReleaseMetadataError, match="absolute path"):
+        metadata.read_model_bundle_metadata(bundle_metadata)
+
+
+def test_builder_without_model_assets_root_fails_and_removes_stale_setup(
+    tmp_path: Path,
+) -> None:
+    repo, dist, output, doctor, commit = _make_builder_repo(tmp_path)
+    output.mkdir(parents=True, exist_ok=True)
+    setup = output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe"
+    setup.write_bytes(b"stale")
+    command = (
+        "$builder=[scriptblock]::Create([IO.File]::ReadAllText("
+        + _quote_powershell(BUILD_SCRIPT)
+        + ")); & $builder"
+        + " -RepoRoot " + _quote_powershell(repo)
+        + " -CpuDist " + _quote_powershell(dist)
+        + " -OutputDir " + _quote_powershell(output)
+        + " -ExpectedCommit " + _quote_powershell(commit)
+    )
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", command],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_windows_powershell_env(),
+    )
+    assert completed.returncode != 0
+    assert "ModelAssetsRoot is required" in completed.stderr
+    assert not setup.exists()

@@ -231,20 +231,22 @@ The network-disabled Windows Sandbox staging boundary, exact local-only cache
 allowlist, generated configuration workflow, and current host-edition blocker
 are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
-The sole end-user Windows distribution candidate is now the x64 CPU-only onedir
-with two launchers and its per-user Inno Setup installer. The installed
-application is approximately 658 MB. Separate local model assets of
-approximately 3.4 GB are required before transcription and translation can run;
-they are not in the package or installer. Installed shortcuts use CPU, offline,
-no-auto-start mode, so a missing cache never triggers a silent download.
+The course-delivery candidate is the self-contained x64 CPU-only offline
+installer. It combines the approximately 658 MB CPU onedir with 3,377,386,294
+bytes of pinned Silero, GigaAM and NLLB assets. The installer requires no
+Python, administrator access, network connection, token, or manual model copy.
+It installs the application under
+`%LOCALAPPDATA%\Programs\RuZhLiveSubtitles` and models under
+`%LOCALAPPDATA%\ru-zh-live-subtitles\models`. Installed shortcuts use CPU,
+offline, no-auto-start mode; first launch does not download anything.
 
-The installer requires no administrator access and defaults to
-`%LOCALAPPDATA%\Programs\RuZhLiveSubtitles`. Prepare the pinned assets as
-described in [model assets setup](docs/model-assets-setup.md), run
-`ru-zh-subtitles-console.exe model-doctor`, then open Settings, select a
-microphone, and choose **Recheck model assets**. Uninstall preserves external
-models and user caches. The installer is unsigned, may trigger SmartScreen, and
-has only been validated on the development machine.
+The delivery is generated in `dist\installer-offline`. A maximum-compression
+preflight produced one approximately 1.8 GB setup, well below the 3.8 GB split
+threshold; the exact final size and SHA-256 are recorded in the ignored build
+report. At least 8 GiB of free space is required. Uninstall removes the app and
+shortcuts but deliberately preserves the model directory; delete that directory
+manually only to reclaim space. The installer is unsigned and may trigger
+SmartScreen. See [self-contained offline installer](docs/self-contained-offline-installer.md).
 
 The clean-machine validation kit is under `packaging/clean_machine/`. Generated
 packages, model staging, machine-specific `.wsb` files, WAVs, logs, manifests,
@@ -257,8 +259,11 @@ snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machin
 The GPU spec remains an internal development/historical benchmark artifact; it
 is not distributed or supported as an end-user package and no GPU installer is
 produced. The earlier CPU clean-VMware result predates this installer revision.
-The installer has not been revalidated on a clean machine, is not signed, and is
-not a public or production-ready Release. Model weights remain external, and
-NLLB remains a non-commercial research candidate. See
+The self-contained installer has not been validated on a separate clean
+machine, is not signed, and is not a public or production-ready Release. Model
+weights remain outside the CPU onedir but are included in the offline installer
+payload. NLLB remains restricted to non-commercial use. The older roughly
+216 MB model-less setup is a historical development artifact and must not be
+delivered by itself. See
 [CPU-only distribution policy](docs/cpu-only-distribution.md) and
 [installer validation](docs/cpu-only-installer-validation.md).

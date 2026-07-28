@@ -1,9 +1,9 @@
 RUSSIAN-CHINESE LIVE SUBTITLES - MODEL SETUP
 ================================================
 
-The installer does not contain model weights and does not download models.
-The application starts in offline mode. Transcription and translation remain
-disabled until all pinned assets pass model-doctor.
+The self-contained CPU offline installer contains all pinned model weights and
+does not download models. Setup automatically installs and verifies the managed
+model layout. No Python, token, network connection or manual copy is required.
 
 Target model root:
   %LOCALAPPDATA%\ru-zh-live-subtitles\models
@@ -15,15 +15,10 @@ Required assets:
   facebook/nllb-200-distilled-600M
     revision f8d333a098d19b4fd9a8b18f94170487ad3f821d
 
-Copy the contents of a previously verified model-assets staging directory so
-that hf-home\hub contains the two Hugging Face repositories and silero-vad\6.2.1
-contains silero_vad.onnx, LICENSE and metadata.json. refs\main must contain only
-the pinned 40-byte lowercase revision, with no BOM or newline.
-
 Run from the installed application directory:
   ru-zh-subtitles-console.exe model-doctor
 
-Then open Settings and choose Recheck model assets. Offline mode sets only
+The expected result is "Offline readiness: READY". Offline mode sets only
 process-local HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE values; it does not change
 system or user environment variables and it never downloads missing assets.
 
