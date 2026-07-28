@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,24 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOOLKIT = PROJECT_ROOT / "packaging" / "clean_machine"
 VALID_REVISION = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _windows_powershell_env(
+    source: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Let Windows PowerShell rebuild its own module discovery path.
+
+    GitHub Actions runs steps in PowerShell 7. A nested ``powershell.exe`` must
+    not inherit PowerShell 7 module locations because an incompatible module
+    can shadow the Windows PowerShell 5.1 module that provides Get-FileHash.
+    """
+
+    inherited = os.environ if source is None else source
+    return {
+        key: value
+        for key, value in inherited.items()
+        if key.casefold() != "psmodulepath"
+    }
 
 
 def _load(name: str) -> Any:
@@ -642,6 +662,22 @@ def test_offline_script_delimits_escaped_regex_variable() -> None:
     assert "$escaped:" not in source
 
 
+def test_windows_powershell_env_removes_inherited_module_paths() -> None:
+    cleaned = _windows_powershell_env(
+        {
+            "Path": "C:\\Windows\\System32",
+            "PSModulePath": "C:\\Program Files\\PowerShell\\7\\Modules",
+            "psmodulepath": "C:\\other-core-modules",
+            "HF_HUB_OFFLINE": "1",
+        }
+    )
+
+    assert cleaned == {
+        "Path": "C:\\Windows\\System32",
+        "HF_HUB_OFFLINE": "1",
+    }
+
+
 def test_asset_manifest_handles_one_file_under_strict_mode(tmp_path: Path) -> None:
     payload = b"single manifest record"
     asset = tmp_path / "sample.wav"
@@ -682,9 +718,11 @@ def test_asset_manifest_handles_one_file_under_strict_mode(tmp_path: Path) -> No
         check=True,
         capture_output=True,
         text=True,
+        env=_windows_powershell_env(),
     )
     result = json.loads(completed.stdout)
-    assert result["valid"] is True
+    assert completed.stderr.strip() == "", completed.stderr
+    assert result["valid"] is True, result
     assert result["checked_files"] == 1
     assert result["failure_count"] == 0
 
@@ -723,6 +761,7 @@ def test_validation_command_preserves_spaced_arguments_and_exit_code(
         check=True,
         capture_output=True,
         text=True,
+        env=_windows_powershell_env(),
     )
     result = json.loads(completed.stdout)
     assert result["exit_code"] == 7
