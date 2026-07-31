@@ -33,7 +33,7 @@ Startup completes in this order before recording:
 2. validate the selected native 16 kHz microphone format;
 3. create one Silero ONNX session;
 4. create and preload one GigaAM recognizer on `CPUExecutionProvider`;
-5. create and preload one selected translator (NLLB by default, `auto` device);
+5. create and preload one selected translator (NLLB by default, CPU device);
 6. print `Models ready`;
 7. start the subtitle worker, open the microphone, then print `Listening...`.
 

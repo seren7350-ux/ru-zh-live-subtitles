@@ -1,9 +1,9 @@
 # Model assets setup
 
-The self-contained CPU offline installer includes all three pinned asset sets
-and never downloads them. Setup installs those assets automatically outside the
-application directory. Manual preparation is needed only for development runs
-or the historical model-less installer, not for the teacher delivery.
+The current source migration requires three pinned asset sets and never downloads
+ASR weights at runtime. The existing teacher installer still contains the former
+RNNT/ONNX asset and has not been rebuilt for Large CTC; use this document's new
+identity only for source validation and the next packaging stage.
 
 The application-managed root is:
 
@@ -21,7 +21,7 @@ settings are never overwritten and no permanent environment variable is set.
 | Component | Model and revision | Required location |
 |---|---|---|
 | VAD | Silero VAD `6.2.1` | `models\silero-vad\6.2.1` |
-| ASR | `istupakov/gigaam-v3-onnx` at `322c3b29492673eb7d0b434bfa9dfb8653e34d02` | selected Hub cache |
+| ASR | `ai-sage/GigaAM-Multilingual`, variant `large_ctc`, at `3905cd51c3ed4e88c8edf33f3302969ba480a327` | selected Hub cache or explicit development snapshot |
 | Translation | `facebook/nllb-200-distilled-600M` at `f8d333a098d19b4fd9a8b18f94170487ad3f821d` | selected Hub cache |
 
 NLLB-200 distilled 600M is licensed CC-BY-NC-4.0 and is restricted to
@@ -39,9 +39,9 @@ installed structure is:
 models\
   hf-home\
     hub\
-      models--istupakov--gigaam-v3-onnx\
+      models--ai-sage--GigaAM-Multilingual\
         refs\main
-        snapshots\322c3b29492673eb7d0b434bfa9dfb8653e34d02\...
+        snapshots\3905cd51c3ed4e88c8edf33f3302969ba480a327\...
       models--facebook--nllb-200-distilled-600M\
         refs\main
         snapshots\f8d333a098d19b4fd9a8b18f94170487ad3f821d\...
@@ -73,4 +73,20 @@ Installed shortcuts start with `--offline`. The process sets only its own
 `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; missing assets block Start and
 are never downloaded. Uninstall removes the application and its shortcuts but
 preserves this model root and normal Hugging Face caches. Delete external model
-assets manually only when you intend to reclaim approximately 3.4 GB.
+assets manually only when you intend to reclaim disk space. The next installer
+build must recalculate the total because the Large CTC snapshot alone is
+2,341,674,025 bytes.
+
+For development only, point the backend at the exact canonical snapshot without
+changing global environment settings:
+
+```powershell
+$env:LIVE_SUBTITLES_GIGAAM_MULTILINGUAL_SNAPSHOT = "<staging>\3905cd51c3ed4e88c8edf33f3302969ba480a327"
+python -m live_subtitles model-doctor
+Remove-Item Env:LIVE_SUBTITLES_GIGAAM_MULTILINGUAL_SNAPSHOT
+```
+
+The snapshot must contain the official `.gitattributes`, `README.md`,
+`config.json`, `modeling_gigaam.py`, and `pytorch_model.bin` files. Its license
+is MIT. Model weights, remote-code snapshots, manifests containing host paths,
+and caches remain ignored and must not be committed or uploaded.

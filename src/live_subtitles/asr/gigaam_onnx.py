@@ -9,7 +9,7 @@ import wave
 from pathlib import Path
 from typing import Any, Callable
 
-from ..config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER
+from ..config import LEGACY_ASR_MODEL, LEGACY_PROVIDER
 from .base import (
     AsrError,
     AudioTranscriptionError,
@@ -25,8 +25,8 @@ class GigaAMOnnxRecognizer:
 
     def __init__(
         self,
-        model_name: str = DEFAULT_ASR_MODEL,
-        provider: str = DEFAULT_PROVIDER,
+        model_name: str = LEGACY_ASR_MODEL,
+        provider: str = LEGACY_PROVIDER,
         *,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:

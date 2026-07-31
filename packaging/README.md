@@ -1,5 +1,10 @@
 # Windows onedir packaging spike
 
+> Migration note (2026-07-31): source now defaults to the official pinned
+> GigaAM Multilingual Large CTC Torch 2.10/TorchAudio 2.10 backend. Existing
+> onedir and installer artifacts remain the validated legacy RNNT/ONNX baseline;
+> they were not rebuilt in this migration and must not be relabeled as Large CTC.
+
 This directory contains reproducible PyInstaller 6.21.0 inputs for two onedir
 builds. `console.spec` creates the diagnostic CLI and `windowed.spec` creates the
 noconsole overlay launcher. Both reuse `entrypoint.py`; its first runtime action
@@ -86,6 +91,13 @@ use `requirements-cpu.txt` and `constraints-cpu.txt` so pip cannot replace the
 CPU wheel with a CUDA build. Run `validate_cpu_distribution.py` against the
 finished onedir. The validator requires `torch_cpu.dll` and rejects CUDA,
 cuDNN, cuBLAS, NVRTC, NVJitLink, CUPTI and NVPerf runtime files.
+
+Install both matching CPU wheels before resolving the remaining locked set:
+
+```powershell
+.\.venv-packaging-cpu\Scripts\python.exe -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+.\.venv-packaging-cpu\Scripts\python.exe -m pip install -r packaging\requirements-cpu.txt -c packaging\constraints-cpu.txt
+```
 
 The CPU build also requires a clean Git worktree. It generates ignored
 `build/cpu-provenance/CPU_BUILD_METADATA.json`, then publishes that path-safe

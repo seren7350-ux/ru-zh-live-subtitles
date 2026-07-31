@@ -23,6 +23,11 @@ def test_doctor_survives_missing_onnxruntime_and_never_loads_model(
     fake_modules = {
         "numpy": SimpleNamespace(__version__="2.test"),
         "sounddevice": FakeSoundDevice(),
+        "torch": SimpleNamespace(__version__="2.10.test"),
+        "torchaudio": SimpleNamespace(__version__="2.10.test"),
+        "transformers": SimpleNamespace(__version__="5.test"),
+        "hydra": SimpleNamespace(__version__="1.3.test"),
+        "omegaconf": SimpleNamespace(__version__="2.3.test"),
         "onnx_asr": SimpleNamespace(
             __version__="0.12.0",
             load_model=lambda *args, **kwargs: load_calls.append((args, kwargs)),
@@ -50,6 +55,11 @@ def test_doctor_reports_cpu_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_modules = {
         "numpy": SimpleNamespace(__version__="2.test"),
         "sounddevice": FakeSoundDevice(),
+        "torch": SimpleNamespace(__version__="2.10.test"),
+        "torchaudio": SimpleNamespace(__version__="2.10.test"),
+        "transformers": SimpleNamespace(__version__="5.test"),
+        "hydra": SimpleNamespace(__version__="1.3.test"),
+        "omegaconf": SimpleNamespace(__version__="2.3.test"),
         "onnx_asr": SimpleNamespace(__version__="0.12.0"),
         "onnxruntime": SimpleNamespace(
             __version__="test",

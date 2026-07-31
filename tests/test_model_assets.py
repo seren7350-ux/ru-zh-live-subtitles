@@ -22,13 +22,14 @@ def compact_specs() -> tuple[ModelAssetSpec, ...]:
             "MIT",
         ),
         ModelAssetSpec(
-            "gigaam",
+            "gigaam-multilingual-large-ctc",
             model_assets.GIGAAM_MODEL_ID,
-            "models--istupakov--gigaam-v3-onnx",
+            "models--ai-sage--GigaAM-Multilingual",
             model_assets.GIGAAM_REVISION,
-            ("config.json", "model.onnx"),
-            (("config.json", 1), ("model.onnx", 1)),
+            ("config.json", "modeling_gigaam.py", "pytorch_model.bin"),
+            (("config.json", 1), ("modeling_gigaam.py", 1), ("pytorch_model.bin", 1)),
             "MIT",
+            variant="large_ctc",
         ),
         ModelAssetSpec(
             "nllb",
@@ -65,8 +66,11 @@ def make_ready_tree(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
 
 
 def test_pinned_model_ids_and_revisions_are_canonical() -> None:
-    assert model_assets.GIGAAM_MODEL_ID == "istupakov/gigaam-v3-onnx"
-    assert model_assets.GIGAAM_REVISION == "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
+    assert model_assets.GIGAAM_MODEL_ID == "ai-sage/GigaAM-Multilingual"
+    assert model_assets.GIGAAM_MULTILINGUAL_VARIANT == "large_ctc"
+    assert model_assets.GIGAAM_REVISION == "3905cd51c3ed4e88c8edf33f3302969ba480a327"
+    assert model_assets.LEGACY_GIGAAM_MODEL_ID == "istupakov/gigaam-v3-onnx"
+    assert model_assets.LEGACY_GIGAAM_REVISION == "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
     assert model_assets.NLLB_MODEL_ID == "facebook/nllb-200-distilled-600M"
     assert model_assets.NLLB_REVISION == "f8d333a098d19b4fd9a8b18f94170487ad3f821d"
 
@@ -103,7 +107,9 @@ def test_quick_check_accepts_complete_pinned_assets_without_loading_models(
         model_root=models, hf_cache_roots=(hub,)
     )
     assert report.ready
-    assert all(status.ready for status in report.statuses)
+    assert all(status.ready for status in report.statuses if status.required)
+    legacy = next(status for status in report.statuses if not status.required)
+    assert not legacy.ready
 
 
 @pytest.mark.parametrize("payload", [b"a" * 40 + b"\r\n", b"F" * 40, b"0" * 40])
@@ -111,12 +117,16 @@ def test_quick_check_rejects_ref_newlines_case_or_wrong_revision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: bytes
 ) -> None:
     models, hub = make_ready_tree(tmp_path, monkeypatch)
-    ref = hub / "models--istupakov--gigaam-v3-onnx" / "refs" / "main"
+    ref = hub / "models--ai-sage--GigaAM-Multilingual" / "refs" / "main"
     ref.write_bytes(payload)
     report = model_assets.quick_check_model_assets(
         model_root=models, hf_cache_roots=(hub,)
     )
-    gigaam = next(status for status in report.statuses if status.key == "gigaam")
+    gigaam = next(
+        status
+        for status in report.statuses
+        if status.key == "gigaam-multilingual-large-ctc"
+    )
     assert not gigaam.ready
     assert gigaam.problems
 
@@ -137,7 +147,8 @@ def test_missing_or_empty_file_is_reported(
         model_root=models, hf_cache_roots=(hub,)
     )
     assert not report.ready
-    assert "empty" in " ".join(report.statuses[-1].problems)
+    nllb = next(status for status in report.statuses if status.key == "nllb")
+    assert "empty" in " ".join(nllb.problems)
 
 
 def test_offline_environment_is_process_local_and_respects_explicit_cache(

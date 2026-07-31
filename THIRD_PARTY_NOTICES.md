@@ -39,7 +39,8 @@ are included in `dist`.
 | External asset | Evaluated source | Verified license/boundary |
 |---|---|---|
 | Silero VAD 6.2.1 ONNX | Pinned official wheel asset prepared into the user's LocalAppData cache | MIT, verified from the cached wheel `LICENSE` and [upstream license](https://github.com/snakers4/silero-vad/blob/master/LICENSE) |
-| GigaAM-v3 E2E RNN-T ONNX | `istupakov/gigaam-v3-onnx`, derived from the GigaAM project | MIT, stated by the [ONNX model card](https://huggingface.co/istupakov/gigaam-v3-onnx) and [upstream GigaAM license](https://github.com/salute-developers/GigaAM/blob/main/LICENSE) |
+| GigaAM Multilingual Large CTC (current source default) | Official `ai-sage/GigaAM-Multilingual`, `large_ctc` at `3905cd51c3ed4e88c8edf33f3302969ba480a327` | MIT, stated by the [official model card](https://huggingface.co/ai-sage/GigaAM-Multilingual) and [upstream GigaAM license](https://github.com/salute-developers/GigaAM/blob/main/LICENSE) |
+| GigaAM-v3 E2E RNN-T ONNX (explicit legacy and retained installer baseline) | `istupakov/gigaam-v3-onnx`, derived from the GigaAM project | MIT, stated by the [ONNX model card](https://huggingface.co/istupakov/gigaam-v3-onnx) and [upstream GigaAM license](https://github.com/salute-developers/GigaAM/blob/main/LICENSE) |
 | NLLB-200 distilled 600M | `facebook/nllb-200-distilled-600M` | CC-BY-NC-4.0; non-commercial research model. See the [official model card](https://huggingface.co/facebook/nllb-200-distilled-600M). |
 
 NLLB is a non-commercial candidate. Its weights remain outside the CPU onedir,
@@ -57,7 +58,7 @@ license files, notices, SBOM material, Python/Tk licenses, and every runtime DLL
 remain included. See `docs/windows-package-size-optimization.md` for the exact
 retained/excluded evidence. No claim of redistribution approval is made.
 
-## CPU distribution candidate
+## Historical CPU distribution candidate
 
 The sole end-user distribution candidate uses the official PyTorch
 `2.12.1+cpu` wheel
@@ -76,3 +77,6 @@ license details are installed as `MODEL_LICENSES.txt`. NLLB remains restricted
 to non-commercial use. No credential is included. The installer is unsigned,
 locally validated only, not a public Release, and not an approved commercial
 distribution.
+
+This retained installer predates the Large CTC source migration. No existing
+onedir or installer was rebuilt, overwritten, or relabeled in this migration.

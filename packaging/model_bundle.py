@@ -18,6 +18,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from live_subtitles.model_assets import (  # noqa: E402
     GIGAAM_MODEL_ID,
+    GIGAAM_MULTILINGUAL_VARIANT,
     GIGAAM_REVISION,
     MODEL_SPECS,
     NLLB_MODEL_ID,
@@ -263,6 +264,7 @@ def validate_model_bundle(
         "silero_version": SILERO_VERSION,
         "silero_model_sha256": SILERO_MODEL_SHA256,
         "gigaam_model_id": GIGAAM_MODEL_ID,
+        "gigaam_variant": GIGAAM_MULTILINGUAL_VARIANT,
         "gigaam_revision": GIGAAM_REVISION,
         "nllb_model_id": NLLB_MODEL_ID,
         "nllb_revision": NLLB_REVISION,

@@ -11,8 +11,16 @@ from typing import Iterable
 from .runtime_paths import user_data_directory
 
 SILERO_VERSION = "6.2.1"
-GIGAAM_MODEL_ID = "istupakov/gigaam-v3-onnx"
-GIGAAM_REVISION = "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
+GIGAAM_MULTILINGUAL_MODEL_ID = "ai-sage/GigaAM-Multilingual"
+GIGAAM_MULTILINGUAL_VARIANT = "large_ctc"
+GIGAAM_MULTILINGUAL_REVISION = "3905cd51c3ed4e88c8edf33f3302969ba480a327"
+GIGAAM_MULTILINGUAL_CACHE_NAME = "models--ai-sage--GigaAM-Multilingual"
+GIGAAM_MULTILINGUAL_SNAPSHOT_ENV = "LIVE_SUBTITLES_GIGAAM_MULTILINGUAL_SNAPSHOT"
+LEGACY_GIGAAM_MODEL_ID = "istupakov/gigaam-v3-onnx"
+LEGACY_GIGAAM_REVISION = "322c3b29492673eb7d0b434bfa9dfb8653e34d02"
+# Backward-compatible metadata names now describe the default ASR asset.
+GIGAAM_MODEL_ID = GIGAAM_MULTILINGUAL_MODEL_ID
+GIGAAM_REVISION = GIGAAM_MULTILINGUAL_REVISION
 NLLB_MODEL_ID = "facebook/nllb-200-distilled-600M"
 NLLB_REVISION = "f8d333a098d19b4fd9a8b18f94170487ad3f821d"
 LOWER_HEX_REVISION = re.compile(rb"[0-9a-f]{40}")
@@ -31,6 +39,9 @@ class ModelAssetSpec:
     required_files: tuple[str, ...]
     expected_sizes: tuple[tuple[str, int], ...]
     license_id: str
+    variant: str | None = None
+    required: bool = True
+    snapshot_env: str | None = None
 
 
 MODEL_SPECS = (
@@ -44,25 +55,27 @@ MODEL_SPECS = (
         license_id="MIT",
     ),
     ModelAssetSpec(
-        key="gigaam-v3-e2e-rnnt",
-        model_id=GIGAAM_MODEL_ID,
-        cache_name="models--istupakov--gigaam-v3-onnx",
-        revision=GIGAAM_REVISION,
+        key="gigaam-multilingual-large-ctc",
+        model_id=GIGAAM_MULTILINGUAL_MODEL_ID,
+        cache_name=GIGAAM_MULTILINGUAL_CACHE_NAME,
+        revision=GIGAAM_MULTILINGUAL_REVISION,
+        variant=GIGAAM_MULTILINGUAL_VARIANT,
         required_files=(
+            ".gitattributes",
+            "README.md",
             "config.json",
-            "v3_e2e_rnnt_decoder.onnx",
-            "v3_e2e_rnnt_encoder.onnx",
-            "v3_e2e_rnnt_joint.onnx",
-            "v3_e2e_rnnt_vocab.txt",
+            "modeling_gigaam.py",
+            "pytorch_model.bin",
         ),
         expected_sizes=(
-            ("config.json", 135),
-            ("v3_e2e_rnnt_decoder.onnx", 4_599_910),
-            ("v3_e2e_rnnt_encoder.onnx", 885_084_534),
-            ("v3_e2e_rnnt_joint.onnx", 2_712_896),
-            ("v3_e2e_rnnt_vocab.txt", 13_354),
+            (".gitattributes", 1_519),
+            ("README.md", 4_454),
+            ("config.json", 2_631),
+            ("modeling_gigaam.py", 72_778),
+            ("pytorch_model.bin", 2_341_592_643),
         ),
         license_id="MIT",
+        snapshot_env=GIGAAM_MULTILINGUAL_SNAPSHOT_ENV,
     ),
     ModelAssetSpec(
         key="nllb-200-distilled-600m",
@@ -91,6 +104,31 @@ MODEL_SPECS = (
     ),
 )
 
+LEGACY_GIGAAM_SPEC = ModelAssetSpec(
+    key="gigaam-v3-e2e-rnnt-onnx-legacy",
+    model_id=LEGACY_GIGAAM_MODEL_ID,
+    cache_name="models--istupakov--gigaam-v3-onnx",
+    revision=LEGACY_GIGAAM_REVISION,
+    required_files=(
+        "config.json",
+        "v3_e2e_rnnt_decoder.onnx",
+        "v3_e2e_rnnt_encoder.onnx",
+        "v3_e2e_rnnt_joint.onnx",
+        "v3_e2e_rnnt_vocab.txt",
+    ),
+    expected_sizes=(
+        ("config.json", 135),
+        ("v3_e2e_rnnt_decoder.onnx", 4_599_910),
+        ("v3_e2e_rnnt_encoder.onnx", 885_084_534),
+        ("v3_e2e_rnnt_joint.onnx", 2_712_896),
+        ("v3_e2e_rnnt_vocab.txt", 13_354),
+    ),
+    license_id="MIT",
+    required=False,
+)
+
+ALL_MODEL_SPECS = (*MODEL_SPECS, LEGACY_GIGAAM_SPEC)
+
 
 @dataclass(frozen=True)
 class ModelAssetStatus:
@@ -102,6 +140,8 @@ class ModelAssetStatus:
     cache_root: Path | None
     missing_files: tuple[str, ...] = ()
     problems: tuple[str, ...] = ()
+    required: bool = True
+    variant: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,11 +152,13 @@ class ModelAssetsReport:
 
     @property
     def ready(self) -> bool:
-        return all(status.ready for status in self.statuses)
+        return all(status.ready for status in self.statuses if status.required)
 
     @property
     def missing_models(self) -> tuple[ModelAssetStatus, ...]:
-        return tuple(status for status in self.statuses if not status.ready)
+        return tuple(
+            status for status in self.statuses if status.required and not status.ready
+        )
 
 
 def user_model_root() -> Path:
@@ -168,6 +210,8 @@ def _check_revision_ref(ref_path: Path, revision: str) -> tuple[str, ...]:
 
 def _check_hf_model(spec: ModelAssetSpec, cache_root: Path) -> ModelAssetStatus:
     assert spec.cache_name is not None
+    if spec.snapshot_env and (explicit_snapshot := os.environ.get(spec.snapshot_env)):
+        return _check_snapshot(spec, Path(explicit_snapshot).expanduser().resolve())
     repository = cache_root / spec.cache_name
     snapshot = repository / "snapshots" / spec.revision
     problems = list(_check_revision_ref(repository / "refs" / "main", spec.revision))
@@ -197,6 +241,41 @@ def _check_hf_model(spec: ModelAssetSpec, cache_root: Path) -> ModelAssetStatus:
         cache_root=cache_root,
         missing_files=tuple(missing),
         problems=tuple(problems),
+        required=spec.required,
+        variant=spec.variant,
+    )
+
+
+def _check_snapshot(spec: ModelAssetSpec, snapshot: Path) -> ModelAssetStatus:
+    problems: list[str] = []
+    if not snapshot.is_dir():
+        problems.append("explicit snapshot directory is missing")
+    missing: list[str] = []
+    expected_sizes = dict(spec.expected_sizes)
+    for relative in spec.required_files:
+        path = snapshot / relative
+        if not path.is_file():
+            missing.append(relative)
+            continue
+        size = path.stat().st_size
+        if size <= 0:
+            problems.append(f"{relative} is empty")
+        expected = expected_sizes.get(relative)
+        if expected is not None and size != expected:
+            problems.append(
+                f"{relative} has size {size}; expected {expected} bytes"
+            )
+    return ModelAssetStatus(
+        key=spec.key,
+        model_id=spec.model_id,
+        revision=spec.revision,
+        ready=not missing and not problems,
+        location=snapshot,
+        cache_root=None,
+        missing_files=tuple(missing),
+        problems=tuple(problems),
+        required=spec.required,
+        variant=spec.variant,
     )
 
 
@@ -220,6 +299,8 @@ def _check_silero(spec: ModelAssetSpec, model_root: Path) -> ModelAssetStatus:
         cache_root=None,
         missing_files=missing,
         problems=tuple(problems),
+        required=spec.required,
+        variant=spec.variant,
     )
 
 
@@ -238,12 +319,13 @@ def quick_check_model_assets(
     if not candidates:
         candidates = ((managed_hf_home(resolved_model_root) / "hub").resolve(),)
 
-    hf_specs = tuple(spec for spec in MODEL_SPECS if spec.cache_name is not None)
+    specs = (*MODEL_SPECS, LEGACY_GIGAAM_SPEC)
+    hf_specs = tuple(spec for spec in specs if spec.cache_name is not None)
     selected_root = candidates[0]
     selected_statuses = tuple(_check_hf_model(spec, selected_root) for spec in hf_specs)
     for candidate in candidates:
         candidate_statuses = tuple(_check_hf_model(spec, candidate) for spec in hf_specs)
-        if all(status.ready for status in candidate_statuses):
+        if all(status.ready for status in candidate_statuses if status.required):
             selected_root = candidate
             selected_statuses = candidate_statuses
             break
@@ -253,6 +335,33 @@ def quick_check_model_assets(
         model_root=resolved_model_root,
         hf_cache_root=selected_root,
         statuses=(_check_silero(silero_spec, resolved_model_root), *selected_statuses),
+    )
+
+
+def resolve_model_snapshot(
+    spec: ModelAssetSpec,
+    *,
+    model_root: Path | None = None,
+    hf_cache_roots: Iterable[Path] | None = None,
+) -> Path:
+    """Return one structurally valid local snapshot without network access."""
+
+    if spec.cache_name is None:
+        raise ModelAssetError(f"{spec.key} is not a Hugging Face snapshot asset.")
+    roots = tuple(
+        path.expanduser().resolve()
+        for path in (hf_cache_roots or hugging_face_cache_candidates(model_root))
+    )
+    for root in roots:
+        status = _check_hf_model(spec, root)
+        if status.ready:
+            return status.location
+    status = _check_hf_model(spec, roots[0] if roots else default_hf_hub_cache())
+    detail = "; ".join((*status.missing_files, *status.problems)) or "unknown error"
+    hint = f" Set {spec.snapshot_env} to the fixed local snapshot." if spec.snapshot_env else ""
+    raise ModelAssetError(
+        f"Pinned model snapshot is unavailable for {spec.model_id}@{spec.revision}: "
+        f"{detail}.{hint}"
     )
 
 
@@ -297,10 +406,12 @@ def format_model_report(report: ModelAssetsReport) -> str:
         f"Hugging Face cache: {display_path(report.hf_cache_root)}",
     ]
     for status in report.statuses:
-        marker = "OK" if status.ready else "FAIL"
+        marker = "OK" if status.ready else ("FAIL" if status.required else "WARN")
+        variant = f"; variant={status.variant}" if status.variant else ""
+        role = "required" if status.required else "optional legacy"
         lines.append(
             f"[{marker}] {status.model_id}; revision={status.revision}; "
-            f"path={display_path(status.location)}"
+            f"role={role}{variant}; path={display_path(status.location)}"
         )
         if status.missing_files:
             lines.append("  Missing: " + ", ".join(status.missing_files))

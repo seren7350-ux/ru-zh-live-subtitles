@@ -6,7 +6,7 @@
 wrappers:
 
 ```text
-WAV -> GigaAM CPU ASR -> Russian text -> NLLB CUDA translation -> Chinese text
+WAV -> pinned GigaAM Multilingual Large CTC -> Russian text -> NLLB -> Chinese text
 ```
 
 The coordinator validates that ASR returned non-empty Russian text before it
@@ -20,7 +20,39 @@ NLLB is the current default candidate. T5 and M2M100 remain selectable. The
 implementation is a short-file baseline, not streaming recognition, VAD, or a
 subtitle display.
 
-## Fully offline verification
+## Large CTC source verification (2026-07-31)
+
+The new default uses the official `ai-sage/GigaAM-Multilingual` `large_ctc`
+snapshot at `3905cd51c3ed4e88c8edf33f3302969ba480a327`. On the existing 8-second
+Russian test WAV, the official public API and the project adapter produced the
+same text:
+
+```text
+здравствуйте это проверка распознавания русской речи
+```
+
+The project adapter's first measured file run loaded in 7.202 seconds and
+recognized in 1.432 seconds (RTF 0.179). The complete CPU ASR-to-NLLB run loaded
+ASR in 6.110 seconds, recognized in 1.289 seconds, loaded translation in 2.282
+seconds, translated in 1.597 seconds, and finished in 13.166 seconds (RTF 1.646):
+
+```text
+您好,这是俄罗斯语识别检查.
+```
+
+Both offline flags were set, the ASR adapter also forced `local_files_only`, and
+no runtime download occurred. These are source/research-environment results, not
+new onedir, installer, or clean-machine validation.
+
+A final CPU-only integration rerun produced Russian
+`здравствуйте это проверка распознавания русской речи` and Chinese
+`您好,这是俄罗斯语识别检查.`. The file-only ASR load/recognition times were
+4.959/1.285 seconds (RTF 0.161). In a fresh complete process, ASR
+load/recognition were 3.988/1.290 seconds, NLLB load/translation were
+1.869/1.246 seconds, total processing was 10.267 seconds, and end-to-end RTF was
+1.283. Both stages used CPU float32 and reported zero CUDA allocation.
+
+## Historical RNNT fully offline verification
 
 The first cache-only end-to-end run on 2026-07-27 used
 `data/sample-retry.wav`, with both `HF_HUB_OFFLINE=1` and
@@ -63,7 +95,7 @@ under ignored `data/` and are never committed.
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
-.\.venv\Scripts\python.exe -m live_subtitles translate-audio data/sample-retry.wav --translation-engine nllb --device cuda --num-beams 1
+.\.venv\Scripts\python.exe -m live_subtitles translate-audio data/sample-retry.wav --translation-engine nllb --device cpu --num-beams 1
 Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```

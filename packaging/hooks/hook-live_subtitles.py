@@ -8,6 +8,8 @@ hiddenimports = ["onnxruntime"]
 hiddenimports += ["onnx_asr"]
 # Translation runtime delays PyTorch import until translation model preparation.
 hiddenimports += ["torch"]
+# The official GigaAM feature extractor imports matching TorchAudio binaries.
+hiddenimports += ["torchaudio", "torchaudio.transforms", "hydra", "omegaconf"]
 # Translation engines delay Transformers import until a translator is selected.
 hiddenimports += ["transformers"]
 
@@ -20,10 +22,13 @@ for distribution in (
     "numpy",
     "sounddevice",
     "torch",
+    "torchaudio",
     "transformers",
     "tokenizers",
     "sentencepiece",
     "safetensors",
     "huggingface-hub",
+    "hydra-core",
+    "omegaconf",
 ):
     datas += copy_metadata(distribution)

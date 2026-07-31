@@ -374,7 +374,7 @@ def test_hugging_face_refs_are_covered_by_model_manifest(
         user_home=tmp_path / "home",
     )
     paths = {file["path"] for model in manifest["models"] for file in model["files"]}
-    assert any(path.endswith("models--istupakov--gigaam-v3-onnx/refs/main") for path in paths)
+    assert any(path.endswith("models--ai-sage--GigaAM-Multilingual/refs/main") for path in paths)
     assert any(path.endswith("models--facebook--nllb-200-distilled-600M/refs/main") for path in paths)
 
 
@@ -391,7 +391,7 @@ def test_staged_hugging_face_refs_are_exact_and_manifested(
     )
     hf_models = [model for model in manifest["models"] if model["model_id"] != "silero-vad/6.2.1"]
     assert {model["model_id"] for model in hf_models} == {
-        "istupakov/gigaam-v3-onnx",
+        "ai-sage/GigaAM-Multilingual",
         "facebook/nllb-200-distilled-600M",
     }
     for model in hf_models:
@@ -535,7 +535,7 @@ def test_model_staging_has_exact_approved_model_ids(
     )
     assert {model["model_id"] for model in manifest["models"]} == {
         "silero-vad/6.2.1",
-        "istupakov/gigaam-v3-onnx",
+        "ai-sage/GigaAM-Multilingual",
         "facebook/nllb-200-distilled-600M",
     }
     assert all(model["local_test_only"] for model in manifest["models"])

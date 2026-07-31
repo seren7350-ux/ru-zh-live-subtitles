@@ -939,3 +939,98 @@ post-documentation commit is rebuilt and rechecked before push.
 No VMware, Windows Sandbox, GPU build, installer signing, public Release, or
 clean-machine validation was performed. This remains an unsigned per-user
 development-machine installer candidate and must remain Draft.
+
+## GigaAM Multilingual Large CTC migration research (2026-07-31)
+
+The official model source is `ai-sage/GigaAM-Multilingual`, variant
+`large_ctc`, MIT license. The branch resolved to immutable commit
+`3905cd51c3ed4e88c8edf33f3302969ba480a327`. Its five-file snapshot is
+2,341,674,025 bytes; `pytorch_model.bin` is 2,341,592,643 bytes with SHA-256
+`c3fabefb50b41f08f4d7ad44e02c26c37d242882704cdcca2ebd98e45eff73d1`.
+The canonical snapshot and path-free manifest are ignored under
+`data/model-assets-staging/gigaam-multilingual-large-ctc/`.
+
+The isolated `.venv-gigaam-multilingual` uses Python 3.11.9, Torch
+2.10.0+cpu, TorchAudio 2.10.0+cpu, Transformers 5.14.1, Hydra Core 1.3.2,
+OmegaConf 2.3.0, SoundFile 0.13.1, SentencePiece 0.2.1, Hugging Face Hub
+1.26.0, ONNX Runtime 1.28.0, onnx-asr 0.12.0, SoundDevice 0.5.5, NumPy
+2.4.6, and psutil 7.2.2. After the existing project dependencies were added,
+`pip check` reported no broken requirements.
+
+Official public-API CPU baseline, with both offline variables and
+`local_files_only=True`:
+
+- model load: 2.732 seconds;
+- peak RSS: 4,454,584,320 bytes;
+- 8-second real WAV cold/hot recognition: 1.465/0.697 seconds;
+- cold/hot RTF: 0.183/0.087;
+- text: `здравствуйте это проверка распознавания русской речи`;
+- punctuation/case: lowercase with no sentence punctuation, consistent with the
+  70-token character vocabulary; digits are not vocabulary tokens;
+- empty WAV: official `ValueError` from a zero-length buffer;
+- 100 ms silence: empty text, RTF 1.152;
+- 26-second WAV: official 25-second limit `ValueError`.
+
+The project adapter produced byte-for-text parity with the official public API.
+Its real 8-second file result was load 7.202 seconds, recognition 1.432 seconds,
+RTF 0.179. A subsequent complete CPU ASR-to-NLLB run produced the same Russian
+text and Chinese `您好,这是俄罗斯语识别检查.` with ASR load/recognition
+6.110/1.289 seconds, translation load/translation 2.282/1.597 seconds, total
+13.166 seconds, and end-to-end RTF 1.646. A separate direct NLLB compatibility
+probe also succeeded under Torch 2.10/Transformers 5.
+
+The final CPU-only offline rerun after integration used the same 8-second WAV.
+`model-doctor` reported every required asset ready. The new backend loaded in
+4.959 seconds, recognized in 1.285 seconds (RTF 0.161), and returned
+`здравствуйте это проверка распознавания русской речи`. A separate end-to-end
+process loaded ASR in 3.988 seconds, recognized in 1.290 seconds, loaded NLLB in
+1.869 seconds, translated in 1.246 seconds, and completed in 10.267 seconds
+(RTF 1.283). It returned `您好,这是俄罗斯语识别检查.` using CPU float32 with
+zero CUDA allocation. The explicit legacy RNNT/ONNX comparison also remained
+available on CPU: load 2.172 seconds, recognition 2.812 seconds, RTF 0.352, text
+`Здравствуйте. Это проверка распознавания русской речи.` No command used a GPU.
+
+The selected implementation is official PyTorch/Transformers, not an ONNX
+export. CPU hot RTF is comfortably below 1, NLLB is compatible, and the source
+path is reliable on Windows. Project-owned PCM conversion avoids the official
+public helper's external ffmpeg dependency; the official acoustic forward path
+and CTC `_decode` remain authoritative, and no second blank/repeat collapse is
+performed. The existing Silero VAD continues to keep live segments below 25
+seconds. The optional official Pyannote long-form path is intentionally unused.
+
+Warnings retained: the initial Hugging Face transfer repeatedly timed out and
+was completed manually after partial files were explicitly cleared; Windows
+cache symlinks are unavailable; the first `pip inspect` print required
+process-local UTF-8 mode; Transformers 5's dynamic import checker treats the
+official `TYPE_CHECKING`-only Pyannote import as mandatory, so the adapter removes
+only that import after verifying the exact official source SHA-256. No Pyannote
+package, token, model weight, remote-code snapshot, WAV, or virtual environment
+is tracked. Per the revised project direction, the migration does not provide or
+validate a GigaAM GPU mode: the new ASR backend and all current validation use
+CPU. Live microphone and final full-validation results are recorded after their
+respective checks complete.
+
+The final recorded CPU-only GUI microphone run lasted 57.356 seconds and
+produced 9 successful subtitles with 0 failures. Representative Russian output
+included `здравствуйте сегодня мы начинаем новую лекцию`,
+`перейдем к следующему слайду`, and `я люблю математику`; the corresponding
+Chinese was readable and relevant. RTF average/median/P95 was
+0.348/0.328/0.468. Russian latency average/median/P95 was
+0.824/0.679/1.282 seconds, and Chinese latency was 1.138/0.899/2.037 seconds.
+Processing average/median/P95 was 0.632/0.396/1.530 seconds. VAD, ASR, NLLB
+tokenizer, and NLLB model each loaded once; load times were 0.104, 3.682, and
+1.584 seconds for VAD, ASR, and translation respectively. The run captured and
+processed 1,789/1,789 audio blocks with audio/segment queue high-watermarks of
+1/320 and 1/8. Dropped blocks, sequence gaps, PortAudio status events, backlog
+failures, segment failures, and CUDA allocation were all zero. All 9 temporary
+WAV files were deleted, both workers exited, the microphone was released, and
+no live process remained after Exit.
+
+The live stderr contained only the Transformers generation warning that both
+`max_new_tokens=256` and the model's `max_length=200` were set; Transformers
+used `max_new_tokens` as documented. No runtime error resulted. Source and CPU
+packaging environments each passed 489 tests, the source coverage run passed
+489 tests at 80% total coverage, and the tracked PowerShell parser, Python
+compile check, packaging/model-asset checks, Markdown links, and all three CPU
+`pip check` runs passed. The historical CUDA packaging environment was not used
+because this migration is CPU-only.

@@ -578,6 +578,8 @@ def _copy_model(
         "total_size_bytes": sum(int(item["size_bytes"]) for item in records),
         "files": records,
     }
+    if spec.variant is not None:
+        model_record["variant"] = spec.variant
     if source.revision_ref is not None:
         model_record["source_revision_ref"] = {
             "raw_size_bytes": source.revision_ref.raw_size_bytes,
