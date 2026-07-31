@@ -7,12 +7,23 @@ from types import SimpleNamespace
 
 import pytest
 
+from live_subtitles.asr.base import SpeechRecognizer
 from live_subtitles.asr import gigaam_onnx
 from live_subtitles.asr.gigaam_onnx import (
     GigaAMOnnxRecognizer,
     InvalidAudioFileError,
     ProviderUnavailableError,
 )
+
+
+def test_backend_exposes_common_lifecycle_without_loading_model() -> None:
+    recognizer = GigaAMOnnxRecognizer()
+
+    assert isinstance(recognizer, SpeechRecognizer)
+    assert recognizer.model_name == "gigaam-v3-e2e-rnnt"
+    assert recognizer.provider == "CPUExecutionProvider"
+    assert recognizer.model_load_count == 0
+    assert recognizer.last_metrics is None
 
 
 def write_wav(path: Path, *, frames: int = 16_000, sample_rate: int = 16_000) -> Path:

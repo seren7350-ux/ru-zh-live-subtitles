@@ -53,8 +53,8 @@ relative to the onedir; system modules are basenames only. Generated reports go
 under ignored `data/packaging-size-analysis/`. The committed baseline template
 and Torch inventory contain no machine absolute paths.
 
-`build/`, `dist/`, `.venv-packaging/`, and the generated root
-`packaging-manifest.json` are ignored. Do not publish the onedir output from
+`build/`, `dist/`, `.venv-packaging/`, and generated manifests under
+`data/packaging-manifests/` are ignored. Do not publish the onedir output from
 this spike as an installer or release artifact.
 
 After local validation, generate the ignored windowed manifest with concise

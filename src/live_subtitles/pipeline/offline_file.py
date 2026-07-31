@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from ..asr.gigaam_onnx import AsrError, GigaAMOnnxRecognizer
+from ..asr.base import AsrError, SpeechRecognizer
+from ..asr.gigaam_onnx import GigaAMOnnxRecognizer
 from ..config import (
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
@@ -59,6 +60,9 @@ class PipelinePrepareMetrics:
     total_prepare_seconds: float
 
 
+RecognizerFactory = Callable[..., SpeechRecognizer]
+
+
 class OfflineAudioTranslationPipeline:
     """Lazily coordinate one reusable ASR instance and one translator instance."""
 
@@ -72,7 +76,7 @@ class OfflineAudioTranslationPipeline:
         device: str = DEFAULT_TRANSLATION_DEVICE,
         num_beams: int = 1,
         max_new_tokens: int = 256,
-        recognizer_factory: Callable[..., Any] = GigaAMOnnxRecognizer,
+        recognizer_factory: RecognizerFactory = GigaAMOnnxRecognizer,
         translator_factory: Callable[..., Any] = create_translator,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
@@ -86,13 +90,13 @@ class OfflineAudioTranslationPipeline:
         self._recognizer_factory = recognizer_factory
         self._translator_factory = translator_factory
         self._clock = clock
-        self._recognizer: Any | None = None
+        self._recognizer: SpeechRecognizer | None = None
         self._translator: Any | None = None
         self.recognizer_creation_count = 0
         self.translator_creation_count = 0
         self.prepare_metrics: PipelinePrepareMetrics | None = None
 
-    def _get_recognizer(self) -> Any:
+    def _get_recognizer(self) -> SpeechRecognizer:
         if self._recognizer is None:
             self._recognizer = self._recognizer_factory(
                 model_name=self.asr_model,
@@ -114,7 +118,7 @@ class OfflineAudioTranslationPipeline:
         return self._translator
 
     @property
-    def recognizer(self) -> Any:
+    def recognizer(self) -> SpeechRecognizer:
         return self._get_recognizer()
 
     @property

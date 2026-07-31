@@ -227,3 +227,18 @@ def test_manifest_template_has_no_machine_absolute_paths() -> None:
     assert str(PROJECT_ROOT) not in serialized
     assert template["models_bundled"] is False
     assert template["signing_status"] == "unsigned"
+
+
+def test_generated_packaging_manifest_defaults_to_ignored_data_directory(
+    tmp_path: Path,
+) -> None:
+    namespace = runpy.run_path(str(PROJECT_ROOT / "packaging" / "build_manifest.py"))
+    assert namespace["DEFAULT_MANIFEST_PATH"] == Path(
+        "data/packaging-manifests/packaging-manifest.json"
+    )
+
+    output = tmp_path / "nested" / "manifest.json"
+    namespace["write_manifest"](output, {"models_bundled": False})
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "models_bundled": False
+    }

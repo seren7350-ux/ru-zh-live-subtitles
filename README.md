@@ -213,6 +213,8 @@ it to GitHub. See [Windows packaging spike](docs/windows-packaging-spike.md).
   machine and does not persist subtitle history.
 
 See [architecture](docs/architecture.md),
+[documentation map](docs/README.md),
+[repository layout](docs/repository-layout.md),
 [development notes](docs/development.md),
 [pipeline validation](docs/offline-audio-translation-pipeline.md), and the
 [translation comparison](docs/translation-model-comparison.md). Direct VAD
@@ -259,11 +261,13 @@ snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machin
 The GPU spec remains an internal development/historical benchmark artifact; it
 is not distributed or supported as an end-user package and no GPU installer is
 produced. The earlier CPU clean-VMware result predates this installer revision.
-The self-contained installer has not been validated on a separate clean
-machine, is not signed, and is not a public or production-ready Release. Model
+The self-contained installer is published as an unsigned, non-commercial course
+delivery Release. The installer revision has not been validated on a separate
+clean machine and is not production ready. Model
 weights remain outside the CPU onedir but are included in the offline installer
 payload. NLLB remains restricted to non-commercial use. The older roughly
 216 MB model-less setup is a historical development artifact and must not be
 delivered by itself. See
 [CPU-only distribution policy](docs/cpu-only-distribution.md) and
-[installer validation](docs/cpu-only-installer-validation.md).
+[installer validation](docs/cpu-only-installer-validation.md). The published
+course delivery is tagged `course-final-v0.1.0`.

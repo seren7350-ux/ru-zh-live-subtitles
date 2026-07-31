@@ -11,6 +11,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+DEFAULT_MANIFEST_PATH = Path("data") / "packaging-manifests" / "packaging-manifest.json"
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -56,12 +58,19 @@ def manifest_payload(distribution: Path, executable_name: str, mode: str) -> dic
     }
 
 
+def write_manifest(path: Path, payload: dict[str, object]) -> None:
+    """Write one ignored local manifest, creating its output directory."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("distribution", type=Path)
     parser.add_argument("executable")
     parser.add_argument("--mode", required=True)
-    parser.add_argument("--output", type=Path, default=Path("packaging-manifest.json"))
+    parser.add_argument("--output", type=Path, default=DEFAULT_MANIFEST_PATH)
     parser.add_argument(
         "--test-result",
         action="append",
@@ -78,7 +87,7 @@ def main() -> int:
         if not name.strip() or not result.strip():
             parser.error("--test-result name and result must be non-empty")
         payload["test_results"][name.strip()] = result.strip()
-    args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_manifest(args.output, payload)
     return 0
 
 
