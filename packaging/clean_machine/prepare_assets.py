@@ -58,7 +58,11 @@ TOKEN_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(rb"Bearer\s+hf_[A-Za-z0-9]{16,}", re.IGNORECASE),
-    re.compile(rb"(?:HF_TOKEN|HUGGING_FACE_HUB_TOKEN)\s*[:=]\s*[^\s\"']+", re.IGNORECASE),
+    re.compile(
+        rb"(?:HF_TOKEN|HUGGING_FACE_HUB_TOKEN)\s*[:=]\s*[\"']?"
+        rb"(?:hf_[A-Za-z0-9]{16,}|[A-Za-z0-9._~+/=-]{20,})",
+        re.IGNORECASE,
+    ),
 )
 WINDOWS_USER_PATH = re.compile(rb"[A-Za-z]:\\Users\\[^\\\x00\r\n]+", re.IGNORECASE)
 EMAIL_PATTERN = re.compile(rb"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)

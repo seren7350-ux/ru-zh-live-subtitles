@@ -492,6 +492,51 @@ def test_model_staging_rejects_token_content(tmp_path: Path, prepare: Any) -> No
         )
 
 
+def test_model_staging_allows_code_that_reads_token_from_environment(
+    tmp_path: Path, prepare: Any
+) -> None:
+    hub, silero = _fake_model_caches(tmp_path, prepare)
+    gigaam = next(
+        spec for spec in prepare.MODEL_SPECS if spec.model_id == "ai-sage/GigaAM-Multilingual"
+    )
+    modeling = (
+        hub
+        / gigaam.cache_name
+        / "snapshots"
+        / gigaam.revision
+        / "modeling_gigaam.py"
+    )
+    modeling.write_text(
+        'hf_token = os.getenv("HF_TOKEN")\nmodel = load(token=hf_token)\n',
+        encoding="utf-8",
+    )
+
+    manifest = prepare.stage_models(
+        hf_hub=hub,
+        silero_cache=silero,
+        destination=tmp_path / "staged",
+        user_home=tmp_path / "home",
+    )
+
+    assert manifest["total_size_bytes"] > 0
+
+
+def test_model_staging_rejects_plain_assigned_hf_token(
+    tmp_path: Path, prepare: Any
+) -> None:
+    hub, silero = _fake_model_caches(tmp_path, prepare)
+    (silero / "metadata.json").write_text(
+        "HF_TOKEN=abcdefghijklmnopqrstuvwx", encoding="utf-8"
+    )
+    with pytest.raises(prepare.AssetPreparationError, match="authentication token"):
+        prepare.stage_models(
+            hf_hub=hub,
+            silero_cache=silero,
+            destination=tmp_path / "staged",
+            user_home=tmp_path / "home",
+        )
+
+
 def test_model_staging_rejects_bearer_authorization(
     tmp_path: Path, prepare: Any
 ) -> None:
