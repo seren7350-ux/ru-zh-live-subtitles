@@ -1,9 +1,9 @@
 # Windows onedir packaging spike
 
-> Migration note (2026-07-31): source now defaults to the official pinned
-> GigaAM Multilingual Large CTC Torch 2.10/TorchAudio 2.10 backend. Existing
-> onedir and installer artifacts remain the validated legacy RNNT/ONNX baseline;
-> they were not rebuilt in this migration and must not be relabeled as Large CTC.
+> Version 0.2.0 packaging note (2026-07-31): the end-user CPU candidate defaults
+> to the official pinned GigaAM Multilingual Large CTC Torch 2.10/TorchAudio
+> 2.10 CPU backend. The old 0.1.0 onedir, installer, tag and Release remain the
+> retained RNNT/ONNX baseline and must not be overwritten or relabeled.
 
 This directory contains reproducible PyInstaller 6.21.0 inputs for two onedir
 builds. `console.spec` creates the diagnostic CLI and `windowed.spec` creates the
@@ -122,12 +122,19 @@ Settings, and verify System default, an explicit device index, Refresh, running
 lockout, and Stop -> change -> Start. Use `translation-doctor` from the same
 external current directory to confirm the frozen runtime family.
 
-The 2026-07-28 development-machine rebuild measured 658,366,169 bytes for the
-CPU onedir (0 CUDA DLLs) and 3,066,444,470 bytes for the GPU onedir (22 CUDA
-DLLs). Both were run from a Chinese-and-space temp directory with a minimal PATH
-and external offline model caches. These local checks do not renew the earlier
-CPU clean-VMware result for the selector revision and do not establish GPU
-clean-machine portability.
+The 0.2.0 CPU rehearsal on 2026-07-31 measured 613,257,398 bytes and 5,616 files
+with zero CUDA DLL/bytes and zero product model-weight files/bytes. From a
+repository-external Unicode-and-space directory, the frozen console loaded the
+pinned external `modeling_gigaam.py`, recognized the real 8-second Russian WAV,
+and translated it with NLLB while offline. First frozen Large CTC load was
+4.853 seconds; recognition was 1.170 seconds (RTF 0.146). A separate full
+pipeline process measured ASR load 3.747 seconds, NLLB load 1.655 seconds and
+end-to-end RTF 1.143. Timing varies with disk cache and host load.
+
+PyInstaller emitted only retained non-fatal warnings: optional TensorBoard was
+absent, a Linux-only `/usr/lib64/libgomp.so.1` ctypes reference was ignored on
+Windows, and Torch distributed compatibility modules emitted deprecations. No
+CUDA wheel, GPU build, or clean-machine rerun was performed.
 
 ## End-user installer candidate
 
@@ -137,14 +144,16 @@ and are not inputs to an installer. `packaging/installer/build_installer.ps1`
 accepts a policy-valid CPU onedir, a mandatory explicit verified
 `-ModelAssetsRoot`, and the expected Git commit. It verifies the official Inno
 Setup 7.0.2 compiler, runs the frozen CPU doctor, fully hashes the model bundle,
-creates release metadata, and compiles `cpu-only.iss` into ignored
-`dist/installer-offline` output.
+creates release metadata, and compiles `cpu-only.iss` into ignored,
+version-isolated `dist/installer-offline-0.2.0` output.
 
 The build is fail-closed: dirty Git state, stale CPU provenance, or an invalid
 manifest, ref, size, or SHA fails before ISCC. It never falls back to a user
 cache or downloads models. Successful publication moves release/model metadata,
-compiler log, build report, instructions and optional numbered slices before
-setup, which remains the final success marker.
+compiler log, build report, instructions, `SHA256SUMS.txt` and numbered slices
+before setup, which remains the final success marker. Every attachment must be
+below 2,000,000,000 bytes; native Inno disk spanning uses slices no larger than
+1,900,000,000 bytes.
 
 The installer is per-user, non-administrative, x64, offline by default, and
 contains no CUDA runtime in the application onedir. The installer payload does

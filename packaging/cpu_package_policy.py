@@ -26,6 +26,8 @@ FORBIDDEN_CUDA_DLL_PATTERNS = (
     "nvperf*.dll",
 )
 FORBIDDEN_DISTRIBUTIONS = frozenset({"torchvision", "triton"})
+FORBIDDEN_MODEL_SUFFIXES = frozenset({".bin", ".pt", ".pth", ".safetensors"})
+APPROVED_ONNX_PREFIX = "_internal/onnx_asr/preprocessors/data/"
 
 
 class CpuPackagePolicyError(RuntimeError):
@@ -159,9 +161,28 @@ def validate_cpu_distribution(root: Path) -> dict[str, object]:
     torch_cpu = tuple(resolved.rglob("torch_cpu.dll"))
     if not torch_cpu:
         raise CpuPackagePolicyError("CPU distribution has no torch_cpu.dll runtime.")
+    model_weights: list[str] = []
+    for path in resolved.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(resolved).as_posix()
+        suffix = path.suffix.casefold()
+        if suffix in FORBIDDEN_MODEL_SUFFIXES or (
+            suffix == ".onnx"
+            and not relative.casefold().startswith(APPROVED_ONNX_PREFIX.casefold())
+        ):
+            model_weights.append(relative)
+    if model_weights:
+        raise CpuPackagePolicyError(
+            "CPU distribution contains model weights: "
+            + ", ".join(sorted(model_weights, key=str.casefold))
+        )
     return {
         "schema_version": 1,
         "runtime_family": "cpu",
         "cuda_library_files": [],
+        "cuda_library_bytes": 0,
+        "model_weight_files": [],
+        "model_weight_bytes": 0,
         "torch_cpu_runtime_present": True,
     }

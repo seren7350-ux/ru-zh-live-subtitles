@@ -1,4 +1,7 @@
-# CPU-only installer validation
+# Historical CPU-only installer validation (0.1.0 RNNT baseline)
+
+> This document preserves the 0.1.0 RNNT installer evidence. It does not
+> describe or validate the 0.2.0 GigaAM Multilingual Large CTC candidate.
 
 This document records development-machine validation for the unsigned
 self-contained per-user CPU offline installer. It must not be read as

@@ -64,7 +64,8 @@ must not need model-specific rewrites.
 | `build/` | PyInstaller work directories and CPU provenance | Regenerable, but retain current provenance while a matching dist is retained. |
 | `dist/ru-zh-subtitles-cpu/` | Current CPU onedir | Preserve with its matching CPU metadata. |
 | `dist/ru-zh-subtitles*/` | Historical/internal GPU and console onedirs | Archive or delete only after their evidence is no longer required. |
-| `dist/installer-offline/` | Final teacher delivery and build evidence | Preserve. Never clean recursively. |
+| `dist/installer-offline/` | Retained 0.1.0 RNNT delivery and build evidence | Preserve unchanged. Never clean recursively. |
+| `dist/installer-offline-0.2.0/` | New Large CTC installer candidate and build evidence | Preserve. Never clean recursively. |
 | `dist/installer/` | Historical model-less installer | Retain as history; never deliver it alone. |
 | `data/clean-machine-validation/staging/` | Canonical package/model/scripts staging | Preserve at its existing path. |
 | `data/clean-machine-validation/cpu-run-*/` | Independent clean-machine run captures | Preserve as validation evidence. |
@@ -73,10 +74,11 @@ must not need model-specific rewrites.
 | `data/course-delivery/` | Local reports and other teacher-facing documents | Preserve; excluded from Git. |
 | `data/packaging-manifests/` | Generated local onedir manifests | Regenerable; archive useful provenance by commit. |
 
-The final teacher installer is
+The historical teacher installer remains
 `dist/installer-offline/ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe`.
-Its adjacent build report, release/model metadata, compiler log, instructions,
-and checksum records belong to the same retained delivery set.
+The new candidate uses `dist/installer-offline-0.2.0` and may consist of setup
+plus native Inno `.bin` slices. Adjacent metadata, reports, logs, instructions
+and checksums belong to their respective version and must not be mixed.
 
 ## Safe cleanup rules
 

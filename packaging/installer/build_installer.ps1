@@ -16,6 +16,11 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$PythonPath,
     [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 9223372036854775807)]
+    [Int64]$ReleaseAssetLimitBytes = 2000000000,
+    [Parameter(Mandatory = $false)]
+    [switch]$ForceDiskSpanning,
+    [Parameter(Mandatory = $false)]
     [switch]$TestMode,
     [Parameter(Mandatory = $false)]
     [string]$TestDoctorOutputPath,
@@ -120,7 +125,7 @@ $started = [Diagnostics.Stopwatch]::StartNew()
 $repo = Resolve-ExistingDirectory $RepoRoot 'Repository root'
 $version = Read-ApplicationVersion $repo
 if (-not $CpuDist) { $CpuDist = Join-Path $repo 'dist\ru-zh-subtitles-cpu' }
-if (-not $OutputDir) { $OutputDir = Join-Path $repo 'dist\installer-offline' }
+if (-not $OutputDir) { $OutputDir = Join-Path $repo "dist\installer-offline-$version" }
 $output = [IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 
@@ -131,8 +136,9 @@ $finalBundleMetadata = Join-Path $output 'MODEL_BUNDLE_METADATA.json'
 $finalReport = Join-Path $output 'build-report.json'
 $finalCompilerLog = Join-Path $output 'iscc.log'
 $finalReadme = Join-Path $output 'README_INSTALL.txt'
+$finalChecksums = Join-Path $output 'SHA256SUMS.txt'
 $finalSlices = @(Get-ChildItem -LiteralPath $output -Filter "$baseName-*.bin" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
-$finalPaths = @($finalMetadata, $finalBundleMetadata, $finalCompilerLog, $finalReport, $finalReadme, $finalSetup) + $finalSlices
+$finalPaths = @($finalMetadata, $finalBundleMetadata, $finalCompilerLog, $finalReport, $finalReadme, $finalChecksums, $finalSetup) + $finalSlices
 Remove-ExactCandidateFiles $finalPaths
 if (-not $ModelAssetsRoot) {
     throw 'ModelAssetsRoot is required. The offline installer never falls back to a user Hugging Face cache.'
@@ -219,7 +225,11 @@ try {
         $bundle.bundle_type -ne 'offline-model-assets' -or
         $bundle.file_count -le 0 -or
         $bundle.total_bytes -le 0 -or
-        $bundle.gigaam_revision -ne '322c3b29492673eb7d0b434bfa9dfb8653e34d02' -or
+        -not $bundle.self_contained -or
+        -not $bundle.offline_ready -or
+        $bundle.gigaam_model_id -ne 'ai-sage/GigaAM-Multilingual' -or
+        $bundle.gigaam_variant -ne 'large_ctc' -or
+        $bundle.gigaam_revision -ne '3905cd51c3ed4e88c8edf33f3302969ba480a327' -or
         $bundle.nllb_revision -ne 'f8d333a098d19b4fd9a8b18f94170487ad3f821d') {
         throw 'Model bundle metadata does not describe the pinned offline bundle.'
     }
@@ -277,6 +287,9 @@ try {
         $release.model_bundle.manifest_sha256 -ne $bundle.manifest_sha256) {
         throw 'Release metadata is not bound to the validated CPU distribution.'
     }
+    $cpuBytes = [int64]$release.cpu_distribution.total_bytes
+    $modelBytes = [int64]$bundle.total_bytes
+    $uncompressedBytes = $cpuBytes + $modelBytes
 
     $commonArguments = @(
         '/Qp',
@@ -290,16 +303,20 @@ try {
         "/DModelBundleMetadata=$bundleMetadata"
     )
     $innoCompilation = [Diagnostics.Stopwatch]::StartNew()
-    $arguments = @($commonArguments) + @($iss)
+    $diskSpanning = [bool]($ForceDiskSpanning -or $uncompressedBytes -ge $ReleaseAssetLimitBytes)
+    $compiledAsSpanning = $diskSpanning
+    $arguments = @($commonArguments)
+    if ($compiledAsSpanning) { $arguments += '/DDiskSpanning=1' }
+    $arguments += $iss
     $compilerOutput = @(& $iscc @arguments 2>&1)
     $compilerExitCode = $LASTEXITCODE
     if ($TestFailureStage -eq 'Iscc' -and $compilerExitCode -eq 0) {
         $compilerExitCode = 97
     }
-    $diskSpanning = $false
     if ($compilerExitCode -ne 0) {
         $compilerFailureText = $compilerOutput -join "`n"
-        if ($compilerFailureText -match '(?i)disk spanning|compressed[^\r\n]*too large|4[,.]?200[,.]?000[,.]?000') {
+        if (-not $compiledAsSpanning -and
+            $compilerFailureText -match '(?i)disk spanning|compressed[^\r\n]*too large|4[,.]?200[,.]?000[,.]?000') {
             $diskSpanning = $true
         } else {
             throw "Inno Setup compilation failed with exit code $compilerExitCode."
@@ -309,10 +326,10 @@ try {
     if (-not $diskSpanning -and -not (Test-Path -LiteralPath $compiled -PathType Leaf)) {
         throw 'Inno Setup did not produce the expected installer.'
     }
-    if (-not $diskSpanning -and (Get-Item -LiteralPath $compiled).Length -ge 3800000000) {
+    if (-not $diskSpanning -and (Get-Item -LiteralPath $compiled).Length -ge $ReleaseAssetLimitBytes) {
         $diskSpanning = $true
     }
-    if ($diskSpanning) {
+    if ($diskSpanning -and -not $compiledAsSpanning) {
         Get-ChildItem -LiteralPath $temporary -Filter "$baseName*" -File |
             Remove-Item -Force
         $spanningArguments = @($commonArguments) + @('/DDiskSpanning=1', $iss)
@@ -348,15 +365,31 @@ try {
             }
         }
     )
+    $oversizedAssets = @(
+        $payloadRecords | Where-Object { [int64]$_.size_bytes -ge $ReleaseAssetLimitBytes }
+    )
+    if ($oversizedAssets.Count -ne 0) {
+        throw ('Release asset size limit exceeded: ' +
+            (($oversizedAssets | ForEach-Object { "$($_.name)=$($_.size_bytes)" }) -join '; '))
+    }
+    $oversizedSlices = @(
+        $payloadRecords | Where-Object {
+            $_.name -like '*.bin' -and [int64]$_.size_bytes -gt 1900000000
+        }
+    )
+    if ($oversizedSlices.Count -ne 0) {
+        throw 'An Inno Setup data slice exceeds the 1,900,000,000-byte slice limit.'
+    }
     $payloadBytes = [int64](($payloadRecords | Measure-Object -Property size_bytes -Sum).Sum)
-    $cpuBytes = [int64]$release.cpu_distribution.total_bytes
-    $modelBytes = [int64]$bundle.total_bytes
-    $uncompressedBytes = $cpuBytes + $modelBytes
     $installerSignature = if ($TestMode) { 'NotSigned' } else {
         [string](Get-AuthenticodeSignature -LiteralPath $compiled).Status
     }
     $readmeCopy = Join-Path $temporary 'README_INSTALL.txt'
     Copy-Item -LiteralPath $readmeInstall -Destination $readmeCopy
+    $checksums = Join-Path $temporary 'SHA256SUMS.txt'
+    @(
+        $payloadRecords | ForEach-Object { "$($_.sha256.ToLowerInvariant())  $($_.name)" }
+    ) | Set-Content -LiteralPath $checksums -Encoding ascii
     $started.Stop()
     $report = [ordered]@{
         schema_version = 3
@@ -374,6 +407,9 @@ try {
         inno_compilation_seconds = [Math]::Round($innoCompilation.Elapsed.TotalSeconds, 3)
         output = $finalSetup
         output_mode = if ($diskSpanning) { 'disk-spanning' } else { 'single-file' }
+        release_asset_limit_bytes = $ReleaseAssetLimitBytes
+        disk_slice_limit_bytes = 1900000000
+        force_disk_spanning = [bool]$ForceDiskSpanning
         output_files = $payloadRecords
         output_bytes = $payloadBytes
         compression_ratio = if ($uncompressedBytes -gt 0) {
@@ -394,7 +430,8 @@ try {
             'MODEL_BUNDLE_METADATA.json',
             'iscc.log',
             'build-report.json',
-            'README_INSTALL.txt'
+            'README_INSTALL.txt',
+            'SHA256SUMS.txt'
         ) + @($compiledSlices | ForEach-Object { $_.Name }) + @("$baseName.exe")
         setup_published_last = $true
     }
@@ -414,7 +451,9 @@ try {
     [IO.File]::SetLastWriteTimeUtc($finalReport, $publicationTime.AddMilliseconds(30))
     Move-Item -LiteralPath $readmeCopy -Destination $finalReadme
     [IO.File]::SetLastWriteTimeUtc($finalReadme, $publicationTime.AddMilliseconds(40))
-    $timestampOffset = 50
+    Move-Item -LiteralPath $checksums -Destination $finalChecksums
+    [IO.File]::SetLastWriteTimeUtc($finalChecksums, $publicationTime.AddMilliseconds(50))
+    $timestampOffset = 60
     foreach ($slice in $compiledSlices) {
         $destination = Join-Path $output $slice.Name
         Move-Item -LiteralPath $slice.FullName -Destination $destination

@@ -36,10 +36,11 @@ SOFTWARE.
 
 GigaAM
 ------
-Model: istupakov/gigaam-v3-onnx
-Pinned revision: 322c3b29492673eb7d0b434bfa9dfb8653e34d02
+Model: ai-sage/GigaAM-Multilingual
+Variant: large_ctc
+Pinned revision: 3905cd51c3ed4e88c8edf33f3302969ba480a327
 Upstream project: https://github.com/salute-developers/GigaAM
-ONNX model repository: https://huggingface.co/istupakov/gigaam-v3-onnx
+Official model repository: https://huggingface.co/ai-sage/GigaAM-Multilingual
 License: MIT
 
 MIT License

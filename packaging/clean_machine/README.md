@@ -31,7 +31,7 @@ The approved model set is exact:
 | Component | ID/revision | License |
 |---|---|---|
 | Silero VAD | `silero-vad/6.2.1` | MIT |
-| GigaAM | `istupakov/gigaam-v3-onnx@322c3b29492673eb7d0b434bfa9dfb8653e34d02` | MIT |
+| GigaAM | `ai-sage/GigaAM-Multilingual`, `large_ctc` at `3905cd51c3ed4e88c8edf33f3302969ba480a327` | MIT |
 | NLLB | `facebook/nllb-200-distilled-600M@f8d333a098d19b4fd9a8b18f94170487ad3f821d` | CC-BY-NC-4.0 |
 
 `prepare_assets.py` refuses extra model files, absolute manifest paths, user or

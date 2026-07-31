@@ -1,101 +1,60 @@
-# Self-contained CPU offline installer
+# Self-contained CPU offline installer 0.2.0
 
-This unsigned per-user installer is the published non-commercial course delivery. It combines
-the provenance-bound CPU onedir and every pinned model asset needed for offline
-Russian speech recognition and Chinese translation. Publication is not
-production certification, commercial-use approval, or a clean-machine result
-for this installer revision.
+This unsigned per-user course installer combines a provenance-bound CPU onedir
+with all required offline models. It needs no Python, administrator rights,
+network access, token, repository checkout, or manual model copy. It is for
+non-commercial course use and is not a production or clean-machine claim.
 
-## Delivery contract
+## Contract
 
-- application: `%LOCALAPPDATA%\Programs\RuZhLiveSubtitles`;
+- AppId: `{8773A11B-6B74-42AF-85AF-CAD43EB946CF}` (unchanged);
+- app: `%LOCALAPPDATA%\Programs\RuZhLiveSubtitles`;
 - models: `%LOCALAPPDATA%\ru-zh-live-subtitles\models`;
-- privileges: current user, no UAC or administrator access;
-- prerequisites: no Python, source checkout, token, pre-existing cache, or
-  manual model copy;
-- network: no download during setup or first run;
 - shortcut: `live-overlay --translation-device cpu --offline --no-auto-start`;
-- minimum free space before setup: 8 GiB;
-- Authenticode: intentionally unsigned.
+- free space: at least 12 GiB;
+- system RAM: 8 GiB minimum, 16 GiB recommended;
+- Authenticode: unsigned;
+- output: ignored `dist\installer-offline-0.2.0`.
 
-The complete delivery directory is `dist\installer-offline`. A preflight using
-maximum LZMA2 compression produced one 1,762,415,746-byte setup (1.641 GiB), so
-the expected teacher delivery is a single file of approximately 1.8 GB. Exact
-final file size and SHA-256 are recorded in ignored `build-report.json`. The
-builder still enforces the general rule: at 3.8 GB or larger it rebuilds with
-native Inno disk spanning, in which case the whole directory must be copied.
-The old approximately 216 MB model-less setup under `dist\installer` is
-historical and cannot be delivered alone.
+## Pinned bundle
 
-## Pinned model bundle
-
-The existing verified staging is supplied explicitly through
-`-ModelAssetsRoot`; the builder never discovers the user's Hugging Face cache.
-The validated payload has 17 model files and 3,377,386,294 bytes:
+The required bundle has 17 files and 4,826,649,490 bytes:
 
 | Component | Fixed identity | License |
 |---|---|---|
 | Silero VAD | 6.2.1; ONNX SHA-256 `1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3` | MIT |
-| GigaAM ONNX | `istupakov/gigaam-v3-onnx` at `322c3b29492673eb7d0b434bfa9dfb8653e34d02` | MIT |
-| NLLB | `facebook/nllb-200-distilled-600M` at `f8d333a098d19b4fd9a8b18f94170487ad3f821d` | CC-BY-NC-4.0, non-commercial only |
+| GigaAM | `ai-sage/GigaAM-Multilingual`, `large_ctc`, revision `3905cd51c3ed4e88c8edf33f3302969ba480a327`; weight SHA-256 `c3fabefb50b41f08f4d7ad44e02c26c37d242882704cdcca2ebd98e45eff73d1` | MIT |
+| NLLB | `facebook/nllb-200-distilled-600M` at `f8d333a098d19b4fd9a8b18f94170487ad3f821d` | CC-BY-NC-4.0 |
 
-`packaging/model_bundle.py` parses `model-manifest.json`, requires exactly the
-pinned model/file set, checks safe relative paths, strict 40-byte lowercase
-revision refs with no BOM/CR/LF, known sizes, every manifest SHA-256, and the
-fixed Silero model SHA. Extra files, links, path traversal, missing assets,
-wrong identity, size, hash, or total are rejected before ISCC. The generated
-`MODEL_BUNDLE_METADATA.json` contains no staging path, username, host, token,
-remote, or credential.
+Legacy RNNT weights are not present. Bundle validation rejects unapproved files,
+links, junctions, reparse points, unsafe paths, wrong refs/sizes/hashes and
+totals. Ordinary hard-linked files are rehashed as normal content. Metadata is
+path-free and declares `self_contained=true` and `offline_ready=true`.
 
-## Build
+## Build and delivery
 
-From a clean tracked worktree whose CPU onedir was built from the same commit:
+The builder requires a clean commit-matched CPU onedir and signed official Inno
+Setup 7.0.2. It defaults to a 2,000,000,000-byte per-asset limit and native Inno
+disk spanning with 1,900,000,000-byte slices whenever predicted or measured
+output requires it. There is no custom split, self-extracting archive, Git LFS,
+or cache/network fallback.
 
-```powershell
-.\packaging\installer\build_installer.ps1 `
-  -ExpectedCommit (git rev-parse HEAD) `
-  -CpuDist .\dist\ru-zh-subtitles-cpu `
-  -ModelAssetsRoot <verified-model-assets> `
-  -OutputDir .\dist\installer-offline `
-  -IsccPath "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"
-```
+`SHA256SUMS.txt` covers setup and every numbered `.bin`. All parts must be kept
+in one directory and setup is published last. Any failure removes same-version
+partial output without touching staging or the retained 0.1.0 delivery.
 
-The transaction verifies Git state, CPU provenance/policy, frozen CPU doctor,
-the entire model bundle, official Inno 7.0.2 signature/version, release
-metadata, compiler result, output hashes, warnings, and Authenticode state.
-Metadata/log/report/instructions and any `.bin` slices publish before setup;
-setup is the final success marker. Failure removes all same-version offline
-outputs and leaves model staging untouched.
+## Validation boundary
 
-## Install, verify, repair and uninstall
+The final candidate is validated only on the development machine from an empty
+managed-model state: install, model-doctor, real RU/ZH GUI session, same-version
+repair, uninstall/model preservation, reinstall and GUI smoke. VMware, Windows
+Sandbox, signing and GitHub Release publication are explicitly outside this
+stage. Exact final build/install/model-load, memory and latency measurements are
+recorded with the ignored build and validation reports.
 
-For development-machine empty-state validation, use a new temporary
-`LOCALAPPDATA`, remove Python/venv entries from that process's `PATH`, clear
-explicit `HF_HOME` and `HF_HUB_CACHE`, and confirm the temporary model root does
-not exist. Do not delete the real user cache.
-
-After silent or interactive current-user install, run:
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\RuZhLiveSubtitles\ru-zh-subtitles-console.exe" model-doctor
-```
-
-Success is exit code 0 with Silero, GigaAM and NLLB OK and `Offline readiness:
-READY`. Launch the same command represented by the shortcut, select a real
-microphone, Start, speak Russian, confirm RU/ZH captions, Stop, and verify the
-microphone, workers, temporary WAVs and processes are released. Application
-diagnostics must show no download, and application-owned TCP connections must
-remain zero.
-
-Running the same installer again is the repair path. The stable AppId must leave
-one uninstall entry and preserve key model hashes. Uninstall removes the app,
-shortcuts and uninstall entry but intentionally keeps the model root. A later
-reinstall reuses the same layout without nesting or duplication. To reclaim
-approximately 3.4 GB after uninstall, manually delete:
-
-```text
-%LOCALAPPDATA%\ru-zh-live-subtitles\models
-```
-
-Defender scans must leave real-time protection enabled, add no exclusion, and
-cover the CPU dist, delivery files, installed app and installed model root.
+Before the final provenance rebuild, the code-identical frozen 0.2.0 rehearsal
+loaded Large CTC for the first time in 4.853 seconds and recognized the real
+8-second Russian WAV in 1.170 seconds (RTF 0.146). A separate full pipeline run
+loaded ASR in 3.747 seconds, NLLB in 1.655 seconds and completed at end-to-end
+RTF 1.143. Final installation measurements are reported separately because disk
+cache and host load affect timing.

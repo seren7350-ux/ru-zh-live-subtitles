@@ -52,7 +52,8 @@ def test_inno_policy_is_per_user_x64_cpu_offline_and_stable() -> None:
     assert "OutputBaseFilename=ru-zh-live-subtitles-cpu-offline-{#AppVersion}-setup" in source
     assert 'DestDir: "{localappdata}\\ru-zh-live-subtitles\\models"' in source
     assert "uninsneveruninstall" in source
-    assert "MinimumFreeBytes = 8589934592" in source
+    assert "MinimumFreeBytes = 12884901888" in source
+    assert "DiskSliceSize=1900000000" in source
     assert "LZMANumBlockThreads=4" in source
     assert "HF_HUB_CACHE" not in source
     assert "HF_HOME" not in source
@@ -79,7 +80,7 @@ def test_version_is_read_from_single_python_source() -> None:
     metadata = load_release_metadata()
     assert metadata.read_application_version(
         PROJECT_ROOT / "src" / "live_subtitles" / "__init__.py"
-    ) == "0.1.0"
+    ) == "0.2.0"
     source = ISS.read_text(encoding="utf-8")
     assert "AppVersion={#AppVersion}" in source
     assert "VersionInfoVersion={#VersionInfoVersion}" in source
@@ -97,7 +98,7 @@ def make_cpu_dist(root: Path) -> Path:
         json.dumps(
             {
                 "schema_version": 1,
-                "application_version": "0.1.0",
+                "application_version": "0.2.0",
                 "git_commit": "a" * 40,
                 "runtime_family": "cpu",
                 "working_tree_clean": True,
@@ -153,7 +154,7 @@ def test_release_metadata_rejects_wrong_git_commit(
     dist = make_cpu_dist(tmp_path / "dist")
     version = tmp_path / "src" / "live_subtitles"
     version.mkdir(parents=True)
-    (version / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    (version / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
     bundle_metadata = tmp_path / "MODEL_BUNDLE_METADATA.json"
     make_model_bundle_metadata(bundle_metadata)
     monkeypatch.setattr(metadata, "git_commit", lambda _root: "a" * 40)
@@ -175,7 +176,10 @@ def test_build_script_has_strict_safe_atomic_policy() -> None:
     assert "ExpectedCommit" in source
     assert "ModelAssetsRoot" in source
     assert "model_bundle.py" in source
-    assert "dist\\installer-offline" in source
+    assert 'dist\\installer-offline-$version' in source
+    assert "ReleaseAssetLimitBytes = 2000000000" in source
+    assert "ForceDiskSpanning" in source
+    assert "SHA256SUMS.txt" in source
     assert "status --porcelain=v1 --untracked-files=all" in source
     assert "Git working tree is not clean" in source
     assert "validate_cpu_distribution.py" in source
@@ -261,7 +265,7 @@ def test_release_inventory_rejects_invalid_cpu_provenance(
     with pytest.raises(metadata.ReleaseMetadataError, match=message):
         metadata.inspect_cpu_distribution(
             dist,
-            expected_version="0.1.0",
+            expected_version="0.2.0",
             expected_commit="a" * 40,
         )
 
@@ -296,7 +300,7 @@ def _make_real_git_release_repo(tmp_path: Path) -> tuple[Path, Path, str]:
     repo = tmp_path / "release-repo"
     package = repo / "src" / "live_subtitles"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    (package / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
     (repo / ".gitignore").write_text(
         "dist/\n**/__pycache__/\n*.py[cod]\n", encoding="utf-8"
     )
@@ -350,10 +354,13 @@ def make_model_bundle_metadata(path: Path) -> Path:
             {
                 "schema_version": 1,
                 "bundle_type": "offline-model-assets",
+                "self_contained": True,
+                "offline_ready": True,
                 "silero_version": "6.2.1",
                 "silero_model_sha256": "1" * 64,
-                "gigaam_model_id": "istupakov/gigaam-v3-onnx",
-                "gigaam_revision": "322c3b29492673eb7d0b434bfa9dfb8653e34d02",
+                "gigaam_model_id": "ai-sage/GigaAM-Multilingual",
+                "gigaam_variant": "large_ctc",
+                "gigaam_revision": "3905cd51c3ed4e88c8edf33f3302969ba480a327",
                 "nllb_model_id": "facebook/nllb-200-distilled-600M",
                 "nllb_revision": "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
                 "file_count": 7,
@@ -398,16 +405,19 @@ def _make_fake_iscc(path: Path) -> None:
         "setlocal EnableDelayedExpansion\n"
         "set \"out=\"\n"
         "set \"base=\"\n"
+        "set \"span=\"\n"
         ":loop\n"
         "if \"%~1\"==\"\" goto done\n"
         "set \"arg=%~1\"\n"
         "if /I \"!arg:~0,2!\"==\"/O\" set \"out=!arg:~2!\"\n"
         "if /I \"!arg:~0,2!\"==\"/F\" set \"base=!arg:~2!\"\n"
+        "if /I \"!arg:~0,14!\"==\"/DDiskSpanning\" set \"span=1\"\n"
         "shift\n"
         "goto loop\n"
         ":done\n"
         "if not exist \"!out!\" mkdir \"!out!\"\n"
         "> \"!out!\\!base!.exe\" echo fake installer\n"
+        "if defined span > \"!out!\\!base!-1.bin\" echo fake slice\n"
         "echo Compiler completed successfully\n"
         "exit /b 0\n",
         encoding="ascii",
@@ -418,7 +428,7 @@ def _make_builder_repo(tmp_path: Path) -> tuple[Path, Path, Path, Path, str]:
     repo = tmp_path / "builder-repo"
     package = repo / "src" / "live_subtitles"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
+    (package / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
     (repo / ".gitignore").write_text(
         "dist/\n**/__pycache__/\n*.py[cod]\n", encoding="utf-8"
     )
@@ -469,6 +479,8 @@ def _run_builder(
     doctor: Path,
     commit: str,
     failure_stage: str = "None",
+    force_disk_spanning: bool = False,
+    release_asset_limit_bytes: int = 2_000_000_000,
 ) -> subprocess.CompletedProcess[str]:
     iscc = doctor.parent / "fake-iscc.cmd"
     command = (
@@ -485,6 +497,8 @@ def _run_builder(
         + " -TestMode -TestDoctorOutputPath " + _quote_powershell(doctor)
         + " -TestModelBundleMetadataPath " + _quote_powershell(doctor.parent / "MODEL_BUNDLE_METADATA.json")
         + " -TestFailureStage " + _quote_powershell(failure_stage)
+        + " -ReleaseAssetLimitBytes " + str(release_asset_limit_bytes)
+        + (" -ForceDiskSpanning" if force_disk_spanning else "")
     )
     return subprocess.run(
         ["powershell.exe", "-NoProfile", "-Command", command],
@@ -504,7 +518,8 @@ def _final_builder_paths(output: Path) -> list[Path]:
         output / "iscc.log",
         output / "build-report.json",
         output / "README_INSTALL.txt",
-        output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe",
+        output / "SHA256SUMS.txt",
+        output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe",
     ]
 
 
@@ -589,11 +604,14 @@ def test_builder_success_publishes_all_outputs_with_setup_last(tmp_path: Path) -
     report = json.loads((output / "build-report.json").read_text(encoding="utf-8-sig"))
     assert report["working_tree_change_count"] == 0
     assert report["output_mode"] == "single-file"
+    assert report["release_asset_limit_bytes"] == 2_000_000_000
     assert report["model_bundle_bytes"] == 123
     assert report["model_file_count"] == 7
     assert report["model_manifest_sha256"] == "2" * 64
     assert report["setup_published_last"] is True
     assert report["publication_order"][-1].endswith("setup.exe")
+    checksums = (output / "SHA256SUMS.txt").read_text(encoding="ascii")
+    assert "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe" in checksums
     assert not list(output.glob(".build-*"))
 
 
@@ -609,7 +627,41 @@ def test_builder_supports_unicode_and_space_paths(tmp_path: Path) -> None:
         commit=commit,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe").is_file()
+    assert (output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe").is_file()
+
+
+def test_builder_uses_native_disk_spanning_before_release_limit(tmp_path: Path) -> None:
+    repo, dist, output, doctor, commit = _make_builder_repo(tmp_path)
+    completed = _run_builder(
+        repo=repo,
+        dist=dist,
+        output=output,
+        doctor=doctor,
+        commit=commit,
+        release_asset_limit_bytes=100,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    report = json.loads((output / "build-report.json").read_text(encoding="utf-8-sig"))
+    assert report["output_mode"] == "disk-spanning"
+    assert (output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup-1.bin").is_file()
+    assert all(item["size_bytes"] < 100 for item in report["output_files"])
+
+
+def test_builder_rejects_any_release_asset_at_or_above_limit(tmp_path: Path) -> None:
+    repo, dist, output, doctor, commit = _make_builder_repo(tmp_path)
+    completed = _run_builder(
+        repo=repo,
+        dist=dist,
+        output=output,
+        doctor=doctor,
+        commit=commit,
+        force_disk_spanning=True,
+        release_asset_limit_bytes=5,
+    )
+    assert completed.returncode != 0
+    assert "Release asset size limit exceeded" in completed.stderr
+    assert not any(path.exists() for path in _final_builder_paths(output))
+    assert not list(output.glob("ru-zh-live-subtitles-cpu-offline-0.2.0-setup-*.bin"))
 
 
 def test_release_metadata_contains_offline_bundle_flags(tmp_path: Path) -> None:
@@ -626,7 +678,23 @@ def test_release_metadata_contains_offline_bundle_flags(tmp_path: Path) -> None:
     )
     assert payload["self_contained"] is True
     assert payload["offline_ready"] is True
+    assert payload["model_bundle"]["self_contained"] is True
+    assert payload["model_bundle"]["offline_ready"] is True
+    assert payload["model_bundle"]["gigaam_variant"] == "large_ctc"
     assert payload["model_bundle"]["manifest_sha256"] == "2" * 64
+
+
+@pytest.mark.parametrize("field", ["self_contained", "offline_ready"])
+def test_release_metadata_rejects_incomplete_bundle_flags(
+    tmp_path: Path, field: str
+) -> None:
+    metadata = load_release_metadata()
+    bundle_metadata = make_model_bundle_metadata(tmp_path / "bundle.json")
+    payload = json.loads(bundle_metadata.read_text(encoding="utf-8"))
+    payload[field] = False
+    bundle_metadata.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(metadata.ReleaseMetadataError, match=field):
+        metadata.read_model_bundle_metadata(bundle_metadata)
 
 
 def test_release_metadata_rejects_model_bundle_absolute_path(tmp_path: Path) -> None:
@@ -644,7 +712,7 @@ def test_builder_without_model_assets_root_fails_and_removes_stale_setup(
 ) -> None:
     repo, dist, output, doctor, commit = _make_builder_repo(tmp_path)
     output.mkdir(parents=True, exist_ok=True)
-    setup = output / "ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe"
+    setup = output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe"
     setup.write_bytes(b"stale")
     command = (
         "$builder=[scriptblock]::Create([IO.File]::ReadAllText("

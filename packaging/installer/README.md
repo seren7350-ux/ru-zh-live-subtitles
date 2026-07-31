@@ -1,38 +1,47 @@
-# Self-contained CPU offline installer
+# Self-contained CPU offline installer 0.2.0
 
 `cpu-only.iss` combines the provenance-bound `dist/ru-zh-subtitles-cpu` onedir
-with a separately verified model bundle. Invoke `build_installer.ps1` with the
-clean current Git commit, official signed Inno Setup 7.0.2 x64 compiler, and the
-mandatory `-ModelAssetsRoot` argument. Omitting the bundle is an error; there is
-no user-cache or network fallback.
+with one explicit, fully verified model bundle. Version 0.2.0 contains only the
+required Silero VAD 6.2.1, official `ai-sage/GigaAM-Multilingual` `large_ctc`,
+and NLLB snapshots. Legacy RNNT weights are excluded.
 
-Before ISCC runs, `packaging/model_bundle.py` validates the manifest identity,
-fixed revisions, strict 40-byte newline-free refs, file set, sizes and SHA-256
-of every model asset. It rejects absolute/traversal paths, links and extras, and
-creates path-free `MODEL_BUNDLE_METADATA.json`. Release metadata records the
-bundle and declares `self_contained=true` and `offline_ready=true`.
+Invoke `build_installer.ps1` from a clean tracked commit with the official signed
+Inno Setup 7.0.2 x64 compiler and mandatory `-ModelAssetsRoot`. Omitting the
+bundle is an error; there is no cache discovery, download, or network fallback.
+The default output is the version-isolated `dist/installer-offline-0.2.0`, so the
+retained 0.1.0 course installer under `dist/installer-offline` is not overwritten.
 
-The repository and CPU provenance must match `ExpectedCommit` and be clean.
-Validation, metadata, compilation, hashing and reports are transactional. Any
-failure removes same-version offline outputs. Success publishes metadata, log,
-report, `README_INSTALL.txt`, optional native Inno `.bin` slices, and finally
-`setup.exe` as the success marker.
+Before ISCC, `packaging/model_bundle.py` validates identities, variant, immutable
+revisions, strict 40-byte refs, exact file sets and sizes, every manifest SHA,
+and fixed official GigaAM/Silero SHA values. Symbolic links, junctions and other
+reparse points are rejected; ordinary NTFS hard links are accepted only as
+regular files and their content is fully rehashed. Generated bundle metadata is
+path-free and declares `self_contained=true` and `offline_ready=true`.
 
-The installer:
+Every release attachment must be smaller than 2,000,000,000 bytes. The builder
+uses native Inno disk spanning when the uncompressed inputs predict the limit,
+when `-ForceDiskSpanning` is supplied, or when a single compiled setup reaches
+the limit. `DiskSliceSize` is 1,900,000,000 bytes. It never implements custom
+splitting. `SHA256SUMS.txt` covers setup and every `.bin`; all slices must remain
+beside setup. Setup is published last and is the transaction success marker.
 
-- keeps AppId `{8773A11B-6B74-42AF-85AF-CAD43EB946CF}`;
-- requires no elevation and installs the app under LocalAppData;
-- installs models under `%LOCALAPPDATA%\ru-zh-live-subtitles\models`;
-- requires at least 8 GiB free before starting;
-- launches `live-overlay --translation-device cpu --offline --no-auto-start`;
-- preserves model assets during uninstall;
-- is intentionally unsigned.
+The installer keeps AppId `{8773A11B-6B74-42AF-85AF-CAD43EB946CF}`, installs
+per user without elevation, uses CPU-only Torch, and requires at least 12 GiB
+free space. The minimum system RAM is 8 GiB and 16 GiB is recommended. It is
+unsigned and intended only for non-commercial course work.
 
-Output is ignored under `dist/installer-offline`. A maximum-compression
-preflight produced a single 1,762,415,746-byte setup. The builder still checks
-the formal output: if it reaches 3.8 GB, it recompiles with native Inno disk
-spanning and all generated files must remain together. The older
-`dist/installer` model-less setup is historical and is not the teacher delivery.
+Example:
 
-Generated setups, `.bin` slices, manifests, reports, logs, CPU dist, model
-weights and staging must never be committed. No GPU installer is produced.
+```powershell
+.\packaging\installer\build_installer.ps1 `
+  -ExpectedCommit (git rev-parse HEAD) `
+  -CpuDist .\dist\ru-zh-subtitles-cpu `
+  -ModelAssetsRoot <verified-model-assets> `
+  -OutputDir .\dist\installer-offline-0.2.0 `
+  -ReleaseAssetLimitBytes 2000000000 `
+  -IsccPath "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"
+```
+
+Generated setup files, slices, reports, hashes, model weights and staging remain
+ignored. No GPU installer, signing operation, VMware run, or GitHub Release is
+part of this build stage.

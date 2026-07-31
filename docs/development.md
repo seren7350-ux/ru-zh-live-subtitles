@@ -1034,3 +1034,34 @@ packaging environments each passed 489 tests, the source coverage run passed
 compile check, packaging/model-asset checks, Markdown links, and all three CPU
 `pip check` runs passed. The historical CUDA packaging environment was not used
 because this migration is CPU-only.
+
+## Version 0.2.0 CPU packaging rehearsal (2026-07-31)
+
+The formal `.venv-packaging-cpu` uses Python 3.11.9, Torch 2.10.0+cpu,
+TorchAudio 2.10.0+cpu, Transformers 5.14.1, Hydra Core 1.3.2, OmegaConf
+2.3.0, SoundFile 0.13.1, PyYAML 6.0.3, ONNX Runtime 1.28.0, onnx-asr
+0.12.0, NumPy 2.4.6, sounddevice 0.5.5 and PyInstaller 6.21.0. Torch and
+TorchAudio were installed from the official PyTorch CPU index.
+`torch.version.cuda` was `None`, CUDA availability was false, and `pip check`
+reported no broken requirements.
+
+The code-identical frozen rehearsal contained 5,616 files and 613,257,398
+bytes, with two top-level launchers, zero CUDA DLL/bytes and zero product model
+weight files/bytes. Its provenance recorded version 0.2.0 and clean CPU runtime.
+From a repository-external Unicode-and-space directory, `doctor`,
+`translation-doctor`, `model-doctor`, real 8-second Large CTC recognition and
+offline NLLB translation all succeeded. First frozen ASR load was 4.853 seconds;
+recognition was 1.170 seconds (RTF 0.146). A separate full pipeline process
+measured ASR load 3.747 seconds, NLLB load 1.655 seconds and end-to-end RTF
+1.143. The Russian result was `здравствуйте это проверка распознавания русской
+речи`; Chinese was `您好,这是俄罗斯语识别检查.`.
+
+Both source and formal CPU environments passed 498 tests. The coverage run also
+passed all 498 tests at 80% total coverage. PowerShell parsing, Python
+compileall, the CPU spec syntax check, Markdown links and both pip checks passed.
+PyInstaller warnings were limited to absent optional TensorBoard, an ignored
+Linux-only `libgomp.so.1` ctypes reference on Windows and Torch deprecations.
+The console capture layer displayed Russian/Chinese with an OEM-code-page
+mojibake representation, while source output and GUI Unicode text remained
+correct. No GPU build, CUDA runtime, VMware, Sandbox, signing or Release action
+was performed.

@@ -175,17 +175,14 @@ must not be committed.
 After one successful `vad-prepare`, `vad-doctor`, `vad-file`, and `live-vad` use
 only the verified local VAD cache and never access the network.
 
-## Windows onedir packaging evaluation
+## Windows CPU-only packaging
 
-The isolated packaging environment and repeatable PyInstaller 6.21.0 specs are
-documented in `packaging/README.md`. They create a console diagnostic onedir and
-a noconsole GUI onedir. Model weights and user caches are never bundled; the
-frozen application uses the same external caches as source mode.
-
-The current exact status is **Onedir GUI build validated on development
-machine**. The local CUDA-enabled output is about 3.01 GB, unsigned, and has not
-been evaluated on a clean machine. Do not treat `dist/` as a release or upload
-it to GitHub. See [Windows packaging spike](docs/windows-packaging-spike.md).
+Version 0.2.0 uses the isolated `.venv-packaging-cpu` environment and
+`packaging/combined_cpu.spec` to create one shared two-launcher CPU onedir.
+It pins official Torch/TorchAudio 2.10.0 CPU wheels and contains no CUDA runtime
+or model weights. The onedir is combined with a separately verified Silero,
+GigaAM Large CTC and NLLB bundle only at installer build time. No GPU package is
+part of the 0.2.0 delivery. See `packaging/README.md`.
 
 ## Limitations and troubleshooting
 
@@ -235,23 +232,25 @@ The network-disabled Windows Sandbox staging boundary, exact local-only cache
 allowlist, generated configuration workflow, and current host-edition blocker
 are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
-The existing course-delivery installer is the retained RNNT/ONNX baseline; it
-has not been rebuilt for Large CTC and must not be represented as the migrated
-application. That historical installer combines the approximately 658 MB CPU
-onedir with 3,377,386,294 bytes of pinned Silero, legacy GigaAM and NLLB assets. It requires no
-Python, administrator access, network connection, token, or manual model copy.
-It installs the application under
+The 0.2.0 installer candidate combines the CPU-only onedir with exactly
+4,826,649,490 bytes of pinned Silero, official GigaAM Multilingual Large CTC and
+NLLB assets. It excludes legacy RNNT weights. It requires no Python,
+administrator access, network connection, token, or manual model copy and
+installs the application under
 `%LOCALAPPDATA%\Programs\RuZhLiveSubtitles` and models under
 `%LOCALAPPDATA%\ru-zh-live-subtitles\models`. Installed shortcuts use CPU,
 offline, no-auto-start mode; first launch does not download anything.
 
-The delivery is generated in `dist\installer-offline`. A maximum-compression
-preflight produced one approximately 1.8 GB setup, well below the 3.8 GB split
-threshold; the exact final size and SHA-256 are recorded in the ignored build
-report. At least 8 GiB of free space is required. Uninstall removes the app and
+The new delivery is generated separately in `dist\installer-offline-0.2.0`.
+Every attachment must remain below 2,000,000,000 bytes, so the build uses native
+Inno disk spanning with slices no larger than 1,900,000,000 bytes when required.
+At least 12 GiB of free disk space and 8 GiB RAM are required; 16 GiB RAM is
+recommended. Uninstall removes the app and
 shortcuts but deliberately preserves the model directory; delete that directory
 manually only to reclaim space. The installer is unsigned and may trigger
-SmartScreen. See [self-contained offline installer](docs/self-contained-offline-installer.md).
+SmartScreen. Initial frozen model-load timing is recorded from the final
+development-machine installation rather than estimated. See
+[self-contained offline installer](docs/self-contained-offline-installer.md).
 
 The clean-machine validation kit is under `packaging/clean_machine/`. Generated
 packages, model staging, machine-specific `.wsb` files, WAVs, logs, manifests,
@@ -261,16 +260,14 @@ CPU-only package has now completed offline file and live-GUI validation twice
 in a network-disabled VMware Windows 11 Pro guest restored from the same clean
 snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machine-recovery-validation.md).
 
-The GPU spec remains an internal development/historical benchmark artifact; it
-is not distributed or supported as an end-user package and no GPU installer is
-produced. The earlier CPU clean-VMware result predates this installer revision.
-The self-contained installer is published as an unsigned, non-commercial course
-delivery Release. The installer revision has not been validated on a separate
-clean machine and is not production ready. Model
+The GPU spec remains an internal historical artifact; it is not built or
+distributed in this 0.2.0 stage. The earlier CPU clean-VMware result predates
+the Large CTC installer revision. Version 0.2.0 is an unsigned development-machine
+course candidate and is not published as a Release in this stage. Model
 weights remain outside the CPU onedir but are included in the offline installer
 payload. NLLB remains restricted to non-commercial use. The older roughly
 216 MB model-less setup is a historical development artifact and must not be
-delivered by itself. See
+delivered by itself. The old 0.1.0 installer, tag `course-final-v0.1.0`, and
+GitHub Release remain unchanged as historical RNNT delivery evidence. See
 [CPU-only distribution policy](docs/cpu-only-distribution.md) and
-[installer validation](docs/cpu-only-installer-validation.md). The published
-course delivery is tagged `course-final-v0.1.0`.
+[installer validation](docs/cpu-only-installer-validation.md).
