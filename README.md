@@ -1,8 +1,8 @@
 # Russian–Chinese Live Subtitles
 
 An offline-first Windows prototype for Russian lecture subtitles. The current
-milestone connects cached Silero VAD, GigaAM short-WAV recognition, and NLLB
-translation in an ordered terminal subtitle loop.
+milestone connects cached Silero VAD, the official pinned GigaAM Multilingual
+Large CTC short-WAV recognizer, and NLLB translation in an ordered subtitle loop.
 
 ## Current scope
 
@@ -56,7 +56,7 @@ the command never silently discards audio.
 
 Silero VAD 6.2.1 is obtained from its official PyPI wheel by `vad-prepare`.
 The project does not install or execute the `silero-vad` package and does not
-depend on TorchAudio. It extracts the pinned official ONNX file after wheel and
+use TorchAudio for VAD. It extracts the pinned official ONNX file after wheel and
 model SHA-256 checks, then runs it with NumPy and CPU ONNX Runtime. The model and
 MIT license are stored only in a per-user cache outside the repository.
 
@@ -84,16 +84,13 @@ Python 3.10–3.14 is supported; Python 3.11 is recommended.
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev,translation]"
+python -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -e ".[asr-multilingual,dev,translation]"
 ```
 
-Translation requires a compatible PyTorch installation. Select the official
-PyTorch command for the machine's NVIDIA driver and install it in `.venv`. This
-machine was verified with the CUDA 13.0 wheel:
-
-```powershell
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
-```
+The official Large CTC snapshot requires matching Torch 2.10.x and TorchAudio
+2.10.x builds plus Transformers 5.x. The commands above install the required
+official CPU wheels before the editable project.
 
 If PowerShell policy prevents activation, call
 `.\.venv\Scripts\python.exe` directly. Do not install project dependencies
@@ -114,20 +111,20 @@ python -m live_subtitles vad-doctor
 python -m live_subtitles vad-file data/sample.wav
 python -m live_subtitles live-vad --device 1 --duration 60
 python -m live_subtitles live-vad --device 1 --duration 60 --output-dir data/live-vad-segments
-python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cuda --num-beams 1
+python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cpu --num-beams 1
 python -m live_subtitles overlay-demo --duration 0
-python -m live_subtitles live-overlay --device 1 --duration 0 --translation-engine nllb --translation-device cuda --num-beams 1
+python -m live_subtitles live-overlay --device 1 --duration 0 --translation-engine nllb --translation-device cpu --num-beams 1
 python -m live_subtitles transcribe-file data/sample.wav
 python -m live_subtitles translate-audio data/sample.wav
 python -m live_subtitles translation-doctor
 python -m live_subtitles translate-text "Здравствуйте."
-python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cuda
+python -m live_subtitles benchmark-translation benchmarks/translation_samples.json --device cpu
 ```
 
-`translate-audio` defaults to GigaAM on `CPUExecutionProvider`, NLLB translation,
-`device=auto`, and one beam. `auto` prefers CUDA when PyTorch reports it available
-and otherwise uses CPU. An explicit `--device cuda` request fails instead of
-silently falling back. T5 and M2M100 compatibility can be checked with
+`translate-audio` defaults to `gigaam_multilingual_large_ctc` using the immutable
+`ai-sage/GigaAM-Multilingual` `large_ctc` snapshot on `cpu`, NLLB translation,
+`device=cpu`, and one beam. This migration and its supported execution path are
+CPU-only. T5 and M2M100 compatibility can be checked with
 `--translation-engine t5` or `--translation-engine m2m100`.
 
 `vad-file` accepts only uncompressed PCM16, mono, 16 kHz WAV files. It reports
@@ -153,20 +150,24 @@ their `--no-...` forms to disable them. Duration `0` runs until Ctrl+C.
 
 ## Cached offline use
 
-The first use of each model needs network access unless its files are already in
-the Hugging Face cache. After both models have loaded successfully, force a
-complete cache-only run in the current PowerShell session:
+Download/stage models separately before running the application. The Large CTC
+backend resolves only the pinned commit, forces Hugging Face/Transformers offline
+mode, and calls `from_pretrained(..., local_files_only=True)`; it never downloads
+at runtime. After both ASR and translation snapshots are staged, verify a complete
+cache-only run in the current PowerShell session:
 
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
-python -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cuda --num-beams 1
-python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cuda --num-beams 1
+python -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cpu --num-beams 1
+python -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cpu --num-beams 1
 Remove-Item Env:HF_HUB_OFFLINE
 Remove-Item Env:TRANSFORMERS_OFFLINE
 ```
 
-The ASR path remains CPU-only in this milestone; translation can use CUDA. Audio
+The new Large CTC ASR backend accepts only `cpu`, and translation defaults to
+CPU as well. Historical explicit GPU code is not part of this migration's
+supported or validated path. Audio
 and recognized text stay in the local process. The `.venv`, `data`, WAV files,
 model caches, weights, and generated benchmark output are ignored by Git and
 must not be committed.
@@ -195,7 +196,8 @@ it to GitHub. See [Windows packaging spike](docs/windows-packaging-spike.md).
 - A queue overflow, input overflow, or sequence discontinuity stops the session;
   use the printed summary to diagnose device/host load rather than accepting loss.
 - Recording depends on Windows microphone permission and a free input device.
-- GigaAM uses CPU ONNX Runtime; NLLB CUDA needs a compatible PyTorch wheel.
+- The default GigaAM Large CTC backend uses official PyTorch/Transformers code;
+  the former RNNT/ONNX backend remains available only by explicit legacy choice.
 - Cache-only mode fails if either model snapshot is incomplete.
 - NLLB is a current candidate, not a quality guarantee or production approval.
 - Run `vad-doctor`, `doctor`, and `translation-doctor` for the corresponding
@@ -233,9 +235,10 @@ The network-disabled Windows Sandbox staging boundary, exact local-only cache
 allowlist, generated configuration workflow, and current host-edition blocker
 are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
-The course-delivery candidate is the self-contained x64 CPU-only offline
-installer. It combines the approximately 658 MB CPU onedir with 3,377,386,294
-bytes of pinned Silero, GigaAM and NLLB assets. The installer requires no
+The existing course-delivery installer is the retained RNNT/ONNX baseline; it
+has not been rebuilt for Large CTC and must not be represented as the migrated
+application. That historical installer combines the approximately 658 MB CPU
+onedir with 3,377,386,294 bytes of pinned Silero, legacy GigaAM and NLLB assets. It requires no
 Python, administrator access, network connection, token, or manual model copy.
 It installs the application under
 `%LOCALAPPDATA%\Programs\RuZhLiveSubtitles` and models under

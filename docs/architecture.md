@@ -20,12 +20,13 @@ model SHA-256, and atomically writes a per-user cache. It does not import or
 execute wheel code. The runtime uses NumPy and ONNX Runtime directly; neither
 `silero-vad`, TorchAudio, nor Torch participates in VAD inference.
 
-The existing offline audio-to-translation path remains:
+The migrated offline audio-to-translation path is:
 
 ```text
 Local WAV file
-  -> WAV validation and duration reading
-  -> GigaAM-v3 E2E RNN-T through onnx-asr / CPU ONNX Runtime
+  -> PCM WAV validation, mono downmix, and 16 kHz resampling
+  -> official ai-sage/GigaAM-Multilingual Large CTC at immutable commit
+  -> official PyTorch/TorchAudio feature extractor and CTC decoder
   -> non-empty Russian text check
   -> translator factory (default: NLLB; optional: T5 or M2M100)
   -> direct local Transformers generation
@@ -39,10 +40,19 @@ or running a doctor command does not load a model. A pipeline instance creates
 at most one ASR wrapper and one selected translator, allowing the same loaded
 objects to be reused in a future long-running process.
 
-The current commands handle local WAV files. GigaAM remains on CPU,
-while translation selects CUDA when `device=auto` and CUDA is available. No
-audio or text is sent to a network service. Cache-only operation requires both
-Hugging Face offline environment variables and complete local model snapshots.
+The current commands handle local WAV files. GigaAM defaults to CPU and may use
+CUDA only when explicitly selected and available, while translation independently
+selects CUDA when `device=auto`. No audio or text is sent to a network service.
+The ASR adapter resolves only the pinned local snapshot, forces offline mode,
+and uses `local_files_only=True`; it never falls back to the legacy RNNT model.
+
+The project calls the official model's acoustic forward path and `_decode` after
+project-owned PCM WAV conversion. This avoids an undeclared system `ffmpeg`
+dependency while preserving the official CTC implementation: argmax labels,
+blank ID 70 removal, adjacent-repeat collapse, and the official 70-character
+vocabulary. The adapter does not perform a second CTC collapse. Silero remains
+responsible for keeping live segments below the official 25-second short-audio
+limit; the gated Pyannote long-form path is not used.
 
 T5, M2M100, and NLLB are not loaded together. NLLB is the current default
 general-purpose candidate, while the other adapters remain selectable for

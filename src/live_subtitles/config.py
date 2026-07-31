@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model_assets import hugging_face_cache_candidates
+from .model_assets import (
+    GIGAAM_MULTILINGUAL_MODEL_ID,
+    LEGACY_GIGAAM_MODEL_ID,
+    hugging_face_cache_candidates,
+)
 from .runtime_paths import bundled_resource_path, is_frozen
 
-DEFAULT_ASR_MODEL = "gigaam-v3-e2e-rnnt"
-DEFAULT_PROVIDER = "CPUExecutionProvider"
+GIGAAM_MULTILINGUAL_BACKEND = "gigaam_multilingual_large_ctc"
+LEGACY_GIGAAM_ONNX_BACKEND = "gigaam_v3_e2e_rnnt_onnx_legacy"
+ASR_BACKENDS = (GIGAAM_MULTILINGUAL_BACKEND, LEGACY_GIGAAM_ONNX_BACKEND)
+DEFAULT_ASR_BACKEND = GIGAAM_MULTILINGUAL_BACKEND
+DEFAULT_ASR_MODEL = GIGAAM_MULTILINGUAL_MODEL_ID
+DEFAULT_PROVIDER = "cpu"
+LEGACY_ASR_MODEL = "gigaam-v3-e2e-rnnt"
+LEGACY_PROVIDER = "CPUExecutionProvider"
 DEFAULT_T5_TRANSLATION_MODEL = "utrobinmv/t5_translate_en_ru_zh_base_200"
 DEFAULT_M2M100_MODEL = "facebook/m2m100_418M"
 DEFAULT_NLLB_MODEL = "facebook/nllb-200-distilled-600M"
@@ -16,7 +26,7 @@ DEFAULT_TRANSLATION_ENGINE = "nllb"
 DEFAULT_TRANSLATION_MODEL = DEFAULT_NLLB_MODEL
 DEFAULT_SOURCE_LANGUAGE = "rus_Cyrl"
 DEFAULT_TARGET_LANGUAGE = "zho_Hans"
-DEFAULT_TRANSLATION_DEVICE = "auto"
+DEFAULT_TRANSLATION_DEVICE = "cpu"
 PROJECT_ROOT = (
     bundled_resource_path(".") if is_frozen() else Path(__file__).resolve().parents[2]
 )

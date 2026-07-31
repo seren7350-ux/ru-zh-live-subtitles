@@ -10,9 +10,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
-from .asr.gigaam_onnx import AsrError, GigaAMOnnxRecognizer
+from .asr.base import AsrError
+from .asr.factory import create_recognizer
 from .audio.recording import AudioDeviceError, RecordingError, list_input_devices, record_wav, select_input_device
 from .config import (
+    ASR_BACKENDS,
+    DEFAULT_ASR_BACKEND,
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
     DEFAULT_TRANSLATION_DEVICE,
@@ -86,11 +89,16 @@ def _record(args: argparse.Namespace) -> int:
 
 def _transcribe_file(args: argparse.Namespace) -> int:
     path = Path(args.path).expanduser().resolve()
-    print("First load may download the model from the internet; later runs use the local cache.")
+    print("The selected ASR backend uses only a pinned local snapshot; it never downloads at runtime.")
     print(f"File: {path}")
-    print(f"Model: {args.model}")
-    print(f"Provider: {args.provider}")
-    recognizer = GigaAMOnnxRecognizer(model_name=args.model, provider=args.provider)
+    recognizer = create_recognizer(
+        backend=args.backend,
+        model_name=args.model,
+        provider=args.provider,
+    )
+    print(f"Backend: {args.backend}")
+    print(f"Model: {recognizer.model_name}")
+    print(f"Provider: {recognizer.provider}")
     text = recognizer.transcribe_file(path)
     metrics = recognizer.last_metrics
     if metrics is None:
@@ -120,6 +128,7 @@ def _translate_audio(args: argparse.Namespace) -> int:
     path = Path(args.path).expanduser().resolve()
     print("Using local caches only when HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1 are set.")
     pipeline = OfflineAudioTranslationPipeline(
+        asr_backend=args.asr_backend,
         asr_model=args.asr_model,
         asr_provider=args.asr_provider,
         translation_engine=args.translation_engine,
@@ -398,6 +407,9 @@ def _live_terminal(args: argparse.Namespace) -> int:
         pre_roll_ms=args.pre_roll_ms,
         min_segment_ms=args.min_segment_ms,
         max_segment_seconds=args.max_segment_seconds,
+        asr_backend=args.asr_backend,
+        asr_model=args.asr_model,
+        asr_provider=args.asr_provider,
         translation_engine=args.translation_engine,
         translation_model=args.translation_model,
         translation_device=args.translation_device,
@@ -645,8 +657,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     transcribe = subparsers.add_parser("transcribe-file", help="recognize Russian speech from one local WAV file")
     transcribe.add_argument("path", help="path to a WAV file")
-    transcribe.add_argument("--model", default=DEFAULT_ASR_MODEL, help=f"onnx-asr model name (default: {DEFAULT_ASR_MODEL})")
-    transcribe.add_argument("--provider", default=DEFAULT_PROVIDER, help=f"ONNX Runtime provider (supported baseline: {DEFAULT_PROVIDER})")
+    transcribe.add_argument("--backend", choices=ASR_BACKENDS, default=DEFAULT_ASR_BACKEND)
+    transcribe.add_argument("--model", help=f"model override (default backend model: {DEFAULT_ASR_MODEL})")
+    transcribe.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER,
+        help="ASR device/provider (Large CTC supports CPU only; default: cpu)",
+    )
     transcribe.set_defaults(handler=_transcribe_file)
 
     vad_prepare = subparsers.add_parser(
@@ -724,6 +741,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--device", type=int, help="input device number; default uses the configured input"
     )
     live_terminal.add_argument(
+        "--asr-backend", choices=ASR_BACKENDS, default=DEFAULT_ASR_BACKEND
+    )
+    live_terminal.add_argument("--asr-model")
+    live_terminal.add_argument("--asr-provider", default=DEFAULT_PROVIDER)
+    live_terminal.add_argument(
         "--duration",
         type=float,
         default=0.0,
@@ -778,14 +800,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     translate_audio.add_argument("path", help="path to a WAV file")
     translate_audio.add_argument(
+        "--asr-backend", choices=ASR_BACKENDS, default=DEFAULT_ASR_BACKEND
+    )
+    translate_audio.add_argument(
         "--asr-model",
-        default=DEFAULT_ASR_MODEL,
-        help=f"onnx-asr model name (default: {DEFAULT_ASR_MODEL})",
+        help=f"model override (default backend model: {DEFAULT_ASR_MODEL})",
     )
     translate_audio.add_argument(
         "--asr-provider",
         default=DEFAULT_PROVIDER,
-        help=f"ONNX Runtime provider (default: {DEFAULT_PROVIDER})",
+        help=f"ASR device/provider (default: {DEFAULT_PROVIDER})",
     )
     translate_audio.add_argument(
         "--translation-engine",

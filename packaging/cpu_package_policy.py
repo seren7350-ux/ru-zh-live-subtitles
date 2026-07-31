@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-EXPECTED_TORCH_VERSION = "2.12.1"
+EXPECTED_TORCH_VERSION = "2.10.0"
 FORBIDDEN_CUDA_DLL_PATTERNS = (
     "c10_cuda.dll",
     "torch_cuda.dll",
@@ -25,7 +25,7 @@ FORBIDDEN_CUDA_DLL_PATTERNS = (
     "cupti*.dll",
     "nvperf*.dll",
 )
-FORBIDDEN_DISTRIBUTIONS = frozenset({"torchaudio", "torchvision", "triton"})
+FORBIDDEN_DISTRIBUTIONS = frozenset({"torchvision", "triton"})
 
 
 class CpuPackagePolicyError(RuntimeError):

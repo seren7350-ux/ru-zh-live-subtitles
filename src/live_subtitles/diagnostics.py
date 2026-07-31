@@ -13,7 +13,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from . import __version__
-from .config import DEFAULT_ASR_MODEL, PROJECT_ROOT, hugging_face_cache_dir
+from .config import (
+    DEFAULT_ASR_BACKEND,
+    DEFAULT_ASR_MODEL,
+    PROJECT_ROOT,
+    hugging_face_cache_dir,
+)
 
 Status = Literal["OK", "WARN", "FAIL"]
 
@@ -42,11 +47,19 @@ class DiagnosticReport:
         return 1 if self.counts["FAIL"] else 0
 
 
-def _load_module(name: str, display_name: str, checks: list[Check]) -> Any | None:
+def _load_module(
+    name: str,
+    display_name: str,
+    checks: list[Check],
+    *,
+    required: bool = True,
+) -> Any | None:
     try:
         module = importlib.import_module(name)
     except Exception as exc:  # diagnostics must survive broken optional/native imports
-        checks.append(Check("FAIL", display_name, f"not importable: {exc}"))
+        checks.append(
+            Check("FAIL" if required else "WARN", display_name, f"not importable: {exc}")
+        )
         return None
     version = getattr(module, "__version__", "version unavailable")
     checks.append(Check("OK", display_name, str(version)))
@@ -113,7 +126,12 @@ def collect_diagnostics() -> DiagnosticReport:
 
     _load_module("numpy", "numpy", checks)
     sounddevice_module = _load_module("sounddevice", "sounddevice", checks)
-    _load_module("onnx_asr", "onnx_asr", checks)
+    _load_module("torch", "torch", checks)
+    _load_module("torchaudio", "torchaudio", checks)
+    _load_module("transformers", "transformers", checks)
+    _load_module("hydra", "hydra-core", checks)
+    _load_module("omegaconf", "omegaconf", checks)
+    _load_module("onnx_asr", "onnx_asr (legacy ASR only)", checks, required=False)
     onnxruntime_module = _load_module("onnxruntime", "onnxruntime", checks)
 
     if onnxruntime_module is None:
@@ -170,9 +188,10 @@ def collect_diagnostics() -> DiagnosticReport:
     checks.extend(
         (
             Check("OK" if cache_dir.exists() else "WARN", "Hugging Face cache", f"{cache_dir} ({'exists' if cache_dir.exists() else 'not created yet'})"),
+            Check("OK", "ASR backend", DEFAULT_ASR_BACKEND),
             Check("OK", "ASR model", DEFAULT_ASR_MODEL),
-            Check("WARN", "First model load", "may require internet access to download model files"),
-            Check("OK", "Offline inference", "available after model files are cached; set HF_HUB_OFFLINE=1 to verify"),
+            Check("WARN", "Model setup", "the immutable snapshot must be staged before first use"),
+            Check("OK", "Offline inference", "runtime loading is local_files_only and forces offline mode"),
         )
     )
     return DiagnosticReport(tuple(checks))

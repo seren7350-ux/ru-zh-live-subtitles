@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..asr.base import AsrError, SpeechRecognizer
-from ..asr.gigaam_onnx import GigaAMOnnxRecognizer
+from ..asr.factory import create_recognizer
 from ..config import (
-    DEFAULT_ASR_MODEL,
+    DEFAULT_ASR_BACKEND,
     DEFAULT_PROVIDER,
     DEFAULT_TRANSLATION_DEVICE,
     DEFAULT_TRANSLATION_ENGINE,
@@ -69,17 +69,19 @@ class OfflineAudioTranslationPipeline:
     def __init__(
         self,
         *,
-        asr_model: str = DEFAULT_ASR_MODEL,
+        asr_backend: str = DEFAULT_ASR_BACKEND,
+        asr_model: str | None = None,
         asr_provider: str = DEFAULT_PROVIDER,
         translation_engine: str = DEFAULT_TRANSLATION_ENGINE,
         translation_model: str | None = None,
         device: str = DEFAULT_TRANSLATION_DEVICE,
         num_beams: int = 1,
         max_new_tokens: int = 256,
-        recognizer_factory: RecognizerFactory = GigaAMOnnxRecognizer,
+        recognizer_factory: RecognizerFactory = create_recognizer,
         translator_factory: Callable[..., Any] = create_translator,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
+        self.asr_backend = asr_backend
         self.asr_model = asr_model
         self.asr_provider = asr_provider
         self.translation_engine = translation_engine
@@ -99,6 +101,7 @@ class OfflineAudioTranslationPipeline:
     def _get_recognizer(self) -> SpeechRecognizer:
         if self._recognizer is None:
             self._recognizer = self._recognizer_factory(
+                backend=self.asr_backend,
                 model_name=self.asr_model,
                 provider=self.asr_provider,
             )

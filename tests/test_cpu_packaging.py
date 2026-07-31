@@ -51,10 +51,10 @@ def fake_torch(version: str, cuda_version: str | None, available: bool) -> Any:
 
 
 def test_cpu_torch_metadata_is_explicit(cpu_policy: Any) -> None:
-    metadata = cpu_policy.validate_cpu_torch(fake_torch("2.12.1+cpu", None, False))
+    metadata = cpu_policy.validate_cpu_torch(fake_torch("2.10.0+cpu", None, False))
     assert metadata.as_dict() == {
         "runtime_family": "cpu",
-        "torch_version": "2.12.1+cpu",
+        "torch_version": "2.10.0+cpu",
         "torch_cuda_version": None,
         "cuda_available": False,
         "selected_translation_device": "cpu",
@@ -64,8 +64,9 @@ def test_cpu_torch_metadata_is_explicit(cpu_policy: Any) -> None:
 @pytest.mark.parametrize(
     ("version", "cuda_version", "available"),
     [
-        ("2.12.1+cu130", "13.0", False),
-        ("2.12.1+cpu", None, True),
+        ("2.10.0+cu130", "13.0", False),
+        ("2.10.0+cpu", None, True),
+        ("2.12.1+cpu", None, False),
         ("2.11.0+cpu", None, False),
     ],
 )
@@ -194,9 +195,12 @@ def test_gpu_packaging_files_are_byte_identical_to_main() -> None:
 def test_cpu_dependency_files_pin_cpu_torch_and_exclude_gpu_packages() -> None:
     requirements = (PACKAGING / "requirements-cpu.txt").read_text(encoding="utf-8")
     constraints = (PACKAGING / "constraints-cpu.txt").read_text(encoding="utf-8")
-    assert "torch==2.12.1+cpu" in constraints
     serialized = (requirements + "\n" + constraints).casefold()
-    for forbidden in ("torchvision", "torchaudio", "triton", "nvidia-"):
+    assert "torch==2.10.0+cpu" in constraints
+    assert "torchaudio==2.10.0+cpu" in serialized
+    assert "hydra-core==1.3.2" in serialized
+    assert "omegaconf==2.3.0" in serialized
+    for forbidden in ("torchvision", "triton", "nvidia-"):
         assert forbidden not in serialized
     assert "cu130" not in serialized and "cu126" not in serialized
 

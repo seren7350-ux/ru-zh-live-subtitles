@@ -24,37 +24,32 @@ decisions; they should not be treated as current configuration files.
 
 ## Current ASR boundary
 
-The current backend remains GigaAM-v3 E2E RNN-T through `onnx-asr` and
-`CPUExecutionProvider`. This cleanup does not change the model, revision, decoder,
-audio format, or output behavior.
+The default backend is the official GigaAM Multilingual Large CTC PyTorch model
+at immutable commit `3905cd51c3ed4e88c8edf33f3302969ba480a327`.
 
 | Path | ASR responsibility |
 |---|---|
 | `src/live_subtitles/asr/base.py` | Backend-neutral lifecycle, errors, metrics, and `SpeechRecognizer` protocol. |
-| `src/live_subtitles/asr/gigaam_onnx.py` | Current GigaAM-v3 RNNT/ONNX loading and short-WAV recognition. |
+| `src/live_subtitles/asr/gigaam_multilingual_ctc.py` | Default pinned official Large CTC loading, PCM conversion, official decoding, and metrics. |
+| `src/live_subtitles/asr/gigaam_onnx.py` | Explicit legacy GigaAM-v3 RNNT/ONNX comparison backend. |
+| `src/live_subtitles/asr/factory.py` | Exact backend selection without fallback. |
 | `src/live_subtitles/config.py` | Current default backend model name and provider. |
 | `src/live_subtitles/model_assets.py` | Pinned external asset identities, revisions, file sets, sizes, and readiness checks. |
 | `src/live_subtitles/pipeline/offline_file.py` | Backend-neutral ASR/translation orchestration. |
 | `packaging/model_bundle.py` | Installer-time validation and metadata for the pinned model payload. |
 
-The pipeline depends on the protocol, not on RNNT decoding details. The concrete
-GigaAM class remains the default factory until a future migration is separately
-implemented and validated.
+The pipeline depends on the protocol, not on CTC or RNNT decoding details. The
+factory selects the new backend by default and retains RNNT only by explicit name.
 
-## Next ASR backend migration
+## Large CTC migration boundary
 
-A later GigaAM Multilingual Large CTC change should be a separate feature branch.
-The expected entry points are:
+The migration uses these boundaries:
 
-1. add a dedicated CTC backend module under `src/live_subtitles/asr/` that
-   implements `SpeechRecognizer`;
-2. add its tokenizer/vocabulary, preprocessing, decoder, runtime, and metrics
-   tests without changing the protocol consumers;
-3. add a distinct pinned `ModelAssetSpec` rather than reusing the RNNT identity;
-4. update model-bundle and installer validation only after the new asset contract
-   is fixed;
-5. switch the default explicitly after file, live, GUI, CPU packaging, and clean-
-   machine validation pass.
+1. the dedicated CTC adapter implements `SpeechRecognizer`;
+2. official decoding is used once after project-owned WAV normalization;
+3. the new `ModelAssetSpec` is separate from the retained legacy identity;
+4. generated snapshots, weights, manifests, and measurements stay ignored;
+5. final onedir/installer rebuilding remains a later stage after review.
 
 VAD, translation, GUI, microphone selection, segment queues, and process control
 must not need model-specific rewrites.

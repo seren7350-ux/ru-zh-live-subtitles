@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..config import (
+    DEFAULT_ASR_BACKEND,
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
     DEFAULT_TRANSLATION_DEVICE,
@@ -53,6 +54,7 @@ class LiveTerminalSession:
         pre_roll_ms: int = 250,
         min_segment_ms: int = 300,
         max_segment_seconds: float = 15.0,
+        asr_backend: str = DEFAULT_ASR_BACKEND,
         asr_model: str = DEFAULT_ASR_MODEL,
         asr_provider: str = DEFAULT_PROVIDER,
         translation_engine: str = DEFAULT_TRANSLATION_ENGINE,
@@ -71,6 +73,7 @@ class LiveTerminalSession:
     ) -> None:
         self._fatal_event = threading.Event()
         self.pipeline = pipeline or OfflineAudioTranslationPipeline(
+            asr_backend=asr_backend,
             asr_model=asr_model,
             asr_provider=asr_provider,
             translation_engine=translation_engine,

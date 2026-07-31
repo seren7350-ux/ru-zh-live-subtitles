@@ -1,6 +1,8 @@
 .venv/
 .venv-packaging/
 .venv-packaging-cpu/
+.venv-gigaam-multilingual/
+.venv-gigaam-multilingual-gpu/
 venv/
 **pycache**/
 __pycache__/

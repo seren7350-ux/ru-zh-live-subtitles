@@ -147,7 +147,7 @@ def test_translate_audio_defaults_to_nllb_and_reports_metrics(
     assert cli.main(["translate-audio", str(wav)]) == 0
     assert captured_kwargs["translation_engine"] == "nllb"
     assert captured_kwargs["translation_model"] is None
-    assert captured_kwargs["device"] == "auto"
+    assert captured_kwargs["device"] == "cpu"
     output = capsys.readouterr().out
     assert "Russian text: Русский текст" in output
     assert "Chinese text: 中文文本" in output
@@ -190,8 +190,9 @@ def test_translate_audio_accepts_compatibility_engine_override(
     )
     assert result != 0
     assert captured_kwargs == {
-        "asr_model": "gigaam-v3-e2e-rnnt",
-        "asr_provider": "CPUExecutionProvider",
+        "asr_backend": "gigaam_multilingual_large_ctc",
+        "asr_model": None,
+        "asr_provider": "cpu",
         "translation_engine": engine,
         "translation_model": "example/model",
         "device": "cpu",
