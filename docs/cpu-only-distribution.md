@@ -37,6 +37,7 @@ staging, virtual environments, and Git metadata are never bundled. The installer
 performs no download and starts the GUI in CPU, offline, no-auto-start mode. See
 [model assets setup](model-assets-setup.md).
 
-This candidate is unsigned and has only been validated on the development
-machine. It has not been validated on a clean Windows machine and is not a
-public Release, production-ready distribution, or commercial-use approval.
+This course-delivery installer is published and remains unsigned. Its underlying
+CPU onedir has clean-VMware evidence, but the final installer revision has not
+been validated on a separate clean Windows machine. Publication is not a
+production-ready or commercial-use approval.

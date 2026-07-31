@@ -6,39 +6,18 @@ import importlib
 import time
 import warnings
 import wave
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from ..config import DEFAULT_ASR_MODEL, DEFAULT_PROVIDER
-
-
-class AsrError(RuntimeError):
-    """Base class for user-facing ASR errors."""
-
-
-class InvalidAudioFileError(AsrError):
-    """Raised when the requested input is not a readable WAV file."""
-
-
-class ProviderUnavailableError(AsrError):
-    """Raised when the requested ONNX Runtime provider is unavailable."""
-
-
-class ModelLoadError(AsrError):
-    """Raised when onnx-asr cannot load the selected model."""
-
-
-class AudioTranscriptionError(AsrError):
-    """Raised when the model cannot recognize the input audio."""
-
-
-@dataclass(frozen=True)
-class RecognitionMetrics:
-    audio_duration_seconds: float
-    model_load_seconds: float
-    recognition_seconds: float
-    rtf: float | None
+from .base import (
+    AsrError,
+    AudioTranscriptionError,
+    InvalidAudioFileError,
+    ModelLoadError,
+    ProviderUnavailableError,
+    RecognitionMetrics,
+)
 
 
 class GigaAMOnnxRecognizer:

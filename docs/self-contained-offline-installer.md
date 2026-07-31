@@ -1,9 +1,10 @@
 # Self-contained CPU offline installer
 
-This unsigned per-user installer is the course-delivery candidate. It combines
+This unsigned per-user installer is the published non-commercial course delivery. It combines
 the provenance-bound CPU onedir and every pinned model asset needed for offline
-Russian speech recognition and Chinese translation. It is not a public Release,
-production certification, commercial distribution, or clean-machine result.
+Russian speech recognition and Chinese translation. Publication is not
+production certification, commercial-use approval, or a clean-machine result
+for this installer revision.
 
 ## Delivery contract
 

@@ -1,6 +1,23 @@
-"""Speech-recognition interfaces and ONNX implementation."""
+"""Backend-neutral ASR contract and the current GigaAM RNNT backend."""
 
-from .base import SpeechRecognizer
+from .base import (
+    AsrError,
+    AudioTranscriptionError,
+    InvalidAudioFileError,
+    ModelLoadError,
+    ProviderUnavailableError,
+    RecognitionMetrics,
+    SpeechRecognizer,
+)
 from .gigaam_onnx import GigaAMOnnxRecognizer
 
-__all__ = ["SpeechRecognizer", "GigaAMOnnxRecognizer"]
+__all__ = [
+    "AsrError",
+    "AudioTranscriptionError",
+    "GigaAMOnnxRecognizer",
+    "InvalidAudioFileError",
+    "ModelLoadError",
+    "ProviderUnavailableError",
+    "RecognitionMetrics",
+    "SpeechRecognizer",
+]
