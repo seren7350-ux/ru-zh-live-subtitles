@@ -66,7 +66,7 @@ Name: "{autodesktop}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-s
 
 [Code]
 const
-  MinimumFreeBytes = 8589934592;
+  MinimumFreeBytes = 12884901888;
 
 function InitializeSetup: Boolean;
 var
@@ -84,7 +84,7 @@ begin
   if FreeBytes < MinimumFreeBytes then
   begin
     MsgBox(
-      'At least 8 GiB of free disk space is required before installation.' + #13#10 +
+      'At least 12 GiB of free disk space is required before installation.' + #13#10 +
       'Available: ' + IntToStr(FreeBytes) + ' bytes.', mbError, MB_OK);
     Exit;
   end;

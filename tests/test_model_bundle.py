@@ -47,13 +47,14 @@ def _fake_bundle(tmp_path: Path) -> tuple[Path, tuple[ModelAssetSpec, ...], dict
         license_id="MIT",
     )
     gigaam = ModelAssetSpec(
-        key="gigaam-v3-e2e-rnnt",
-        model_id="istupakov/gigaam-v3-onnx",
-        cache_name="models--istupakov--gigaam-v3-onnx",
+        key="gigaam-multilingual-large-ctc",
+        model_id="ai-sage/GigaAM-Multilingual",
+        cache_name="models--ai-sage--GigaAM-Multilingual",
         revision=model_bundle.GIGAAM_REVISION,
         required_files=("config.json",),
         expected_sizes=(("config.json", 2),),
         license_id="MIT",
+        variant="large_ctc",
     )
     nllb = ModelAssetSpec(
         key="nllb-200-distilled-600m",
@@ -70,10 +71,10 @@ def _fake_bundle(tmp_path: Path) -> tuple[Path, tuple[ModelAssetSpec, ...], dict
         "silero-vad/6.2.1/metadata.json": b"{}",
         "silero-vad/6.2.1/silero_vad.onnx": b"silero",
         (
-            "hf-home/hub/models--istupakov--gigaam-v3-onnx/refs/main"
+            "hf-home/hub/models--ai-sage--GigaAM-Multilingual/refs/main"
         ): model_bundle.GIGAAM_REVISION.encode("ascii"),
         (
-            "hf-home/hub/models--istupakov--gigaam-v3-onnx/snapshots/"
+            "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
             f"{model_bundle.GIGAAM_REVISION}/config.json"
         ): b"{}",
         (
@@ -94,16 +95,17 @@ def _fake_bundle(tmp_path: Path) -> tuple[Path, tuple[ModelAssetSpec, ...], dict
     for spec in specs:
         expected = set(model_bundle._expected_paths(spec))
         files = [records[path] for path in sorted(expected)]
-        models.append(
-            {
+        model = {
                 "key": spec.key,
                 "model_id": spec.model_id,
                 "revision": spec.revision,
                 "license": spec.license_id,
                 "total_size_bytes": sum(int(item["size_bytes"]) for item in files),
                 "files": files,
-            }
-        )
+        }
+        if spec.variant is not None:
+            model["variant"] = spec.variant
+        models.append(model)
     manifest = {
         "schema_version": 1,
         "models": models,
@@ -133,6 +135,8 @@ def test_valid_bundle_creates_path_free_metadata(tmp_path: Path) -> None:
     rendered = json.dumps(result.metadata)
     assert result.metadata["file_count"] == 7
     assert result.metadata["bundle_type"] == "offline-model-assets"
+    assert result.metadata["self_contained"] is True
+    assert result.metadata["offline_ready"] is True
     assert str(tmp_path) not in rendered
     assert model_bundle.GIGAAM_REVISION in rendered
     assert model_bundle.NLLB_REVISION in rendered
@@ -141,7 +145,7 @@ def test_valid_bundle_creates_path_free_metadata(tmp_path: Path) -> None:
 @pytest.mark.parametrize("suffix", [b"\r\n", b"\n"])
 def test_revision_ref_rejects_newline(tmp_path: Path, suffix: bytes) -> None:
     root, specs, fixed = _fake_bundle(tmp_path)
-    ref = root / "hf-home/hub/models--istupakov--gigaam-v3-onnx/refs/main"
+    ref = root / "hf-home/hub/models--ai-sage--GigaAM-Multilingual/refs/main"
     ref.write_bytes(model_bundle.GIGAAM_REVISION.encode("ascii") + suffix)
     with pytest.raises(model_bundle.ModelBundleError, match="Size mismatch|40 bytes"):
         _validate(root, specs, fixed)
@@ -149,7 +153,7 @@ def test_revision_ref_rejects_newline(tmp_path: Path, suffix: bytes) -> None:
 
 def test_revision_ref_rejects_wrong_revision_even_with_updated_manifest(tmp_path: Path) -> None:
     root, specs, fixed = _fake_bundle(tmp_path)
-    relative = "hf-home/hub/models--istupakov--gigaam-v3-onnx/refs/main"
+    relative = "hf-home/hub/models--ai-sage--GigaAM-Multilingual/refs/main"
     ref = root / Path(*relative.split("/"))
     ref.write_bytes(b"0" * 40)
     manifest = _manifest(root)
@@ -228,4 +232,44 @@ def test_invalid_manifest_json_is_rejected(tmp_path: Path) -> None:
     root, specs, fixed = _fake_bundle(tmp_path)
     (root / model_bundle.MANIFEST_NAME).write_text("{", encoding="utf-8")
     with pytest.raises(model_bundle.ModelBundleError, match="cannot be read"):
+        _validate(root, specs, fixed)
+
+
+def test_official_gigaam_sha_pins_are_complete() -> None:
+    expected = {
+        ".gitattributes": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+        "README.md": "097997908f232ec01f47f5155a462ad0b5aa9f1383594827903f46290e6b57bc",
+        "config.json": "5ea1089c77b60e094352d7fb7bfb6580906b380c4dc7053edb4f7f0a1f59c172",
+        "modeling_gigaam.py": "6d02e640fbb5738ab11c030520a68654ef32f4ff363723db10534cf8b5d5c0e7",
+        "pytorch_model.bin": "c3fabefb50b41f08f4d7ad44e02c26c37d242882704cdcca2ebd98e45eff73d1",
+    }
+    observed = {
+        key.rsplit("/", 1)[-1]: value
+        for key, value in model_bundle.GIGAAM_FIXED_SHA256.items()
+    }
+    assert observed == expected
+
+
+def test_ordinary_hard_link_is_accepted(tmp_path: Path) -> None:
+    root, specs, fixed = _fake_bundle(tmp_path)
+    target = root / "silero-vad/6.2.1/LICENSE"
+    original = tmp_path / "ordinary-file"
+    original.write_bytes(target.read_bytes())
+    target.unlink()
+    target.hardlink_to(original)
+    result = _validate(root, specs, fixed)
+    assert result.metadata["file_count"] == 7
+
+
+def test_reparse_point_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, specs, fixed = _fake_bundle(tmp_path)
+    original = model_bundle._is_link_or_reparse_point
+    monkeypatch.setattr(
+        model_bundle,
+        "_is_link_or_reparse_point",
+        lambda path: path.name == "LICENSE" or original(path),
+    )
+    with pytest.raises(model_bundle.ModelBundleError, match="reparse points"):
         _validate(root, specs, fixed)

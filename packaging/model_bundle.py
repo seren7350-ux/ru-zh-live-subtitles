@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -32,6 +34,32 @@ METADATA_NAME = "MODEL_BUNDLE_METADATA.json"
 SILERO_MODEL_SHA256 = (
     "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
 )
+GIGAAM_FIXED_SHA256 = {
+    "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
+    f"{GIGAAM_REVISION}/.gitattributes": (
+        "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+    ),
+    "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
+    f"{GIGAAM_REVISION}/README.md": (
+        "097997908f232ec01f47f5155a462ad0b5aa9f1383594827903f46290e6b57bc"
+    ),
+    "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
+    f"{GIGAAM_REVISION}/config.json": (
+        "5ea1089c77b60e094352d7fb7bfb6580906b380c4dc7053edb4f7f0a1f59c172"
+    ),
+    "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
+    f"{GIGAAM_REVISION}/modeling_gigaam.py": (
+        "6d02e640fbb5738ab11c030520a68654ef32f4ff363723db10534cf8b5d5c0e7"
+    ),
+    "hf-home/hub/models--ai-sage--GigaAM-Multilingual/snapshots/"
+    f"{GIGAAM_REVISION}/pytorch_model.bin": (
+        "c3fabefb50b41f08f4d7ad44e02c26c37d242882704cdcca2ebd98e45eff73d1"
+    ),
+}
+DEFAULT_FIXED_SHA256 = {
+    "silero-vad/6.2.1/silero_vad.onnx": SILERO_MODEL_SHA256,
+    **GIGAAM_FIXED_SHA256,
+}
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 REVISION_PATTERN = re.compile(rb"[0-9a-f]{40}")
 
@@ -53,6 +81,18 @@ def sha256_file(path: Path) -> str:
         while block := source.read(4 * 1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _is_link_or_reparse_point(path: Path) -> bool:
+    """Reject links/junctions while still accepting ordinary NTFS hard links."""
+
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError as exc:
+        raise ModelBundleError(f"Unable to inspect bundle path {path.name}: {exc}") from exc
+    return path.is_symlink() or bool(
+        attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
 
 
 def _safe_relative_path(value: object) -> str:
@@ -121,11 +161,14 @@ def validate_model_bundle(
 ) -> ValidatedModelBundle:
     """Fully validate an explicit bundle without consulting caches or the network."""
 
-    bundle_root = root.expanduser().resolve()
+    unexpanded_root = root.expanduser().absolute()
+    if _is_link_or_reparse_point(unexpanded_root):
+        raise ModelBundleError("The model bundle root must not be a link or reparse point.")
+    bundle_root = unexpanded_root.resolve()
     if not bundle_root.is_dir():
         raise ModelBundleError(f"Model assets root does not exist: {bundle_root}")
     manifest_path = bundle_root / MANIFEST_NAME
-    if not manifest_path.is_file() or manifest_path.is_symlink():
+    if not manifest_path.is_file() or _is_link_or_reparse_point(manifest_path):
         raise ModelBundleError(f"Required model manifest is missing: {MANIFEST_NAME}")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -155,6 +198,8 @@ def validate_model_bundle(
             "revision": spec.revision,
             "license": spec.license_id,
         }
+        if spec.variant is not None:
+            expected_identity["variant"] = spec.variant
         for field, expected in expected_identity.items():
             if model.get(field) != expected:
                 raise ModelBundleError(
@@ -189,16 +234,21 @@ def validate_model_bundle(
             raise ModelBundleError(f"{spec.key} total_size_bytes is inconsistent.")
 
     actual_paths: set[str] = set()
-    for candidate in bundle_root.rglob("*"):
-        if candidate.is_symlink():
-            raise ModelBundleError(
-                f"Symbolic links or reparse-point files are not accepted: "
-                f"{candidate.relative_to(bundle_root).as_posix()}"
-            )
-        if candidate.is_file():
-            relative = candidate.relative_to(bundle_root).as_posix()
-            if relative != MANIFEST_NAME:
-                actual_paths.add(relative)
+    for current, directories, files in os.walk(bundle_root, followlinks=False):
+        current_path = Path(current)
+        for name in (*directories, *files):
+            candidate = current_path / name
+            if _is_link_or_reparse_point(candidate):
+                raise ModelBundleError(
+                    "Symbolic links, junctions, or reparse points are not accepted: "
+                    f"{candidate.relative_to(bundle_root).as_posix()}"
+                )
+        for name in files:
+            candidate = current_path / name
+            if candidate.is_file():
+                relative = candidate.relative_to(bundle_root).as_posix()
+                if relative != MANIFEST_NAME:
+                    actual_paths.add(relative)
     expected_actual = set(manifest_records)
     if actual_paths != expected_actual:
         missing = sorted(expected_actual - actual_paths)
@@ -207,11 +257,7 @@ def validate_model_bundle(
             f"Bundle file set mismatch; missing={missing}; extra={extra}."
         )
 
-    fixed = dict(
-        {"silero-vad/6.2.1/silero_vad.onnx": SILERO_MODEL_SHA256}
-        if fixed_sha256 is None
-        else fixed_sha256
-    )
+    fixed = dict(DEFAULT_FIXED_SHA256 if fixed_sha256 is None else fixed_sha256)
     expected_sizes_by_path: dict[str, int] = {}
     for spec in selected_specs:
         prefix = (
@@ -261,6 +307,8 @@ def validate_model_bundle(
     metadata: dict[str, object] = {
         "schema_version": 1,
         "bundle_type": "offline-model-assets",
+        "self_contained": True,
+        "offline_ready": True,
         "silero_version": SILERO_VERSION,
         "silero_model_sha256": SILERO_MODEL_SHA256,
         "gigaam_model_id": GIGAAM_MODEL_ID,

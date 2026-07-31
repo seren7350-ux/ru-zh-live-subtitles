@@ -114,8 +114,25 @@ def test_cpu_distribution_accepts_torch_cpu_and_rejects_cuda(
     result = cpu_policy.validate_cpu_distribution(distribution)
     assert result["runtime_family"] == "cpu"
     assert result["cuda_library_files"] == []
+    assert result["cuda_library_bytes"] == 0
+    assert result["model_weight_files"] == []
+    assert result["model_weight_bytes"] == 0
     (torch_lib / "c10_cuda.dll").write_bytes(b"cuda")
     with pytest.raises(cpu_policy.CpuPackagePolicyError, match="CUDA"):
+        cpu_policy.validate_cpu_distribution(distribution)
+
+
+def test_cpu_distribution_rejects_model_weights(
+    tmp_path: Path, cpu_policy: Any
+) -> None:
+    distribution = tmp_path / "ru-zh-subtitles-cpu"
+    torch_lib = distribution / "_internal" / "torch" / "lib"
+    torch_lib.mkdir(parents=True)
+    (distribution / "ru-zh-subtitles.exe").write_bytes(b"exe")
+    (distribution / "ru-zh-subtitles-console.exe").write_bytes(b"exe")
+    (torch_lib / "torch_cpu.dll").write_bytes(b"cpu")
+    (distribution / "pytorch_model.bin").write_bytes(b"model")
+    with pytest.raises(cpu_policy.CpuPackagePolicyError, match="model weights"):
         cpu_policy.validate_cpu_distribution(distribution)
 
 
@@ -200,9 +217,26 @@ def test_cpu_dependency_files_pin_cpu_torch_and_exclude_gpu_packages() -> None:
     assert "torchaudio==2.10.0+cpu" in serialized
     assert "hydra-core==1.3.2" in serialized
     assert "omegaconf==2.3.0" in serialized
+    assert "soundfile==0.13.1" in serialized
     for forbidden in ("torchvision", "triton", "nvidia-"):
         assert forbidden not in serialized
     assert "cu130" not in serialized and "cu126" not in serialized
+
+
+def test_cpu_hook_collects_large_ctc_dynamic_runtime() -> None:
+    source = (PACKAGING / "hooks" / "hook-live_subtitles.py").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "transformers.dynamic_module_utils",
+        "torchaudio.functional",
+        "torchaudio.transforms",
+        "hydra.utils",
+        "omegaconf",
+        "soundfile",
+        "yaml",
+    ):
+        assert required in source
 
 
 def test_offline_script_can_enforce_cpu_runtime_boundary() -> None:

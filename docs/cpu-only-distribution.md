@@ -1,43 +1,37 @@
-# CPU-only distribution policy
+# CPU-only distribution policy for 0.2.0
 
-The sole course-delivery candidate is the Windows x64 self-contained CPU-only
-offline installer. `packaging/combined_cpu.spec` remains the only source for its
-approximately 658 MB application payload. A separately validated model bundle
-adds exactly 3,377,386,294 bytes of pinned model assets to the installer without
-placing model weights in the CPU onedir.
+The sole new course-delivery candidate is a Windows x64 CPU-only onedir built by
+`packaging/combined_cpu.spec`. It contains both launchers and application
+runtime code but zero product model weights. A separately verified external
+bundle adds exactly 17 files and 4,826,649,490 bytes of Silero VAD 6.2.1,
+official GigaAM Multilingual Large CTC and NLLB assets to the installer.
 
-The GPU spec and supporting hook/profile remain in the repository only for
-internal development, historical benchmarks, and possible future experiments.
-They are not distributed, are not supported as an end-user package, and no GPU
-installer is produced.
+The formal Python 3.11.9 environment pins Torch 2.10.0+cpu, TorchAudio
+2.10.0+cpu, Transformers 5.14.1, Hydra Core 1.3.2, OmegaConf 2.3.0 and
+SoundFile 0.13.1. Torch and TorchAudio come from the official PyTorch CPU index.
+Policy requires `torch.version.cuda is None`,
+`torch.cuda.is_available() is False`, zero CUDA DLL/files/bytes, zero product
+model weight files/bytes, `torch_cpu.dll`, and both top-level executables.
 
-Before installer compilation, the CPU policy requires the two application
-executables, `torch_cpu.dll`, `torch.version.cuda is None`,
-`torch.cuda.is_available() is False`, zero CUDA DLLs, and zero model weights.
-The current application version continues to come only from
-`live_subtitles.__version__`.
+The spec rejects a dirty worktree, writes path-safe `CPU_BUILD_METADATA.json`,
+and copies it with README, notices and model documents to the onedir root. The
+metadata binds application version 0.2.0 and runtime family `cpu` to the clean
+lowercase Git commit and `packaging/combined_cpu.spec`. Validators cross-check
+that commit/version before the installer runs Inno Setup.
 
-The spec first rejects a dirty Git worktree, then writes a path-safe
-`CPU_BUILD_METADATA.json` under ignored `build/cpu-provenance`. After COLLECT,
-it publishes that file at the CPU onedir root beside `README.md`,
-`THIRD_PARTY_NOTICES.md`, `MODEL_SETUP.txt`, and `MODEL_LICENSES.txt`. The metadata binds the onedir
-to the clean lowercase Git HEAD, version `0.1.0`, CPU runtime family, Windows
-x64 platform, and `packaging/combined_cpu.spec`. The GPU spec is unchanged and
-does not collect CPU provenance.
+PyInstaller explicitly collects TorchAudio, Transformers dynamic-module
+support, Hydra/OmegaConf, YAML and SoundFile so the frozen executable can load
+the verified external `modeling_gigaam.py` with `trust_remote_code=True` and
+`local_files_only=True`. The snapshot remains external. The backend does not
+silently fall back to legacy RNNT if dynamic loading fails.
 
-`validate_cpu_distribution.py`, `release_metadata.py`, and the installer build
-all cross-check the embedded version and commit against the current clean HEAD
-and explicit expected commit. A stale or missing provenance file is rejected
-before frozen doctor or ISCC compilation. The full release manifest includes
-the provenance file and the four root documents.
+The retained GPU spec is not a 0.2.0 build input. Generated onedirs, models,
+recordings, logs and manifests remain ignored. The 0.1.0 RNNT installer/tag and
+its evidence remain unchanged.
 
-Model weights remain outside the application package, but the offline installer
-copies the verified bundle to the per-user managed model root. Recordings, logs,
-staging, virtual environments, and Git metadata are never bundled. The installer
-performs no download and starts the GUI in CPU, offline, no-auto-start mode. See
-[model assets setup](model-assets-setup.md).
-
-This course-delivery installer is published and remains unsigned. Its underlying
-CPU onedir has clean-VMware evidence, but the final installer revision has not
-been validated on a separate clean Windows machine. Publication is not a
-production-ready or commercial-use approval.
+The 2026-07-31 frozen rehearsal measured 613,257,398 bytes across 5,616 files.
+From a repository-external Unicode-and-space directory, first Large CTC load
+took 4.853 seconds and real 8-second recognition took 1.170 seconds (RTF 0.146).
+The full offline ASR→NLLB process measured ASR load 3.747 seconds, NLLB load
+1.655 seconds and end-to-end RTF 1.143. These development-machine values are a
+frozen CPU baseline, not a guarantee for another Windows computer.

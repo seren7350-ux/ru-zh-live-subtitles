@@ -19,6 +19,10 @@ import cpu_build_provenance
 CPU_RUNTIME_FAMILY = "cpu"
 PUBLIC_DISTRIBUTION = "Windows x64 CPU-only"
 GPU_DISTRIBUTION_STATUS = "internal-development-only"
+GIGAAM_MODEL_ID = "ai-sage/GigaAM-Multilingual"
+GIGAAM_VARIANT = "large_ctc"
+GIGAAM_REVISION = "3905cd51c3ed4e88c8edf33f3302969ba480a327"
+NLLB_REVISION = "f8d333a098d19b4fd9a8b18f94170487ad3f821d"
 APPLICATION_EXES = ("ru-zh-subtitles.exe", "ru-zh-subtitles-console.exe")
 FORBIDDEN_MODEL_SUFFIXES = {".bin", ".pt", ".pth", ".safetensors"}
 APPROVED_ONNX_PREFIX = "_internal/onnx_asr/preprocessors/data/"
@@ -60,6 +64,12 @@ def read_model_bundle_metadata(path: Path) -> dict[str, object]:
     required = {
         "schema_version": 1,
         "bundle_type": "offline-model-assets",
+        "self_contained": True,
+        "offline_ready": True,
+        "gigaam_model_id": GIGAAM_MODEL_ID,
+        "gigaam_variant": GIGAAM_VARIANT,
+        "gigaam_revision": GIGAAM_REVISION,
+        "nllb_revision": NLLB_REVISION,
     }
     for field, expected in required.items():
         if payload.get(field) != expected:

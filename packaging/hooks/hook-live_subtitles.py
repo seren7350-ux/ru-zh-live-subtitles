@@ -9,9 +9,18 @@ hiddenimports += ["onnx_asr"]
 # Translation runtime delays PyTorch import until translation model preparation.
 hiddenimports += ["torch"]
 # The official GigaAM feature extractor imports matching TorchAudio binaries.
-hiddenimports += ["torchaudio", "torchaudio.transforms", "hydra", "omegaconf"]
+hiddenimports += [
+    "torchaudio",
+    "torchaudio.functional",
+    "torchaudio.transforms",
+    "hydra",
+    "hydra.utils",
+    "omegaconf",
+    "soundfile",
+    "yaml",
+]
 # Translation engines delay Transformers import until a translator is selected.
-hiddenimports += ["transformers"]
+hiddenimports += ["transformers", "transformers.dynamic_module_utils"]
 
 datas = []
 # Runtime version reporting and dependency checks use installed package metadata.
@@ -30,5 +39,7 @@ for distribution in (
     "huggingface-hub",
     "hydra-core",
     "omegaconf",
+    "soundfile",
+    "PyYAML",
 ):
     datas += copy_metadata(distribution)

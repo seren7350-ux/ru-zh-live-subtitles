@@ -18,13 +18,17 @@ non-commercial feasibility validation.
 | onnx-asr | 0.12.0 | MIT | Installed distribution metadata and `LICENSE` |
 | sounddevice | 0.5.5 | MIT | Installed distribution metadata; license header in `sounddevice.py` |
 | PortAudio | wheel-bundled binary | MIT; the collected default Windows binary excludes the optional ASIO DLL | `_sounddevice_data/portaudio-binaries/README.md`; [PortAudio license](https://www.portaudio.com/license.html) |
-| PyTorch | 2.12.1+cu130 | BSD-3-Clause; bundled third-party components have their own notices | Installed distribution metadata, `LICENSE`, and `NOTICE` |
+| PyTorch | 2.10.0+cpu | BSD-3-Clause; bundled third-party components have their own notices | Official PyTorch CPU wheel metadata, `LICENSE`, and `NOTICE` |
+| TorchAudio | 2.10.0+cpu | BSD-2-Clause; bundled third-party components have their own notices | Official PyTorch CPU wheel metadata and license files |
 | Transformers | 5.14.1 | Apache-2.0 | Installed distribution metadata and `LICENSE` |
 | Hugging Face Hub | 1.24.0 | Apache-2.0 | Installed distribution metadata and `LICENSE` |
 | tokenizers | 0.22.2 | Apache-2.0 | Installed distribution classifier and license file |
 | SentencePiece | 0.2.2 | Apache-2.0 | Installed `License-Expression` and license files |
 | safetensors | 0.8.0 | Apache-2.0 | Installed distribution classifier and license file |
 | CFFI | 2.1.0 | MIT-0 | Installed `License-Expression` and license file |
+| Hydra Core | 1.3.2 | MIT | Installed distribution metadata and license file |
+| OmegaConf | 2.3.0 | BSD-3-Clause | Installed distribution metadata and license file |
+| SoundFile | 0.13.1 | BSD-3-Clause | Installed distribution metadata and license file |
 
 The build preserves installed distribution metadata and relevant upstream
 notices where PyInstaller hooks collect them. Python and Tk license files are
@@ -58,19 +62,20 @@ license files, notices, SBOM material, Python/Tk licenses, and every runtime DLL
 remain included. See `docs/windows-package-size-optimization.md` for the exact
 retained/excluded evidence. No claim of redistribution approval is made.
 
-## Historical CPU distribution candidate
+## CPU distribution candidate
 
 The sole end-user distribution candidate uses the official PyTorch
-`2.12.1+cpu` wheel
+`2.10.0+cpu` wheel together with the matching official TorchAudio CPU wheel
 in a separate build environment and onedir. It does not mix CPU and CUDA Torch
 runtimes, and its scan contains no CUDA runtime DLL. This changes neither the
 PyTorch license boundary nor the separate model-license boundary above. The
 existing CUDA spec remains an internal development and historical benchmark artifact;
 it is not an end-user candidate and no GPU installer is produced.
 
-The self-contained per-user CPU offline installer includes the pinned Silero
-VAD 6.2.1 assets (MIT), `istupakov/gigaam-v3-onnx` at revision
-`322c3b29492673eb7d0b434bfa9dfb8653e34d02` (MIT), and
+The version 0.2.0 self-contained per-user CPU offline installer includes the
+pinned Silero VAD 6.2.1 assets (MIT), official
+`ai-sage/GigaAM-Multilingual` `large_ctc` at revision
+`3905cd51c3ed4e88c8edf33f3302969ba480a327` (MIT), and
 `facebook/nllb-200-distilled-600M` at revision
 `f8d333a098d19b4fd9a8b18f94170487ad3f821d` (CC-BY-NC-4.0). Attribution and
 license details are installed as `MODEL_LICENSES.txt`. NLLB remains restricted
@@ -78,5 +83,7 @@ to non-commercial use. No credential is included. The installer is unsigned,
 locally validated only, not a public Release, and not an approved commercial
 distribution.
 
-This retained installer predates the Large CTC source migration. No existing
-onedir or installer was rebuilt, overwritten, or relabeled in this migration.
+The legacy `istupakov/gigaam-v3-onnx` backend remains an explicit developer
+comparison path, but its weights are not part of the 0.2.0 required bundle.
+The published 0.1.0 installer and tag remain an unchanged historical RNNT
+course delivery; they are never overwritten or relabeled as Large CTC.
