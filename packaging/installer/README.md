@@ -1,15 +1,15 @@
-# Self-contained CPU offline installer 0.2.0
+# Self-contained CPU offline installer 0.3.0
 
 `cpu-only.iss` combines the provenance-bound `dist/ru-zh-subtitles-cpu` onedir
-with one explicit, fully verified model bundle. Version 0.2.0 contains only the
+with one explicit, fully verified model bundle. Version 0.3.0 contains only the
 required Silero VAD 6.2.1, official `ai-sage/GigaAM-Multilingual` `large_ctc`,
 and NLLB snapshots. Legacy RNNT weights are excluded.
 
 Invoke `build_installer.ps1` from a clean tracked commit with the official signed
 Inno Setup 7.0.2 x64 compiler and mandatory `-ModelAssetsRoot`. Omitting the
 bundle is an error; there is no cache discovery, download, or network fallback.
-The default output is the version-isolated `dist/installer-offline-0.2.0`, so the
-retained 0.1.0 course installer under `dist/installer-offline` is not overwritten.
+The default output is the version-isolated `dist/installer-offline-0.3.0`, so the
+retained 0.1.0 and 0.2.0 course installers are not overwritten.
 
 Before ISCC, `packaging/model_bundle.py` validates identities, variant, immutable
 revisions, strict 40-byte refs, exact file sets and sizes, every manifest SHA,
@@ -37,7 +37,7 @@ Example:
   -ExpectedCommit (git rev-parse HEAD) `
   -CpuDist .\dist\ru-zh-subtitles-cpu `
   -ModelAssetsRoot <verified-model-assets> `
-  -OutputDir .\dist\installer-offline-0.2.0 `
+  -OutputDir .\dist\installer-offline-0.3.0 `
   -ReleaseAssetLimitBytes 2000000000 `
   -IsccPath "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"
 ```
@@ -45,3 +45,10 @@ Example:
 Generated setup files, slices, reports, hashes, model weights and staging remain
 ignored. No GPU installer, signing operation, VMware run, or GitHub Release is
 part of this build stage.
+
+Repair or reinstall refreshes the complete application and model payload without
+running uninstall deletion. Uninstall removes `{app}`, installer-created
+shortcuts and registration, and the fixed application-owned directory
+`%LOCALAPPDATA%\ru-zh-live-subtitles`, including all managed models, logs,
+Hugging Face state, Transformers dynamic modules, caches, and other application
+state. It never targets the `%LOCALAPPDATA%` root or unrelated application data.

@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -47,16 +48,60 @@ def test_inno_policy_is_per_user_x64_cpu_offline_and_stable() -> None:
     assert "Program Files" not in source
     assert "HKLM" not in source
     assert "[Registry]" not in source
-    assert "[UninstallDelete]" not in source
+    assert "[UninstallDelete]" in source
     assert "combined.spec" not in source
     assert "OutputBaseFilename=ru-zh-live-subtitles-cpu-offline-{#AppVersion}-setup" in source
     assert 'DestDir: "{localappdata}\\ru-zh-live-subtitles\\models"' in source
-    assert "uninsneveruninstall" in source
+    assert "uninsneveruninstall" not in source
+    assert "CloseApplications=yes" in source
     assert "MinimumFreeBytes = 12884901888" in source
     assert "DiskSliceSize=1900000000" in source
     assert "LZMANumBlockThreads=4" in source
     assert "HF_HUB_CACHE" not in source
     assert "HF_HOME" not in source
+
+
+def test_uninstall_deletes_only_the_fixed_application_owned_data_root() -> None:
+    source = ISS.read_text(encoding="utf-8")
+    uninstall_delete = source.split("[UninstallDelete]", 1)[1].split("[Code]", 1)[0]
+    assert (
+        'Type: filesandordirs; Name: "{localappdata}\\ru-zh-live-subtitles"'
+        in uninstall_delete
+    )
+    assert 'Name: "{localappdata}"' not in source
+    assert 'Name: "{localappdata}\\Programs"' not in source
+    assert ".." not in uninstall_delete
+    assert "{app}" not in uninstall_delete
+    assert source.count('Name: "{localappdata}\\ru-zh-live-subtitles"') == 1
+
+
+def test_repair_keeps_models_and_only_uninstall_has_data_deletion_rule() -> None:
+    source = ISS.read_text(encoding="utf-8")
+    files = source.split("[Files]", 1)[1].split("[Icons]", 1)[0]
+    uninstall_delete = source.split("[UninstallDelete]", 1)[1].split("[Code]", 1)[0]
+    code = source.split("[Code]", 1)[1]
+    assert 'DestDir: "{localappdata}\\ru-zh-live-subtitles\\models"' in files
+    assert "uninsneveruninstall" not in files
+    assert "ru-zh-live-subtitles" in uninstall_delete
+    assert "DeleteFile" not in code
+    assert "DelTree" not in code
+
+
+def test_installer_documents_complete_uninstall_without_preservation_claim() -> None:
+    documents = (
+        INSTALLER_ROOT / "README_INSTALL.txt",
+        INSTALLER_ROOT / "MODEL_SETUP.txt",
+        PROJECT_ROOT / "docs" / "self-contained-offline-installer.md",
+        PROJECT_ROOT / "docs" / "model-assets-setup.md",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in documents)
+    lowered = combined.casefold()
+    assert "uninstall" in lowered
+    assert "models" in lowered
+    assert "logs" in lowered
+    assert "caches" in lowered
+    assert "preserves the model" not in lowered
+    assert "model assets were preserved" not in lowered
 
 
 def test_installer_source_has_no_gpu_cuda_download_service_or_startup_policy() -> None:
@@ -78,9 +123,12 @@ def test_installer_source_has_no_gpu_cuda_download_service_or_startup_policy() -
 
 def test_version_is_read_from_single_python_source() -> None:
     metadata = load_release_metadata()
-    assert metadata.read_application_version(
+    version = metadata.read_application_version(
         PROJECT_ROOT / "src" / "live_subtitles" / "__init__.py"
-    ) == "0.2.0"
+    )
+    assert version == "0.3.0"
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["version"] == version
     source = ISS.read_text(encoding="utf-8")
     assert "AppVersion={#AppVersion}" in source
     assert "VersionInfoVersion={#VersionInfoVersion}" in source
@@ -98,7 +146,7 @@ def make_cpu_dist(root: Path) -> Path:
         json.dumps(
             {
                 "schema_version": 1,
-                "application_version": "0.2.0",
+                "application_version": "0.3.0",
                 "git_commit": "a" * 40,
                 "runtime_family": "cpu",
                 "working_tree_clean": True,
@@ -154,7 +202,7 @@ def test_release_metadata_rejects_wrong_git_commit(
     dist = make_cpu_dist(tmp_path / "dist")
     version = tmp_path / "src" / "live_subtitles"
     version.mkdir(parents=True)
-    (version / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
+    (version / "__init__.py").write_text('__version__ = "0.3.0"\n', encoding="utf-8")
     bundle_metadata = tmp_path / "MODEL_BUNDLE_METADATA.json"
     make_model_bundle_metadata(bundle_metadata)
     monkeypatch.setattr(metadata, "git_commit", lambda _root: "a" * 40)
@@ -265,7 +313,7 @@ def test_release_inventory_rejects_invalid_cpu_provenance(
     with pytest.raises(metadata.ReleaseMetadataError, match=message):
         metadata.inspect_cpu_distribution(
             dist,
-            expected_version="0.2.0",
+            expected_version="0.3.0",
             expected_commit="a" * 40,
         )
 
@@ -300,7 +348,7 @@ def _make_real_git_release_repo(tmp_path: Path) -> tuple[Path, Path, str]:
     repo = tmp_path / "release-repo"
     package = repo / "src" / "live_subtitles"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
+    (package / "__init__.py").write_text('__version__ = "0.3.0"\n', encoding="utf-8")
     (repo / ".gitignore").write_text(
         "dist/\n**/__pycache__/\n*.py[cod]\n", encoding="utf-8"
     )
@@ -330,6 +378,8 @@ def test_release_metadata_cross_validates_real_git_repo_and_manifest_docs(
         model_bundle_metadata=bundle_metadata,
         full_manifest=True,
     )
+    assert payload["application_version"] == "0.3.0"
+    assert payload["version_info_version"] == "0.3.0.0"
     assert payload["git_commit"] == commit
     assert payload["cpu_build_provenance"]["git_commit"] == commit
     manifest = {
@@ -428,7 +478,7 @@ def _make_builder_repo(tmp_path: Path) -> tuple[Path, Path, Path, Path, str]:
     repo = tmp_path / "builder-repo"
     package = repo / "src" / "live_subtitles"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
+    (package / "__init__.py").write_text('__version__ = "0.3.0"\n', encoding="utf-8")
     (repo / ".gitignore").write_text(
         "dist/\n**/__pycache__/\n*.py[cod]\n", encoding="utf-8"
     )
@@ -519,7 +569,7 @@ def _final_builder_paths(output: Path) -> list[Path]:
         output / "build-report.json",
         output / "README_INSTALL.txt",
         output / "SHA256SUMS.txt",
-        output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe",
+        output / "ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe",
     ]
 
 
@@ -611,7 +661,7 @@ def test_builder_success_publishes_all_outputs_with_setup_last(tmp_path: Path) -
     assert report["setup_published_last"] is True
     assert report["publication_order"][-1].endswith("setup.exe")
     checksums = (output / "SHA256SUMS.txt").read_text(encoding="ascii")
-    assert "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe" in checksums
+    assert "ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe" in checksums
     assert not list(output.glob(".build-*"))
 
 
@@ -627,7 +677,7 @@ def test_builder_supports_unicode_and_space_paths(tmp_path: Path) -> None:
         commit=commit,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert (output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe").is_file()
+    assert (output / "ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe").is_file()
 
 
 def test_builder_uses_native_disk_spanning_before_release_limit(tmp_path: Path) -> None:
@@ -643,7 +693,7 @@ def test_builder_uses_native_disk_spanning_before_release_limit(tmp_path: Path) 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     report = json.loads((output / "build-report.json").read_text(encoding="utf-8-sig"))
     assert report["output_mode"] == "disk-spanning"
-    assert (output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup-1.bin").is_file()
+    assert (output / "ru-zh-live-subtitles-cpu-offline-0.3.0-setup-1.bin").is_file()
     assert all(item["size_bytes"] < 100 for item in report["output_files"])
 
 
@@ -661,7 +711,7 @@ def test_builder_rejects_any_release_asset_at_or_above_limit(tmp_path: Path) -> 
     assert completed.returncode != 0
     assert "Release asset size limit exceeded" in completed.stderr
     assert not any(path.exists() for path in _final_builder_paths(output))
-    assert not list(output.glob("ru-zh-live-subtitles-cpu-offline-0.2.0-setup-*.bin"))
+    assert not list(output.glob("ru-zh-live-subtitles-cpu-offline-0.3.0-setup-*.bin"))
 
 
 def test_release_metadata_contains_offline_bundle_flags(tmp_path: Path) -> None:
@@ -712,7 +762,7 @@ def test_builder_without_model_assets_root_fails_and_removes_stale_setup(
 ) -> None:
     repo, dist, output, doctor, commit = _make_builder_repo(tmp_path)
     output.mkdir(parents=True, exist_ok=True)
-    setup = output / "ru-zh-live-subtitles-cpu-offline-0.2.0-setup.exe"
+    setup = output / "ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe"
     setup.write_bytes(b"stale")
     command = (
         "$builder=[scriptblock]::Create([IO.File]::ReadAllText("

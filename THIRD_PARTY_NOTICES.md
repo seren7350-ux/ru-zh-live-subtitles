@@ -72,7 +72,7 @@ PyTorch license boundary nor the separate model-license boundary above. The
 existing CUDA spec remains an internal development and historical benchmark artifact;
 it is not an end-user candidate and no GPU installer is produced.
 
-The version 0.2.0 self-contained per-user CPU offline installer includes the
+The version 0.3.0 self-contained per-user CPU offline installer includes the
 pinned Silero VAD 6.2.1 assets (MIT), official
 `ai-sage/GigaAM-Multilingual` `large_ctc` at revision
 `3905cd51c3ed4e88c8edf33f3302969ba480a327` (MIT), and
@@ -84,6 +84,6 @@ locally validated only, not a public Release, and not an approved commercial
 distribution.
 
 The legacy `istupakov/gigaam-v3-onnx` backend remains an explicit developer
-comparison path, but its weights are not part of the 0.2.0 required bundle.
-The published 0.1.0 installer and tag remain an unchanged historical RNNT
-course delivery; they are never overwritten or relabeled as Large CTC.
+comparison path, but its weights are not part of the 0.3.0 required bundle.
+The published 0.1.0 RNNT and 0.2.0 Large CTC installers and tags remain
+unchanged; they are never overwritten or relabeled as the 0.3.0 candidate.

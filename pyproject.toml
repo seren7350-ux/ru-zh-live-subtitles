@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ru-zh-live-subtitles"
-version = "0.2.0"
+version = "0.3.0"
 description = "Offline real-time Russian-to-Chinese lecture subtitles using Sber ASR"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"

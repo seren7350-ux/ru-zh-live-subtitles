@@ -38,7 +38,7 @@ def make_git_repo(tmp_path: Path) -> tuple[Path, str]:
     repo = tmp_path / "repo"
     package = repo / "src" / "live_subtitles"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('__version__ = "0.2.0"\n', encoding="utf-8")
+    (package / "__init__.py").write_text('__version__ = "0.3.0"\n', encoding="utf-8")
     (repo / ".gitignore").write_text("build/\ndist/\ndata/\n.venv*/\n", encoding="utf-8")
     git(repo, "init", "-b", "main")
     git(repo, "config", "--local", "user.name", "Provenance Test")
@@ -56,7 +56,7 @@ def test_clean_repo_generates_fixed_path_safe_utf8_schema(tmp_path: Path) -> Non
 
     assert payload == {
         "schema_version": 1,
-        "application_version": "0.2.0",
+        "application_version": "0.3.0",
         "git_commit": commit,
         "runtime_family": "cpu",
         "working_tree_clean": True,
@@ -124,7 +124,7 @@ def test_provenance_validation_rejects_invalid_boundary(
     provenance = load_provenance()
     payload = {
         "schema_version": 1,
-        "application_version": "0.2.0",
+        "application_version": "0.3.0",
         "git_commit": "a" * 40,
         "runtime_family": "cpu",
         "working_tree_clean": True,
@@ -140,7 +140,7 @@ def test_provenance_rejects_missing_extra_and_absolute_path_fields() -> None:
     provenance = load_provenance()
     payload = {
         "schema_version": 1,
-        "application_version": "0.2.0",
+        "application_version": "0.3.0",
         "git_commit": "a" * 40,
         "runtime_family": "cpu",
         "working_tree_clean": True,

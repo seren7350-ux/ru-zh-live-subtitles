@@ -1065,3 +1065,66 @@ The console capture layer displayed Russian/Chinese with an OEM-code-page
 mojibake representation, while source output and GUI Unicode text remained
 correct. No GPU build, CUDA runtime, VMware, Sandbox, signing or Release action
 was performed.
+
+## Version 0.3.0 resizable overlay and uninstall work (2026-08-01)
+
+The source overlay now keeps native decorated resizing enabled and implements
+eight edge/corner resize directions while borderless. The 520 x 180 minimum,
+explicit Drag target, existing position presets, persistent controls and one Tk
+main thread remain authoritative. Resize events derive label wrap length from
+the actual Canvas width and retain complete Russian/Chinese strings in a bounded,
+scrollable history.
+
+An early content-fitting experiment allowed a long newest entry to enlarge the
+root window. Manual review rejected that behavior because the sudden geometry
+change could cover a presentation and did not restore the prior size naturally.
+The retained implementation treats user-selected geometry as authoritative and
+never grows the root in response to subtitle text. It instead measures the
+newest pair, reduces only the view font down to 8 px Russian / 12 px Chinese,
+restores the configured font when height permits, and keeps exceptional overflow
+complete in the internal scroll area starting at the new pair's first line.
+
+The installer retains the existing AppId and now removes only the product-owned
+`{localappdata}\ru-zh-live-subtitles` tree during uninstall. This includes the
+managed Hugging Face cache and rotated application logs. Model files are no
+longer marked `uninsneveruninstall`; repair/reinstall does not invoke uninstall
+deletion. Version-derived output is isolated under the 0.3.0 installer output,
+while historical installers, public releases and canonical model staging remain
+unchanged.
+
+Source Python 3.11.9 passed `pip check`, all 534 tests, and the 534-test coverage
+run at 80% total coverage (`gui/overlay.py` 75%). The formal CPU packaging
+environment also passed `pip check` and all 534 tests. It reports application
+0.3.0, Torch 2.10.0+cpu, TorchAudio 2.10.0+cpu, Transformers 5.14.1,
+`torch.version.cuda=None`, and `torch.cuda.is_available() == False`.
+
+The existing Silero VAD thresholds, 15-second forced segment limit, GigaAM
+Multilingual Large CTC whole-segment inference and final-only NLLB translation
+were deliberately left unchanged. Native incremental token output is not
+claimed, and periodic full-buffer pseudo-streaming was rejected for this change
+because it would introduce repeated CPU inference, unstable provisional text and
+translation flicker. Frozen onedir, real microphone, complete uninstall and
+installer validation results are recorded only after those gates complete.
+
+## Version 0.3.0 latest-entry adaptive-font correction (2026-08-02)
+
+The resize implementation measured only the newest subtitle pair but applied
+its calculated font sizes through two flat, history-wide widget lists. A long
+new sentence could therefore shrink every retained subtitle, contrary to the
+configured-size history contract. Each complete pair now owns one
+`SubtitleEntryView`; the configured Russian and Chinese sizes remain
+authoritative for every historical view, while only the latest view receives
+temporary fitting sizes. Adding another entry or changing Settings rebuilds the
+history at the requested sizes before fitting the new latest pair. Increasing
+the viewport height restores the latest pair. Extreme overflow remains complete
+and internally scrollable at the 8 px Russian / 12 px Chinese floors, without
+resizing the root window.
+
+The focused GUI suite passed 60 tests. The source environment and formal CPU
+packaging environment each passed all 537 tests, and both `pip check` runs
+reported no broken requirements. Source coverage passed all 537 tests at 80%
+total coverage, with `gui/overlay.py` at 75%. Python compileall, the installer
+PowerShell parser, Markdown-link validation, CPU spec tests, Inno source/build
+policy tests, and `git diff --check` passed immediately before the fix commit.
+No model, microphone, network, GPU, VMware, installer, or Release operation was
+used for this correction.

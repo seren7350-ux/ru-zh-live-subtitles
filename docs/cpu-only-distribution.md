@@ -1,4 +1,4 @@
-# CPU-only distribution policy for 0.2.0
+# CPU-only distribution policy for 0.3.0
 
 The sole new course-delivery candidate is a Windows x64 CPU-only onedir built by
 `packaging/combined_cpu.spec`. It contains both launchers and application
@@ -15,7 +15,7 @@ model weight files/bytes, `torch_cpu.dll`, and both top-level executables.
 
 The spec rejects a dirty worktree, writes path-safe `CPU_BUILD_METADATA.json`,
 and copies it with README, notices and model documents to the onedir root. The
-metadata binds application version 0.2.0 and runtime family `cpu` to the clean
+metadata binds application version 0.3.0 and runtime family `cpu` to the clean
 lowercase Git commit and `packaging/combined_cpu.spec`. Validators cross-check
 that commit/version before the installer runs Inno Setup.
 
@@ -25,11 +25,12 @@ the verified external `modeling_gigaam.py` with `trust_remote_code=True` and
 `local_files_only=True`. The snapshot remains external. The backend does not
 silently fall back to legacy RNNT if dynamic loading fails.
 
-The retained GPU spec is not a 0.2.0 build input. Generated onedirs, models,
+The retained GPU spec is not a 0.3.0 build input. Generated onedirs, models,
 recordings, logs and manifests remain ignored. The 0.1.0 RNNT installer/tag and
 its evidence remain unchanged.
 
-The 2026-07-31 frozen rehearsal measured 613,257,398 bytes across 5,616 files.
+The historical 0.2.0 frozen rehearsal on 2026-07-31 measured 613,257,398 bytes
+across 5,616 files.
 From a repository-external Unicode-and-space directory, first Large CTC load
 took 4.853 seconds and real 8-second recognition took 1.170 seconds (RTF 0.146).
 The full offline ASR→NLLB process measured ASR load 3.747 seconds, NLLB load
