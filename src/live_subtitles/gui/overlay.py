@@ -127,6 +127,15 @@ class ModelPanelCallbacks:
     open_instructions: Callable[[], None]
 
 
+@dataclass(frozen=True)
+class SubtitleEntryView:
+    """Widgets belonging to one complete Russian/Chinese subtitle pair."""
+
+    frame: Any
+    russian_widget: Any | None
+    chinese_widget: Any
+
+
 class ScrollableSubtitleHistory:
     """A width-aware, vertically scrollable sequence of complete subtitle pairs."""
 
@@ -149,9 +158,7 @@ class ScrollableSubtitleHistory:
         self.effective_chinese_font_size = 34
         self.auto_follow = True
         self._signature: tuple[object, ...] | None = None
-        self._entry_frames: list[Any] = []
-        self.russian_widgets: list[Any] = []
-        self.chinese_widgets: list[Any] = []
+        self._entry_views: list[SubtitleEntryView] = []
         self._pending_scroll_fraction: float | None = None
         self._fit_pending = False
 
@@ -178,6 +185,28 @@ class ScrollableSubtitleHistory:
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self._bind_mousewheel(self.canvas)
         self._bind_mousewheel(self.body)
+
+    @property
+    def _entry_frames(self) -> list[Any]:
+        """Compatibility view used by layout tests and internal measurements."""
+
+        return [entry.frame for entry in self._entry_views]
+
+    @property
+    def russian_widgets(self) -> list[Any]:
+        """Return the visible Russian labels without owning font state globally."""
+
+        return [
+            entry.russian_widget
+            for entry in self._entry_views
+            if entry.russian_widget is not None
+        ]
+
+    @property
+    def chinese_widgets(self) -> list[Any]:
+        """Return the Chinese labels without owning font state globally."""
+
+        return [entry.chinese_widget for entry in self._entry_views]
 
     def _bind_mousewheel(self, widget: Any) -> None:
         widget.bind("<MouseWheel>", self._on_mousewheel)
@@ -222,10 +251,10 @@ class ScrollableSubtitleHistory:
     def _follow_latest(self, bounds: tuple[int, int, int, int]) -> None:
         """Show a complete fitting pair, or the start of an oversized pair."""
 
-        if not self._entry_frames:
+        if not self._entry_views:
             self.canvas.yview_moveto(0.0)
             return
-        latest = self._entry_frames[-1]
+        latest = self._entry_views[-1].frame
         latest.update_idletasks()
         available_height = max(
             1,
@@ -262,32 +291,38 @@ class ScrollableSubtitleHistory:
             if self._on_wraplength_changed is not None:
                 self._on_wraplength_changed(wraplength)
         if old_height is not None and height > old_height:
-            self._restore_requested_fonts()
+            self._restore_latest_requested_fonts()
         self._schedule_latest_fit()
         self.canvas.after_idle(self._refresh_scrollregion)
         return True
 
-    def _apply_font_sizes(self, russian_size: int, chinese_size: int) -> None:
+    def _apply_latest_font_sizes(self, russian_size: int, chinese_size: int) -> None:
+        """Apply temporary fitting sizes to the newest pair and no history."""
+
         self.effective_russian_font_size = russian_size
         self.effective_chinese_font_size = chinese_size
-        for widget in self.russian_widgets:
-            widget.configure(font=("Segoe UI", russian_size))
-        for widget in self.chinese_widgets:
-            widget.configure(font=("Microsoft YaHei UI", chinese_size, "bold"))
+        if not self._entry_views:
+            return
+        latest = self._entry_views[-1]
+        if latest.russian_widget is not None:
+            latest.russian_widget.configure(font=("Segoe UI", russian_size))
+        latest.chinese_widget.configure(
+            font=("Microsoft YaHei UI", chinese_size, "bold")
+        )
 
-    def _restore_requested_fonts(self) -> None:
+    def _restore_latest_requested_fonts(self) -> None:
         if (
             self.effective_russian_font_size == self._requested_russian_font_size
             and self.effective_chinese_font_size == self._requested_chinese_font_size
         ):
             return
-        self._apply_font_sizes(
+        self._apply_latest_font_sizes(
             self._requested_russian_font_size,
             self._requested_chinese_font_size,
         )
 
     def _schedule_latest_fit(self) -> None:
-        if not self._entry_frames:
+        if not self._entry_views:
             return
         if self._fit_pending:
             return
@@ -298,12 +333,12 @@ class ScrollableSubtitleHistory:
         """Keep the newest complete RU/ZH pair visible without truncating text."""
 
         self._fit_pending = False
-        if not self._entry_frames:
+        if not self._entry_views:
             return
         try:
-            latest = self._entry_frames[-1]
-            latest.update_idletasks()
-            required_height = max(1, int(latest.winfo_reqheight()))
+            latest = self._entry_views[-1]
+            latest.frame.update_idletasks()
+            required_height = max(1, int(latest.frame.winfo_reqheight()))
             available_height = max(
                 1,
                 int(
@@ -340,7 +375,7 @@ class ScrollableSubtitleHistory:
                         round(self.effective_chinese_font_size * scale),
                     ),
                 )
-                self._apply_font_sizes(russian_size, chinese_size)
+                self._apply_latest_font_sizes(russian_size, chinese_size)
                 self.canvas.after_idle(self._refresh_scrollregion)
                 self._schedule_latest_fit()
                 return
@@ -349,11 +384,9 @@ class ScrollableSubtitleHistory:
             return
 
     def _destroy_entries(self) -> None:
-        for frame in self._entry_frames:
-            frame.destroy()
-        self._entry_frames.clear()
-        self.russian_widgets.clear()
-        self.chinese_widgets.clear()
+        for entry in self._entry_views:
+            entry.frame.destroy()
+        self._entry_views.clear()
 
     def render_entries(
         self,
@@ -390,6 +423,7 @@ class ScrollableSubtitleHistory:
         if not entries:
             self.auto_follow = True
             self._pending_scroll_fraction = None
+            self._fit_pending = False
             self.canvas.configure(scrollregion=(0, 0, 0, 0))
             self.canvas.yview_moveto(0.0)
             return True
@@ -402,7 +436,6 @@ class ScrollableSubtitleHistory:
                 pady=6,
             )
             frame.pack(fill="x", expand=True)
-            self._entry_frames.append(frame)
             self._bind_mousewheel(frame)
             if position:
                 separator = self.tk.Frame(frame, background="#303540", height=1)
@@ -420,8 +453,9 @@ class ScrollableSubtitleHistory:
                     font=("Segoe UI", self.effective_russian_font_size),
                 )
                 russian.pack(fill="x", pady=(0, 3))
-                self.russian_widgets.append(russian)
                 self._bind_mousewheel(russian)
+            else:
+                russian = None
             chinese = self.tk.Label(
                 frame,
                 text=entry.chinese_text,
@@ -437,8 +471,14 @@ class ScrollableSubtitleHistory:
                 ),
             )
             chinese.pack(fill="x")
-            self.chinese_widgets.append(chinese)
             self._bind_mousewheel(chinese)
+            self._entry_views.append(
+                SubtitleEntryView(
+                    frame=frame,
+                    russian_widget=russian,
+                    chinese_widget=chinese,
+                )
+            )
         self.canvas.after_idle(self._refresh_scrollregion)
         self._schedule_latest_fit()
         return True

@@ -201,7 +201,8 @@ part of the 0.3.0 delivery. See `packaging/README.md`.
   model, runtime, device, or cache checks.
 - `overlay-demo` opens no microphone and loads no model; it is the safe command
   for checking Settings, borderless/windowed resizing, complete long subtitles,
-  stable-window latest-entry font fitting, scrollable history, topmost,
+  stable-window latest-entry-only font fitting, configured-size history,
+  scrollable history, topmost,
   fonts, opacity, position, Start/Stop, and Exit behavior.
 - Closing the settings panel withdraws it without stopping the session. Switching
   borderless mode keeps the same root, controls, subtitle state, and session.

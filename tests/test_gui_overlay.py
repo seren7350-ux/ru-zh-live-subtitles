@@ -575,6 +575,118 @@ def test_vertical_resize_fits_latest_pair_and_restores_requested_sizes() -> None
     assert history.effective_chinese_font_size == 34
 
 
+def test_only_latest_pair_shrinks_and_previous_latest_restores_on_append() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    entries = tuple(
+        SubtitleEntry(index, f"Русский {index}", f"中文 {index}", 0.0, 0.1, 0.2)
+        for index in range(1, 4)
+    )
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 600
+    history._fit_latest_entry()
+
+    assert [widget.options["font"] for widget in history.russian_widgets] == [
+        ("Segoe UI", 20),
+        ("Segoe UI", 20),
+        ("Segoe UI", 8),
+    ]
+    assert [widget.options["font"] for widget in history.chinese_widgets] == [
+        ("Microsoft YaHei UI", 34, "bold"),
+        ("Microsoft YaHei UI", 34, "bold"),
+        ("Microsoft YaHei UI", 12, "bold"),
+    ]
+
+    history.render_entries(
+        (*entries, SubtitleEntry(4, "Русский 4", "中文 4", 0.0, 0.1, 0.2)),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 600
+    history._fit_latest_entry()
+
+    assert [widget.options["font"] for widget in history.russian_widgets] == [
+        ("Segoe UI", 20),
+        ("Segoe UI", 20),
+        ("Segoe UI", 20),
+        ("Segoe UI", 8),
+    ]
+    assert [widget.options["font"] for widget in history.chinese_widgets] == [
+        ("Microsoft YaHei UI", 34, "bold"),
+        ("Microsoft YaHei UI", 34, "bold"),
+        ("Microsoft YaHei UI", 34, "bold"),
+        ("Microsoft YaHei UI", 12, "bold"),
+    ]
+
+    assert history._on_canvas_configure(SimpleNamespace(width=500, height=80))
+    assert history._on_canvas_configure(SimpleNamespace(width=500, height=700))
+    assert all(
+        widget.options["font"] == ("Segoe UI", 20)
+        for widget in history.russian_widgets
+    )
+    assert all(
+        widget.options["font"] == ("Microsoft YaHei UI", 34, "bold")
+        for widget in history.chinese_widgets
+    )
+
+
+def test_font_setting_updates_history_before_latest_pair_adapts() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    entries = tuple(
+        SubtitleEntry(index, f"Русский {index}", f"中文 {index}", 0.0, 0.1, 0.2)
+        for index in range(1, 4)
+    )
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 600
+    history._fit_latest_entry()
+
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=28,
+        chinese_font_size=40,
+    )
+    assert all(
+        widget.options["font"] == ("Segoe UI", 28)
+        for widget in history.russian_widgets
+    )
+    assert all(
+        widget.options["font"] == ("Microsoft YaHei UI", 40, "bold")
+        for widget in history.chinese_widgets
+    )
+
+    history._entry_frames[-1].options["reqheight"] = 600
+    history._fit_latest_entry()
+    assert [widget.options["font"] for widget in history.russian_widgets] == [
+        ("Segoe UI", 28),
+        ("Segoe UI", 28),
+        ("Segoe UI", 8),
+    ]
+    assert [widget.options["font"] for widget in history.chinese_widgets] == [
+        ("Microsoft YaHei UI", 40, "bold"),
+        ("Microsoft YaHei UI", 40, "bold"),
+        ("Microsoft YaHei UI", 12, "bold"),
+    ]
+
+
 def test_new_long_pair_adapts_fonts_without_resizing_root() -> None:
     root = FakeRoot()
     history = ScrollableSubtitleHistory(
@@ -618,6 +730,40 @@ def test_oversized_pair_preserves_text_and_follows_its_start() -> None:
     assert history.russian_widgets[0].options["text"] == russian
     assert history.chinese_widgets[0].options["text"] == chinese
     assert history.canvas.scroll_movements[-1] == pytest.approx(0.15)
+
+
+def test_clear_resets_entry_views_scrollregion_and_latest_font_state() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    history.render_entries(
+        (SubtitleEntry(1, "Русский", "中文", 0.0, 0.1, 0.2),),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 600
+    history._fit_latest_entry()
+    assert history.effective_russian_font_size == 8
+    assert history.effective_chinese_font_size == 12
+
+    history.render_entries(
+        (),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+
+    assert history._entry_views == []
+    assert history.russian_widgets == []
+    assert history.chinese_widgets == []
+    assert history.canvas.options["scrollregion"] == (0, 0, 0, 0)
+    assert history.canvas._view == (0.0, 0.0)
+    assert history.effective_russian_font_size == 20
+    assert history.effective_chinese_font_size == 34
+    assert history.auto_follow
 
 
 def test_drag_uses_initial_pointer_offset() -> None:

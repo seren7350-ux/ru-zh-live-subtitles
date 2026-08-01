@@ -1105,3 +1105,26 @@ claimed, and periodic full-buffer pseudo-streaming was rejected for this change
 because it would introduce repeated CPU inference, unstable provisional text and
 translation flicker. Frozen onedir, real microphone, complete uninstall and
 installer validation results are recorded only after those gates complete.
+
+## Version 0.3.0 latest-entry adaptive-font correction (2026-08-02)
+
+The resize implementation measured only the newest subtitle pair but applied
+its calculated font sizes through two flat, history-wide widget lists. A long
+new sentence could therefore shrink every retained subtitle, contrary to the
+configured-size history contract. Each complete pair now owns one
+`SubtitleEntryView`; the configured Russian and Chinese sizes remain
+authoritative for every historical view, while only the latest view receives
+temporary fitting sizes. Adding another entry or changing Settings rebuilds the
+history at the requested sizes before fitting the new latest pair. Increasing
+the viewport height restores the latest pair. Extreme overflow remains complete
+and internally scrollable at the 8 px Russian / 12 px Chinese floors, without
+resizing the root window.
+
+The focused GUI suite passed 60 tests. The source environment and formal CPU
+packaging environment each passed all 537 tests, and both `pip check` runs
+reported no broken requirements. Source coverage passed all 537 tests at 80%
+total coverage, with `gui/overlay.py` at 75%. Python compileall, the installer
+PowerShell parser, Markdown-link validation, CPU spec tests, Inno source/build
+policy tests, and `git diff --check` passed immediately before the fix commit.
+No model, microphone, network, GPU, VMware, installer, or Release operation was
+used for this correction.
