@@ -7,12 +7,18 @@ from typing import Any
 import pytest
 
 from live_subtitles.gui.overlay import (
+    MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH,
     ModelPanelCallbacks,
     MicrophonePanelCallbacks,
     OverlayRenderer,
+    ScrollableSubtitleHistory,
     SettingsPanel,
     SubtitleOverlay,
+    configure_window_resizing,
     position_coordinates,
+    resize_direction_at,
+    resized_geometry,
 )
 from live_subtitles.model_assets import ModelAssetsReport, ModelAssetStatus
 from live_subtitles.gui.state import SubtitleEntry, SubtitleViewState
@@ -23,13 +29,21 @@ from live_subtitles.gui.microphone_selector import (
 
 
 class FakeWidget:
-    def __init__(self, *_args: object, **kwargs: object) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         self.options: dict[str, object] = dict(kwargs)
         self.packed = False
+        self.pack_options: dict[str, object] = {}
         self.bindings: dict[str, object] = {}
         self.value: object = None
+        self.destroyed = False
+        self.children: list[FakeWidget] = []
+        self.config_calls: list[dict[str, object]] = []
+        self.parent = args[0] if args else None
+        if isinstance(self.parent, FakeWidget):
+            self.parent.children.append(self)
 
     def config(self, **kwargs: object) -> None:
+        self.config_calls.append(dict(kwargs))
         self.options.update(kwargs)
 
     configure = config
@@ -37,8 +51,9 @@ class FakeWidget:
     def cget(self, name: str) -> object:
         return self.options.get(name)
 
-    def pack(self, **_kwargs: object) -> None:
+    def pack(self, **kwargs: object) -> None:
         self.packed = True
+        self.pack_options = dict(kwargs)
 
     def pack_propagate(self, value: bool) -> None:
         self.options["pack_propagate"] = value
@@ -53,6 +68,67 @@ class FakeWidget:
         if value is not None:
             self.value = value
         return int(self.value if self.value is not None else -1)
+
+    def destroy(self) -> None:
+        self.destroyed = True
+
+    def after_idle(self, callback: object) -> None:
+        callback()
+
+    def winfo_width(self) -> int:
+        return int(self.options.get("width", 640))
+
+    def winfo_height(self) -> int:
+        return int(self.options.get("height", 200))
+
+    def winfo_reqheight(self) -> int:
+        return int(self.options.get("reqheight", 100))
+
+    def winfo_y(self) -> int:
+        return int(self.options.get("y", 0))
+
+    def update_idletasks(self) -> None:
+        return None
+
+
+class FakeCanvas(FakeWidget):
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self.window_options: dict[str, object] = {}
+        self.scroll_movements: list[float] = []
+        self.scroll_units: list[int] = []
+        self._view = (0.0, 1.0)
+
+    def create_window(self, _coordinates: object, **kwargs: object) -> int:
+        self.window_options.update(kwargs)
+        return 1
+
+    def itemconfigure(self, _item: object, **kwargs: object) -> None:
+        self.window_options.update(kwargs)
+
+    def bbox(self, _target: object) -> tuple[int, int, int, int]:
+        return self.options.get(  # type: ignore[return-value]
+            "bbox", (0, 0, 640, max(1, len(self.children)) * 100)
+        )
+
+    def yview(self, *arguments: object) -> tuple[float, float] | None:
+        if arguments:
+            if arguments[0] == "moveto":
+                self.yview_moveto(float(arguments[1]))
+            elif arguments[0] == "scroll":
+                self.yview_scroll(int(arguments[1]), str(arguments[2]))
+            return None
+        return self._view
+
+    def yview_moveto(self, fraction: float) -> None:
+        value = min(1.0, max(0.0, float(fraction)))
+        self.scroll_movements.append(value)
+        self._view = (max(0.0, value - 0.2), value)
+
+    def yview_scroll(self, units: int, _kind: str) -> None:
+        self.scroll_units.append(units)
+        top = min(0.8, max(0.0, self._view[0] + units * 0.1))
+        self._view = (top, min(1.0, top + 0.2))
 
 
 class FakeToplevel(FakeWidget):
@@ -129,6 +205,8 @@ class FakeTk:
     Button = FakeWidget
     Label = FakeWidget
     Scale = FakeWidget
+    Canvas = FakeCanvas
+    Scrollbar = FakeWidget
 
 
 class FakeTtk:
@@ -145,6 +223,7 @@ class FakeRoot(FakeWidget):
         self.after_idle_callbacks: list[object] = []
         self.protocols: dict[str, object] = {}
         self.destroy_calls = 0
+        self.resizable_calls: list[tuple[bool, bool]] = []
 
     def title(self, value: str) -> None:
         self.options["title"] = value
@@ -178,6 +257,15 @@ class FakeRoot(FakeWidget):
 
     def minsize(self, width: int, height: int) -> None:
         self.options["minsize"] = (width, height)
+
+    def resizable(self, width: bool, height: bool) -> None:
+        self.resizable_calls.append((width, height))
+
+    def winfo_rootx(self) -> int:
+        return self.winfo_x()
+
+    def winfo_rooty(self) -> int:
+        return self.winfo_y()
 
     def attributes(self, name: str, value: object) -> None:
         self.attribute_calls.append((name, value))
@@ -335,6 +423,203 @@ def test_show_russian_false_hides_only_russian_text() -> None:
     assert widgets[2].options["text"] == "你好"
 
 
+def test_renderer_passes_complete_history_instead_of_only_visible_entries() -> None:
+    root = FakeRoot()
+    widgets = [FakeWidget() for _ in range(4)]
+    renderer = OverlayRenderer(
+        root,
+        status_widget=widgets[0],
+        russian_widget=widgets[1],
+        chinese_widget=widgets[2],
+        error_widget=widgets[3],
+    )
+    state = SubtitleViewState(history_lines=5, display_lines=2)
+    for index in range(5):
+        state.add_subtitle(
+            SubtitleEntry(index, f"Русский {index}", f"中文 {index}", 0.0, 0.1, 0.2)
+        )
+    renderer.render(state)
+    assert str(widgets[1].options["text"]).splitlines() == [
+        f"Русский {index}" for index in range(5)
+    ]
+    assert str(widgets[2].options["text"]).splitlines() == [
+        f"中文 {index}" for index in range(5)
+    ]
+
+
+def test_scrollable_history_preserves_long_unicode_and_uses_actual_width() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=900,
+    )
+    russian = ("Полный русский текст — без сокращения. " * 20).strip()
+    chinese = "完整的中文字幕，不得截断或省略。" * 20
+    assert len(russian) >= 500
+    assert len(chinese) >= 300
+    entries = tuple(
+        SubtitleEntry(index, russian, chinese, 0.0, 0.1, 0.2)
+        for index in range(5)
+    )
+    assert history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    assert len(history.russian_widgets) == 5
+    assert len(history.chinese_widgets) == 5
+    assert all(widget.options["text"] == russian for widget in history.russian_widgets)
+    assert all(widget.options["text"] == chinese for widget in history.chinese_widgets)
+    assert history._on_canvas_configure(SimpleNamespace(width=420))
+    assert history.wraplength == 396
+    assert all(widget.options["wraplength"] == 396 for widget in history.russian_widgets)
+    config_counts = [len(widget.config_calls) for widget in history.russian_widgets]
+    assert not history._on_canvas_configure(SimpleNamespace(width=420))
+    assert [len(widget.config_calls) for widget in history.russian_widgets] == config_counts
+
+
+def test_scrollable_history_auto_follow_manual_history_and_clear() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    entries = [SubtitleEntry(1, "Первый", "第一条", 0.0, 0.1, 0.2)]
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    assert history.auto_follow
+    assert history.canvas.scroll_movements[-1] == 1.0
+    history._on_mousewheel(SimpleNamespace(delta=120))
+    assert not history.auto_follow
+    history.render_entries(
+        (*entries, SubtitleEntry(2, "Второй", "第二条", 0.0, 0.1, 0.2)),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    assert history.canvas.scroll_movements[-1] != 1.0
+    history.render_entries(
+        (),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    assert history.auto_follow
+    assert history.canvas.options["scrollregion"] == (0, 0, 0, 0)
+    assert history.russian_widgets == []
+    assert history.chinese_widgets == []
+
+
+def test_scrollable_history_font_change_rebuilds_complete_widgets() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    entries = (SubtitleEntry(1, "Русский", "中文", 0.0, 0.1, 0.2),)
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    first_russian = history.russian_widgets[0]
+    history.render_entries(
+        entries,
+        show_russian=True,
+        russian_font_size=28,
+        chinese_font_size=40,
+    )
+    assert first_russian.destroyed or first_russian.parent.destroyed
+    assert history.russian_widgets[0].options["font"] == ("Segoe UI", 28)
+    assert history.chinese_widgets[0].options["font"] == (
+        "Microsoft YaHei UI",
+        40,
+        "bold",
+    )
+
+
+def test_vertical_resize_fits_latest_pair_and_restores_requested_sizes() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    russian = "Длинный русский текст " * 30
+    chinese = "完整的中文长字幕" * 40
+    history.render_entries(
+        (SubtitleEntry(1, russian, chinese, 0.0, 0.1, 0.2),),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 600
+    assert history._on_canvas_configure(SimpleNamespace(width=500, height=80))
+    assert history.effective_russian_font_size == 8
+    assert history.effective_chinese_font_size == 12
+    assert history.russian_widgets[0].options["font"] == ("Segoe UI", 8)
+    assert history.chinese_widgets[0].options["font"] == (
+        "Microsoft YaHei UI",
+        12,
+        "bold",
+    )
+    assert history.russian_widgets[0].options["text"] == russian
+    assert history.chinese_widgets[0].options["text"] == chinese
+    assert history._on_canvas_configure(SimpleNamespace(width=500, height=700))
+    assert history.effective_russian_font_size == 20
+    assert history.effective_chinese_font_size == 34
+
+
+def test_new_long_pair_adapts_fonts_without_resizing_root() -> None:
+    root = FakeRoot()
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    history.render_entries(
+        (SubtitleEntry(1, "Long Russian", "Long Chinese", 0.0, 0.1, 0.2),),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 500
+    history._fit_latest_entry()
+    assert root.geometry_calls == []
+    assert history.effective_russian_font_size == 8
+    assert history.effective_chinese_font_size == 12
+
+
+def test_oversized_pair_preserves_text_and_follows_its_start() -> None:
+    history = ScrollableSubtitleHistory(
+        FakeWidget(),
+        tk_module=FakeTk(),
+        initial_wraplength=600,
+    )
+    russian = "Russian sentence " * 40
+    chinese = "Chinese sentence " * 30
+    history.render_entries(
+        (SubtitleEntry(1, russian, chinese, 0.0, 0.1, 0.2),),
+        show_russian=True,
+        russian_font_size=20,
+        chinese_font_size=34,
+    )
+    history._entry_frames[-1].options["reqheight"] = 2000
+    history._entry_frames[-1].options["y"] = 300
+    history.canvas.options["bbox"] = (0, 0, 640, 2000)
+    history._fit_latest_entry()
+    assert history.effective_russian_font_size == 8
+    assert history.effective_chinese_font_size == 12
+    assert history.russian_widgets[0].options["text"] == russian
+    assert history.chinese_widgets[0].options["text"] == chinese
+    assert history.canvas.scroll_movements[-1] == pytest.approx(0.15)
+
+
 def test_drag_uses_initial_pointer_offset() -> None:
     root = FakeRoot()
     widgets = [FakeWidget() for _ in range(4)]
@@ -348,6 +633,71 @@ def test_drag_uses_initial_pointer_offset() -> None:
     renderer.begin_drag(SimpleNamespace(x_root=125, y_root=650))
     renderer.drag(SimpleNamespace(x_root=300, y_root=450))
     assert root.geometry_calls[-1] == "+275+420"
+
+
+def test_root_enables_native_decorated_resize_with_minimum_size() -> None:
+    root = FakeRoot()
+    configure_window_resizing(root)
+    assert root.options["minsize"] == (MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+    assert root.resizable_calls == [(True, True)]
+
+
+@pytest.mark.parametrize(
+    ("point", "direction"),
+    [
+        ((1, 100), "w"),
+        ((799, 100), "e"),
+        ((400, 1), "n"),
+        ((400, 279), "s"),
+        ((1, 1), "nw"),
+        ((799, 1), "ne"),
+        ((1, 279), "sw"),
+        ((799, 279), "se"),
+        ((400, 140), None),
+    ],
+)
+def test_borderless_resize_hit_area_covers_edges_and_corners(
+    point: tuple[int, int], direction: str | None
+) -> None:
+    assert resize_direction_at(*point, width=800, height=280) == direction
+
+
+@pytest.mark.parametrize("direction", sorted(("n", "s", "e", "w", "ne", "nw", "se", "sw")))
+def test_resize_geometry_supports_all_eight_directions(direction: str) -> None:
+    x, y, width, height = resized_geometry(
+        x=100,
+        y=200,
+        width=800,
+        height=400,
+        direction=direction,
+        delta_x=40,
+        delta_y=30,
+    )
+    assert width == (760 if "w" in direction else 840 if "e" in direction else 800)
+    assert height == (370 if "n" in direction else 430 if "s" in direction else 400)
+    assert x == (140 if "w" in direction else 100)
+    assert y == (230 if "n" in direction else 200)
+
+
+def test_resize_geometry_clamps_minimum_and_moves_only_left_top_edges() -> None:
+    assert resized_geometry(
+        x=100,
+        y=200,
+        width=800,
+        height=400,
+        direction="nw",
+        delta_x=700,
+        delta_y=350,
+    ) == (380, 420, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+    assert resized_geometry(
+        x=100,
+        y=200,
+        width=800,
+        height=400,
+        direction="se",
+        delta_x=-700,
+        delta_y=-350,
+    ) == (100, 200, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
 
 @pytest.mark.parametrize(
@@ -502,10 +852,70 @@ def overlay_stub() -> tuple[SubtitleOverlay, FakeRoot]:
     overlay.closing = False
     overlay.settings_panel = None
     overlay._borderless_transition_pending = False
+    overlay._dragging = False
+    overlay._resize_session = None
     overlay._window_width = 800
     overlay._window_height = 280
+    overlay._last_root_size = (800, 280)
+    overlay.renderer = OverlayRenderer(
+        overlay.root,
+        status_widget=FakeWidget(),
+        russian_widget=FakeWidget(),
+        chinese_widget=FakeWidget(),
+        error_widget=FakeWidget(),
+    )
     overlay.render = lambda: None
     return overlay, overlay.root
+
+
+def test_borderless_resize_does_not_trigger_drag_and_sets_floating() -> None:
+    overlay, root = overlay_stub()
+    start = SimpleNamespace(x_root=101, y_root=700)
+    overlay._begin_drag(start)
+    assert not overlay._dragging
+    overlay._begin_resize(start)
+    assert overlay._resize_session is not None
+    overlay._resize_drag(SimpleNamespace(x_root=141, y_root=700))
+    assert root.geometry_calls[-1] == "760x280+140+620"
+    assert overlay.state.position == "floating"
+
+
+def test_drag_area_does_not_trigger_resize() -> None:
+    overlay, root = overlay_stub()
+    start = SimpleNamespace(x_root=300, y_root=700)
+    overlay._begin_resize(start)
+    assert overlay._resize_session is None
+    overlay._begin_drag(start)
+    overlay._drag(SimpleNamespace(x_root=420, y_root=760))
+    assert root.geometry_calls[-1] == "+220+680"
+
+
+def test_decorated_mode_disables_custom_resize_cursor_and_geometry() -> None:
+    overlay, root = overlay_stub()
+    overlay.state.borderless = False
+    edge = SimpleNamespace(x_root=101, y_root=700)
+    overlay._update_resize_cursor(edge)
+    overlay._begin_resize(edge)
+    assert root.options["cursor"] == ""
+    assert overlay._resize_session is None
+    assert root.geometry_calls == []
+
+
+def test_resize_callback_error_does_not_change_session_shutdown_state() -> None:
+    overlay, root = overlay_stub()
+    overlay.running = True
+    overlay.closing = False
+    edge = SimpleNamespace(x_root=101, y_root=700)
+    overlay._begin_resize(edge)
+
+    def fail_geometry(_value: str | None = None) -> str:
+        raise RuntimeError("window disappeared")
+
+    root.geometry = fail_geometry  # type: ignore[method-assign]
+    overlay._resize_drag(SimpleNamespace(x_root=141, y_root=700))
+    assert overlay._resize_session is None
+    assert overlay.running
+    assert not overlay.closing
 
 
 class FakePanel:

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from live_subtitles.gui.controller import (
+    DEMO_LONG_CHINESE,
+    DEMO_LONG_RUSSIAN,
     DemoOverlayController,
     GuiEventQueue,
     GuiMetrics,
@@ -221,6 +223,13 @@ def test_demo_emits_events_without_live_session_dependencies() -> None:
     assert any(isinstance(event, SubtitleEvent) for event in events)
     assert any(isinstance(event, SegmentErrorEvent) for event in events)
     assert not any(isinstance(event, FatalErrorEvent) for event in events)
+
+
+def test_demo_long_subtitles_are_nonempty_full_unicode_acceptance_content() -> None:
+    assert len(DEMO_LONG_RUSSIAN) >= 500
+    assert len(DEMO_LONG_CHINESE) >= 300
+    assert "…" not in DEMO_LONG_RUSSIAN
+    assert "…" not in DEMO_LONG_CHINESE
 
 
 def test_zero_duration_demo_runs_until_explicit_stop() -> None:

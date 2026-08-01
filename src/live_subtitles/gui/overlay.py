@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
-from .state import SubtitleViewState
+from .state import SubtitleEntry, SubtitleViewState
 
 
 STATUS_COLORS = {
@@ -19,6 +19,92 @@ STATUS_COLORS = {
     "Fatal error": "#ff6b6b",
     "Ready": "#b0b0b0",
 }
+
+MIN_WINDOW_WIDTH = 520
+MIN_WINDOW_HEIGHT = 180
+RESIZE_BORDER_PIXELS = 7
+MIN_AUTO_FIT_RUSSIAN_FONT_SIZE = 8
+MIN_AUTO_FIT_CHINESE_FONT_SIZE = 12
+RESIZE_DIRECTIONS = frozenset({"n", "s", "e", "w", "ne", "nw", "se", "sw"})
+RESIZE_CURSORS = {
+    "n": "sb_v_double_arrow",
+    "s": "sb_v_double_arrow",
+    "e": "sb_h_double_arrow",
+    "w": "sb_h_double_arrow",
+    "ne": "top_right_corner",
+    "nw": "top_left_corner",
+    "se": "bottom_right_corner",
+    "sw": "bottom_left_corner",
+}
+
+
+def configure_window_resizing(root: Any) -> None:
+    """Enable native decorated resizing and enforce the shared minimum size."""
+
+    root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+    root.resizable(True, True)
+
+
+def resize_direction_at(
+    x: int,
+    y: int,
+    *,
+    width: int,
+    height: int,
+    border: int = RESIZE_BORDER_PIXELS,
+) -> str | None:
+    """Return the borderless resize direction under a root-relative pointer."""
+
+    if width <= 0 or height <= 0 or border <= 0:
+        return None
+    horizontal = "w" if x < border else "e" if x >= width - border else ""
+    vertical = "n" if y < border else "s" if y >= height - border else ""
+    direction = vertical + horizontal
+    return direction or None
+
+
+def resized_geometry(
+    *,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    direction: str,
+    delta_x: int,
+    delta_y: int,
+    minimum_width: int = MIN_WINDOW_WIDTH,
+    minimum_height: int = MIN_WINDOW_HEIGHT,
+) -> tuple[int, int, int, int]:
+    """Calculate clamped x/y/width/height for one of eight resize directions."""
+
+    if direction not in RESIZE_DIRECTIONS:
+        raise ValueError(f"Unsupported resize direction: {direction}")
+    new_x, new_y = int(x), int(y)
+    new_width, new_height = int(width), int(height)
+    if "w" in direction:
+        new_width = max(minimum_width, width - delta_x)
+        new_x = x + (width - new_width)
+    elif "e" in direction:
+        new_width = max(minimum_width, width + delta_x)
+    if "n" in direction:
+        new_height = max(minimum_height, height - delta_y)
+        new_y = y + (height - new_height)
+    elif "s" in direction:
+        new_height = max(minimum_height, height + delta_y)
+    return new_x, new_y, new_width, new_height
+
+
+@dataclass(frozen=True)
+class ResizeSession:
+    """Pointer and window geometry captured at the start of a borderless resize."""
+
+    direction: str
+    pointer_x: int
+    pointer_y: int
+    window_x: int
+    window_y: int
+    window_width: int
+    window_height: int
 
 
 @dataclass(frozen=True)
@@ -39,6 +125,323 @@ class ModelPanelCallbacks:
     snapshot: Callable[[], ModelAssetsReport]
     open_folder: Callable[[], None]
     open_instructions: Callable[[], None]
+
+
+class ScrollableSubtitleHistory:
+    """A width-aware, vertically scrollable sequence of complete subtitle pairs."""
+
+    def __init__(
+        self,
+        parent: Any,
+        *,
+        tk_module: Any,
+        initial_wraplength: int,
+        on_wraplength_changed: Callable[[int], None] | None = None,
+    ) -> None:
+        self.tk = tk_module
+        self._background = "#111318"
+        self._on_wraplength_changed = on_wraplength_changed
+        self._content_size: tuple[int, int] | None = None
+        self.wraplength = max(120, int(initial_wraplength))
+        self._requested_russian_font_size = 20
+        self._requested_chinese_font_size = 34
+        self.effective_russian_font_size = 20
+        self.effective_chinese_font_size = 34
+        self.auto_follow = True
+        self._signature: tuple[object, ...] | None = None
+        self._entry_frames: list[Any] = []
+        self.russian_widgets: list[Any] = []
+        self.chinese_widgets: list[Any] = []
+        self._pending_scroll_fraction: float | None = None
+        self._fit_pending = False
+
+        self.container = tk_module.Frame(parent, background=self._background)
+        self.scrollbar = tk_module.Scrollbar(
+            self.container,
+            orient="vertical",
+            command=self._on_scrollbar,
+        )
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas = tk_module.Canvas(
+            self.container,
+            background=self._background,
+            highlightthickness=0,
+            borderwidth=0,
+            yscrollcommand=self.scrollbar.set,
+        )
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.body = tk_module.Frame(self.canvas, background=self._background)
+        self._body_window = self.canvas.create_window(
+            (0, 0), window=self.body, anchor="nw"
+        )
+        self.body.bind("<Configure>", self._on_body_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self._bind_mousewheel(self.canvas)
+        self._bind_mousewheel(self.body)
+
+    def _bind_mousewheel(self, widget: Any) -> None:
+        widget.bind("<MouseWheel>", self._on_mousewheel)
+
+    def _on_scrollbar(self, *arguments: object) -> None:
+        self.canvas.yview(*arguments)
+        self.canvas.after_idle(self._sync_auto_follow)
+
+    def _on_mousewheel(self, event: Any) -> str:
+        delta = int(getattr(event, "delta", 0))
+        if delta == 0:
+            return "break"
+        units = -max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120)
+        if units < 0:
+            self.auto_follow = False
+        self.canvas.yview_scroll(units, "units")
+        self.canvas.after_idle(self._sync_auto_follow)
+        return "break"
+
+    def _sync_auto_follow(self) -> None:
+        try:
+            _top, bottom = self.canvas.yview()
+            self.auto_follow = float(bottom) >= 0.999
+        except self.tk.TclError:
+            return
+
+    def _on_body_configure(self, _event: Any = None) -> None:
+        self._refresh_scrollregion()
+
+    def _refresh_scrollregion(self) -> None:
+        try:
+            bounds = self.canvas.bbox("all") or (0, 0, 0, 0)
+            self.canvas.configure(scrollregion=bounds)
+            if self.auto_follow:
+                self._follow_latest(bounds)
+            elif self._pending_scroll_fraction is not None:
+                self.canvas.yview_moveto(self._pending_scroll_fraction)
+            self._pending_scroll_fraction = None
+        except self.tk.TclError:
+            return
+
+    def _follow_latest(self, bounds: tuple[int, int, int, int]) -> None:
+        """Show a complete fitting pair, or the start of an oversized pair."""
+
+        if not self._entry_frames:
+            self.canvas.yview_moveto(0.0)
+            return
+        latest = self._entry_frames[-1]
+        latest.update_idletasks()
+        available_height = max(
+            1,
+            int(
+                self._content_size[1]
+                if self._content_size is not None
+                else self.canvas.winfo_height()
+            ),
+        )
+        if int(latest.winfo_reqheight()) <= available_height:
+            self.canvas.yview_moveto(1.0)
+            return
+        content_height = max(1, int(bounds[3]) - int(bounds[1]))
+        self.canvas.yview_moveto(
+            min(1.0, max(0.0, float(latest.winfo_y()) / content_height))
+        )
+
+    def _on_canvas_configure(self, event: Any) -> bool:
+        """Apply actual viewport size once; return whether layout changed."""
+
+        width = max(1, int(getattr(event, "width", self.canvas.winfo_width())))
+        height = max(1, int(getattr(event, "height", self.canvas.winfo_height())))
+        wraplength = max(120, width - 24)
+        if self._content_size == (width, height) and self.wraplength == wraplength:
+            return False
+        old_width = self._content_size[0] if self._content_size is not None else None
+        old_height = self._content_size[1] if self._content_size is not None else None
+        self._content_size = (width, height)
+        self.wraplength = wraplength
+        if old_width != width:
+            self.canvas.itemconfigure(self._body_window, width=width)
+            for widget in (*self.russian_widgets, *self.chinese_widgets):
+                widget.configure(wraplength=wraplength)
+            if self._on_wraplength_changed is not None:
+                self._on_wraplength_changed(wraplength)
+        if old_height is not None and height > old_height:
+            self._restore_requested_fonts()
+        self._schedule_latest_fit()
+        self.canvas.after_idle(self._refresh_scrollregion)
+        return True
+
+    def _apply_font_sizes(self, russian_size: int, chinese_size: int) -> None:
+        self.effective_russian_font_size = russian_size
+        self.effective_chinese_font_size = chinese_size
+        for widget in self.russian_widgets:
+            widget.configure(font=("Segoe UI", russian_size))
+        for widget in self.chinese_widgets:
+            widget.configure(font=("Microsoft YaHei UI", chinese_size, "bold"))
+
+    def _restore_requested_fonts(self) -> None:
+        if (
+            self.effective_russian_font_size == self._requested_russian_font_size
+            and self.effective_chinese_font_size == self._requested_chinese_font_size
+        ):
+            return
+        self._apply_font_sizes(
+            self._requested_russian_font_size,
+            self._requested_chinese_font_size,
+        )
+
+    def _schedule_latest_fit(self) -> None:
+        if not self._entry_frames:
+            return
+        if self._fit_pending:
+            return
+        self._fit_pending = True
+        self.canvas.after_idle(self._fit_latest_entry)
+
+    def _fit_latest_entry(self) -> None:
+        """Keep the newest complete RU/ZH pair visible without truncating text."""
+
+        self._fit_pending = False
+        if not self._entry_frames:
+            return
+        try:
+            latest = self._entry_frames[-1]
+            latest.update_idletasks()
+            required_height = max(1, int(latest.winfo_reqheight()))
+            available_height = max(
+                1,
+                int(
+                    self._content_size[1]
+                    if self._content_size is not None
+                    else self.canvas.winfo_height()
+                ),
+            )
+            if required_height <= available_height:
+                return
+            can_shrink = (
+                self.effective_russian_font_size > MIN_AUTO_FIT_RUSSIAN_FONT_SIZE
+                or self.effective_chinese_font_size > MIN_AUTO_FIT_CHINESE_FONT_SIZE
+            )
+            if can_shrink:
+                scale = max(
+                    0.1,
+                    min(
+                        0.98,
+                        (float(available_height) / required_height) ** 0.5 * 0.95,
+                    ),
+                )
+                russian_size = max(
+                    MIN_AUTO_FIT_RUSSIAN_FONT_SIZE,
+                    min(
+                        self.effective_russian_font_size - 1,
+                        round(self.effective_russian_font_size * scale),
+                    ),
+                )
+                chinese_size = max(
+                    MIN_AUTO_FIT_CHINESE_FONT_SIZE,
+                    min(
+                        self.effective_chinese_font_size - 1,
+                        round(self.effective_chinese_font_size * scale),
+                    ),
+                )
+                self._apply_font_sizes(russian_size, chinese_size)
+                self.canvas.after_idle(self._refresh_scrollregion)
+                self._schedule_latest_fit()
+                return
+            self.canvas.after_idle(self._refresh_scrollregion)
+        except self.tk.TclError:
+            return
+
+    def _destroy_entries(self) -> None:
+        for frame in self._entry_frames:
+            frame.destroy()
+        self._entry_frames.clear()
+        self.russian_widgets.clear()
+        self.chinese_widgets.clear()
+
+    def render_entries(
+        self,
+        entries: Sequence[SubtitleEntry],
+        *,
+        show_russian: bool,
+        russian_font_size: int,
+        chinese_font_size: int,
+    ) -> bool:
+        """Render complete text without truncation and preserve manual history viewing."""
+
+        signature: tuple[object, ...] = (
+            show_russian,
+            int(russian_font_size),
+            int(chinese_font_size),
+            tuple(
+                (entry.index, entry.russian_text, entry.chinese_text)
+                for entry in entries
+            ),
+        )
+        if signature == self._signature:
+            return False
+        self._requested_russian_font_size = int(russian_font_size)
+        self._requested_chinese_font_size = int(chinese_font_size)
+        self.effective_russian_font_size = self._requested_russian_font_size
+        self.effective_chinese_font_size = self._requested_chinese_font_size
+        if not self.auto_follow:
+            try:
+                self._pending_scroll_fraction = float(self.canvas.yview()[0])
+            except self.tk.TclError:
+                self._pending_scroll_fraction = None
+        self._signature = signature
+        self._destroy_entries()
+        if not entries:
+            self.auto_follow = True
+            self._pending_scroll_fraction = None
+            self.canvas.configure(scrollregion=(0, 0, 0, 0))
+            self.canvas.yview_moveto(0.0)
+            return True
+
+        for position, entry in enumerate(entries):
+            frame = self.tk.Frame(
+                self.body,
+                background=self._background,
+                padx=8,
+                pady=6,
+            )
+            frame.pack(fill="x", expand=True)
+            self._entry_frames.append(frame)
+            self._bind_mousewheel(frame)
+            if position:
+                separator = self.tk.Frame(frame, background="#303540", height=1)
+                separator.pack(fill="x", pady=(0, 6))
+                self._bind_mousewheel(separator)
+            if show_russian:
+                russian = self.tk.Label(
+                    frame,
+                    text=entry.russian_text,
+                    background=self._background,
+                    foreground="#d8dbe2",
+                    justify="center",
+                    anchor="center",
+                    wraplength=self.wraplength,
+                    font=("Segoe UI", self.effective_russian_font_size),
+                )
+                russian.pack(fill="x", pady=(0, 3))
+                self.russian_widgets.append(russian)
+                self._bind_mousewheel(russian)
+            chinese = self.tk.Label(
+                frame,
+                text=entry.chinese_text,
+                background=self._background,
+                foreground="#ffffff",
+                justify="center",
+                anchor="center",
+                wraplength=self.wraplength,
+                font=(
+                    "Microsoft YaHei UI",
+                    self.effective_chinese_font_size,
+                    "bold",
+                ),
+            )
+            chinese.pack(fill="x")
+            self.chinese_widgets.append(chinese)
+            self._bind_mousewheel(chinese)
+        self.canvas.after_idle(self._refresh_scrollregion)
+        self._schedule_latest_fit()
+        return True
 
 
 def position_coordinates(
@@ -72,19 +475,23 @@ class OverlayRenderer:
         root: Any,
         *,
         status_widget: Any,
-        russian_widget: Any,
-        chinese_widget: Any,
         error_widget: Any,
+        russian_widget: Any | None = None,
+        chinese_widget: Any | None = None,
+        history_view: ScrollableSubtitleHistory | None = None,
     ) -> None:
+        if history_view is None and (russian_widget is None or chinese_widget is None):
+            raise ValueError("Subtitle widgets or a scrollable history view are required.")
         self.root = root
         self.status_widget = status_widget
         self.russian_widget = russian_widget
         self.chinese_widget = chinese_widget
+        self.history_view = history_view
         self.error_widget = error_widget
         self._drag_offset = (0, 0)
 
     def render(self, state: SubtitleViewState) -> None:
-        entries = state.visible_entries
+        entries = state.entries
         russian = "\n".join(entry.russian_text for entry in entries)
         chinese = "\n".join(entry.chinese_text for entry in entries)
         status_prefix = state.status.split("...", 1)[0]
@@ -92,14 +499,24 @@ class OverlayRenderer:
             text=state.status,
             foreground=STATUS_COLORS.get(status_prefix, "#b0b0b0"),
         )
-        self.russian_widget.config(
-            text=russian if state.show_russian else "",
-            font=("Segoe UI", state.russian_font_size),
-        )
-        self.chinese_widget.config(
-            text=chinese,
-            font=("Microsoft YaHei UI", state.chinese_font_size, "bold"),
-        )
+        if self.history_view is not None:
+            self.history_view.render_entries(
+                entries,
+                show_russian=state.show_russian,
+                russian_font_size=state.russian_font_size,
+                chinese_font_size=state.chinese_font_size,
+            )
+        else:
+            assert self.russian_widget is not None
+            assert self.chinese_widget is not None
+            self.russian_widget.config(
+                text=russian if state.show_russian else "",
+                font=("Segoe UI", state.russian_font_size),
+            )
+            self.chinese_widget.config(
+                text=chinese,
+                font=("Microsoft YaHei UI", state.chinese_font_size, "bold"),
+            )
         self.error_widget.config(text=state.latest_error)
 
     def begin_drag(self, event: Any) -> None:
@@ -485,8 +902,11 @@ class SubtitleOverlay:
         self.closing = False
         self.settings_panel: SettingsPanel | None = None
         self._borderless_transition_pending = False
+        self._dragging = False
+        self._resize_session: ResizeSession | None = None
         self._window_width = max(640, int(self.root.winfo_screenwidth() * 0.8))
         self._window_height = 280
+        self._last_root_size = (self._window_width, self._window_height)
 
         self.root.title("Russian–Chinese Live Subtitles")
         self.root.configure(background="#111318")
@@ -499,7 +919,7 @@ class SubtitleOverlay:
             preset=state.position,
         )
         self.root.geometry(f"{self._window_width}x{self._window_height}+{x}+{y}")
-        self.root.minsize(520, 180)
+        configure_window_resizing(self.root)
         self.root.attributes("-topmost", bool(state.topmost))
         self.root.attributes("-alpha", float(state.opacity))
         self.root.overrideredirect(bool(state.borderless))
@@ -546,38 +966,27 @@ class SubtitleOverlay:
             highlightbackground="#547aa5" if state.topmost else "#111318",
         )
         self.content.pack(fill="both", expand=True)
-        self.russian = tk.Label(
-            self.content,
-            background="#111318",
-            foreground="#d8dbe2",
-            justify="center",
-            anchor="center",
-            wraplength=self._window_width - 60,
-        )
-        self.russian.pack(fill="x", pady=(6, 0))
-        self.chinese = tk.Label(
-            self.content,
-            background="#111318",
-            foreground="#ffffff",
-            justify="center",
-            anchor="center",
-            wraplength=self._window_width - 60,
-        )
-        self.chinese.pack(fill="both", expand=True, pady=(4, 2))
         self.error = tk.Label(
             self.content,
             background="#111318",
             foreground="#ff8a80",
             anchor="center",
             font=("Segoe UI", 9),
+            wraplength=max(120, self._window_width - 60),
         )
-        self.error.pack(fill="x")
+        self.error.pack(fill="x", side="bottom")
+        self.history_view = ScrollableSubtitleHistory(
+            self.content,
+            tk_module=tk,
+            initial_wraplength=max(120, self._window_width - 60),
+            on_wraplength_changed=self._set_error_wraplength,
+        )
+        self.history_view.container.pack(fill="both", expand=True)
         self.renderer = OverlayRenderer(
             root,
             status_widget=self.status,
-            russian_widget=self.russian,
-            chinese_widget=self.chinese,
             error_widget=self.error,
+            history_view=self.history_view,
         )
         self._bind_interactions_once()
         self.render()
@@ -599,13 +1008,22 @@ class SubtitleOverlay:
         button.pack(side="left", padx=2)
         return button
 
+    def _set_error_wraplength(self, wraplength: int) -> None:
+        self.error.configure(wraplength=max(120, int(wraplength)))
+
     def _bind_interactions_once(self) -> None:
         # A Toplevel bindtag naturally receives descendant events. Binding every
         # child as well would toggle twice (open, then immediately withdraw).
         self.root.bind("<ButtonRelease-3>", self._on_context_request)
-        for widget in (self.control_bar, self.drag_area, self.status, self.content):
+        for widget in (self.drag_area, self.status):
             widget.bind("<ButtonPress-1>", self._begin_drag)
             widget.bind("<B1-Motion>", self._drag)
+        self.root.bind("<Motion>", self._update_resize_cursor)
+        self.root.bind("<Leave>", self._clear_resize_cursor)
+        self.root.bind("<ButtonPress-1>", self._begin_resize)
+        self.root.bind("<B1-Motion>", self._resize_drag)
+        self.root.bind("<ButtonRelease-1>", self._end_pointer_action)
+        self.root.bind("<Configure>", self._on_root_configure)
         self.root.bind("<Control-q>", lambda _event: self.on_exit())
         self.root.bind("<Control-l>", lambda _event: self.on_clear())
         self.root.bind("<Control-space>", lambda _event: self._start_stop())
@@ -615,12 +1033,103 @@ class SubtitleOverlay:
     def _on_context_request(self, _event: Any) -> None:
         self.toggle_settings_panel()
 
+    def _root_relative_pointer(self, event: Any) -> tuple[int, int]:
+        root_x_getter = getattr(self.root, "winfo_rootx", self.root.winfo_x)
+        root_y_getter = getattr(self.root, "winfo_rooty", self.root.winfo_y)
+        return (
+            int(event.x_root) - int(root_x_getter()),
+            int(event.y_root) - int(root_y_getter()),
+        )
+
+    def _resize_direction_for_event(self, event: Any) -> str | None:
+        if not self.state.borderless:
+            return None
+        pointer_x, pointer_y = self._root_relative_pointer(event)
+        return resize_direction_at(
+            pointer_x,
+            pointer_y,
+            width=int(self.root.winfo_width()),
+            height=int(self.root.winfo_height()),
+        )
+
+    def _update_resize_cursor(self, event: Any) -> None:
+        if self._resize_session is not None:
+            direction = self._resize_session.direction
+        else:
+            direction = self._resize_direction_for_event(event)
+        self.root.configure(cursor=RESIZE_CURSORS.get(direction, ""))
+
+    def _clear_resize_cursor(self, _event: Any = None) -> None:
+        if self._resize_session is None:
+            self.root.configure(cursor="")
+
     def _begin_drag(self, event: Any) -> None:
+        if self._resize_direction_for_event(event) is not None:
+            self._dragging = False
+            return
+        self._dragging = True
         self.renderer.begin_drag(event)
 
     def _drag(self, event: Any) -> None:
+        if not self._dragging or self._resize_session is not None:
+            return
         self.state.set_position("floating")
         self.renderer.drag(event)
+
+    def _begin_resize(self, event: Any) -> None:
+        direction = self._resize_direction_for_event(event)
+        if direction is None:
+            return
+        self._dragging = False
+        self.state.set_position("floating")
+        self._resize_session = ResizeSession(
+            direction=direction,
+            pointer_x=int(event.x_root),
+            pointer_y=int(event.y_root),
+            window_x=int(self.root.winfo_x()),
+            window_y=int(self.root.winfo_y()),
+            window_width=int(self.root.winfo_width()),
+            window_height=int(self.root.winfo_height()),
+        )
+        self.root.configure(cursor=RESIZE_CURSORS[direction])
+
+    def _resize_drag(self, event: Any) -> None:
+        session = self._resize_session
+        if session is None:
+            return
+        try:
+            x, y, width, height = resized_geometry(
+                x=session.window_x,
+                y=session.window_y,
+                width=session.window_width,
+                height=session.window_height,
+                direction=session.direction,
+                delta_x=int(event.x_root) - session.pointer_x,
+                delta_y=int(event.y_root) - session.pointer_y,
+            )
+            self.root.geometry(f"{width}x{height}+{x}+{y}")
+        except (self.tk.TclError, ValueError):
+            self._resize_session = None
+            self.root.configure(cursor="")
+
+    def _end_pointer_action(self, event: Any) -> None:
+        self._dragging = False
+        self._resize_session = None
+        self._update_resize_cursor(event)
+
+    def _on_root_configure(self, event: Any) -> None:
+        if getattr(event, "widget", self.root) is not self.root:
+            return
+        width = int(getattr(event, "width", self.root.winfo_width()))
+        height = int(getattr(event, "height", self.root.winfo_height()))
+        if width <= 1 or height <= 1:
+            return
+        current_size = (width, height)
+        if current_size == self._last_root_size:
+            return
+        self._last_root_size = current_size
+        if not self._borderless_transition_pending:
+            self.state.set_position("floating")
 
     def _start_stop(self) -> None:
         if self.state.stopping or self.closing:
@@ -732,6 +1241,8 @@ class SubtitleOverlay:
             return
         geometry = str(self.root.geometry())
         self.hide_settings_panel()
+        self._dragging = False
+        self._resize_session = None
         self.state.borderless = not self.state.borderless
         self._borderless_transition_pending = True
         self.root.overrideredirect(bool(self.state.borderless))
@@ -741,6 +1252,8 @@ class SubtitleOverlay:
         self.root.geometry(geometry)
         self.root.attributes("-topmost", bool(self.state.topmost))
         self.root.attributes("-alpha", float(self.state.opacity))
+        self.root.resizable(True, True)
+        self.root.configure(cursor="")
         self._borderless_transition_pending = False
         self.render()
 
@@ -761,8 +1274,8 @@ class SubtitleOverlay:
         x, y = position_coordinates(
             screen_width=self.root.winfo_screenwidth(),
             screen_height=self.root.winfo_screenheight(),
-            window_width=max(self._window_width, int(self.root.winfo_width())),
-            window_height=max(180, int(self.root.winfo_height())),
+            window_width=max(MIN_WINDOW_WIDTH, int(self.root.winfo_width())),
+            window_height=max(MIN_WINDOW_HEIGHT, int(self.root.winfo_height())),
             preset=preset,
             current_x=int(self.root.winfo_x()),
             current_y=int(self.root.winfo_y()),

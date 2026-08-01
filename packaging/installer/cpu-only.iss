@@ -57,12 +57,15 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#CpuDist}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ReleaseMetadata}"; DestDir: "{app}"; DestName: "RELEASE_METADATA.json"; Flags: ignoreversion
 Source: "{#ModelBundleMetadata}"; DestDir: "{app}"; DestName: "MODEL_BUNDLE_METADATA.json"; Flags: ignoreversion
-Source: "{#ModelAssetsRoot}\*"; DestDir: "{localappdata}\ru-zh-live-subtitles\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall
+Source: "{#ModelAssetsRoot}\*"; DestDir: "{localappdata}\ru-zh-live-subtitles\models"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline --no-auto-start"; WorkingDir: "{app}"
 Name: "{group}\Model setup instructions"; Filename: "{app}\MODEL_SETUP.txt"; WorkingDir: "{app}"
 Name: "{autodesktop}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline --no-auto-start"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\ru-zh-live-subtitles"
 
 [Code]
 const
@@ -89,13 +92,4 @@ begin
     Exit;
   end;
   Result := True;
-end;
-
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if CurUninstallStep = usPostUninstall then
-    MsgBox(
-      'Model assets were preserved. Delete the following folder manually to reclaim disk space:' +
-      Chr(13) + Chr(10) + ExpandConstant('{localappdata}\ru-zh-live-subtitles\models'),
-      mbInformation, MB_OK);
 end;

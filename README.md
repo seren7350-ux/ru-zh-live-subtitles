@@ -177,12 +177,12 @@ only the verified local VAD cache and never access the network.
 
 ## Windows CPU-only packaging
 
-Version 0.2.0 uses the isolated `.venv-packaging-cpu` environment and
+Development version 0.3.0 uses the isolated `.venv-packaging-cpu` environment and
 `packaging/combined_cpu.spec` to create one shared two-launcher CPU onedir.
 It pins official Torch/TorchAudio 2.10.0 CPU wheels and contains no CUDA runtime
 or model weights. The onedir is combined with a separately verified Silero,
 GigaAM Large CTC and NLLB bundle only at installer build time. No GPU package is
-part of the 0.2.0 delivery. See `packaging/README.md`.
+part of the 0.3.0 delivery. See `packaging/README.md`.
 
 ## Limitations and troubleshooting
 
@@ -200,8 +200,9 @@ part of the 0.2.0 delivery. See `packaging/README.md`.
 - Run `vad-doctor`, `doctor`, and `translation-doctor` for the corresponding
   model, runtime, device, or cache checks.
 - `overlay-demo` opens no microphone and loads no model; it is the safe command
-  for checking Settings, borderless/windowed, topmost, fonts, opacity, position,
-  Start/Stop, and Exit behavior.
+  for checking Settings, borderless/windowed resizing, complete long subtitles,
+  stable-window latest-entry font fitting, scrollable history, topmost,
+  fonts, opacity, position, Start/Stop, and Exit behavior.
 - Closing the settings panel withdraws it without stopping the session. Switching
   borderless mode keeps the same root, controls, subtitle state, and session.
 - The user accepted the interaction checks and PowerPoint slide-show behavior.
@@ -209,7 +210,7 @@ part of the 0.2.0 delivery. See `packaging/README.md`.
   validation machine; the overlay is not an Acrobat or PowerPoint plugin.
 - The GUI is not click-through, production ready, signed, or claimed to reserve
   Windows work area. The onedir spike is validated only on its development
-  machine and does not persist subtitle history.
+  machine and does not persist subtitle history across application restarts.
 
 See [architecture](docs/architecture.md),
 [documentation map](docs/README.md),
@@ -232,7 +233,7 @@ The network-disabled Windows Sandbox staging boundary, exact local-only cache
 allowlist, generated configuration workflow, and current host-edition blocker
 are in [Windows Sandbox clean-machine validation](docs/windows-sandbox-clean-machine-validation.md).
 
-The 0.2.0 installer candidate combines the CPU-only onedir with exactly
+The 0.3.0 installer candidate combines the CPU-only onedir with exactly
 4,826,649,490 bytes of pinned Silero, official GigaAM Multilingual Large CTC and
 NLLB assets. It excludes legacy RNNT weights. It requires no Python,
 administrator access, network connection, token, or manual model copy and
@@ -241,13 +242,13 @@ installs the application under
 `%LOCALAPPDATA%\ru-zh-live-subtitles\models`. Installed shortcuts use CPU,
 offline, no-auto-start mode; first launch does not download anything.
 
-The new delivery is generated separately in `dist\installer-offline-0.2.0`.
+The new delivery is generated separately in `dist\installer-offline-0.3.0`.
 Every attachment must remain below 2,000,000,000 bytes, so the build uses native
 Inno disk spanning with slices no larger than 1,900,000,000 bytes when required.
 At least 12 GiB of free disk space and 8 GiB RAM are required; 16 GiB RAM is
-recommended. Uninstall removes the app and
-shortcuts but deliberately preserves the model directory; delete that directory
-manually only to reclaim space. The installer is unsigned and may trigger
+recommended. Uninstall removes the app, shortcuts, managed offline models,
+logs, caches, and all other data in the fixed application-owned
+`%LOCALAPPDATA%\ru-zh-live-subtitles` directory. The installer is unsigned and may trigger
 SmartScreen. Initial frozen model-load timing is recorded from the final
 development-machine installation rather than estimated. See
 [self-contained offline installer](docs/self-contained-offline-installer.md).
@@ -261,13 +262,13 @@ in a network-disabled VMware Windows 11 Pro guest restored from the same clean
 snapshot. See [CPU-only clean-machine recovery validation](docs/cpu-clean-machine-recovery-validation.md).
 
 The GPU spec remains an internal historical artifact; it is not built or
-distributed in this 0.2.0 stage. The earlier CPU clean-VMware result predates
-the Large CTC installer revision. Version 0.2.0 is an unsigned development-machine
+distributed in this 0.3.0 stage. The earlier CPU clean-VMware result predates
+the Large CTC installer revision. Version 0.3.0 is an unsigned development-machine
 course candidate and is not published as a Release in this stage. Model
 weights remain outside the CPU onedir but are included in the offline installer
 payload. NLLB remains restricted to non-commercial use. The older roughly
 216 MB model-less setup is a historical development artifact and must not be
-delivered by itself. The old 0.1.0 installer, tag `course-final-v0.1.0`, and
-GitHub Release remain unchanged as historical RNNT delivery evidence. See
+delivered by itself. The existing 0.1.0 RNNT and public 0.2.0 Large CTC
+installers, tags, and GitHub Releases remain unchanged. See
 [CPU-only distribution policy](docs/cpu-only-distribution.md) and
 [installer validation](docs/cpu-only-installer-validation.md).

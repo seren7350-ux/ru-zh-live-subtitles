@@ -16,6 +16,31 @@ Exit. The old compact, expanded, and captions-only modes no longer exist.
 Starting or stopping a session changes the primary button state but never hides
 the bar.
 
+## Resizing and complete subtitle history
+
+Version 0.3.0 keeps native Tk/Windows resizing enabled whenever Borderless is
+off. In Borderless mode, a seven-pixel root-edge hit area maps the four edges
+and four corners to the corresponding resize cursor. A drag computes geometry
+from the captured pointer/window origin, clamps it to 520 x 180 pixels, and
+marks the position preset as floating. The explicit Drag region ignores resize
+hits, and subtitle content is not a window-drag target.
+
+The subtitle area is a Canvas-backed vertical history. Every retained entry has
+separate complete Russian and Chinese labels; there is no string slicing,
+character limit, or ellipsis. Canvas Configure events set each label's
+wraplength from the current actual content width and ignore an unchanged size.
+The user's font setting is the preferred maximum. Each new Russian/Chinese pair
+is measured after Tk lays it out, but content never changes the user-selected
+root-window geometry. The newest pair instead reduces its view fonts as needed,
+down to 8 px Russian / 12 px Chinese. If an exceptional pair still exceeds the
+viewport, all text remains intact in the internal scroll area and automatic
+following starts at that pair's beginning rather than hiding its first lines.
+Increasing the height restores the configured size. Font changes rebuild the
+labels at the same width. New entries follow the bottom by default, scrolling
+upward pauses that follow behavior, and Clear or a new session restores an empty
+bottom-following state. The persistent control bar and the separate error row
+remain outside the scrolling area.
+
 Settings has one responsibility: show or hide the SettingsPanel. Root
 right-click invokes the same method as a shortcut. A single root binding covers
 descendant widgets through Tk's bindtags; binding both root and every child

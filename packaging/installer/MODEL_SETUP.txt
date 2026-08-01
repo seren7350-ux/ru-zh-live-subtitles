@@ -1,4 +1,4 @@
-RUSSIAN-CHINESE LIVE SUBTITLES 0.2.0 - MODEL SETUP
+RUSSIAN-CHINESE LIVE SUBTITLES 0.3.0 - MODEL SETUP
 =================================================
 
 The self-contained CPU offline installer contains all required pinned model
@@ -31,5 +31,6 @@ not change system or user environment variables and never downloads assets.
 Large CTC and NLLB use significant memory: 8 GiB RAM is the minimum and 16 GiB
 is recommended. NLLB is CC-BY-NC-4.0 and restricted to non-commercial use.
 
-Uninstalling the application preserves the model directory. Delete it manually
-only when the models are no longer required.
+Uninstalling removes the application, all offline models, logs, caches, and
+other application-owned data. Reinstall the complete model assets before using
+the application again.

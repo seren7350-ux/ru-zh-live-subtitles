@@ -1,6 +1,6 @@
 # Windows onedir packaging spike
 
-> Version 0.2.0 packaging note (2026-07-31): the end-user CPU candidate defaults
+> Version 0.3.0 packaging note (2026-08-01): the end-user CPU candidate defaults
 > to the official pinned GigaAM Multilingual Large CTC Torch 2.10/TorchAudio
 > 2.10 CPU backend. The old 0.1.0 onedir, installer, tag and Release remain the
 > retained RNNT/ONNX baseline and must not be overwritten or relabeled.
@@ -145,7 +145,7 @@ accepts a policy-valid CPU onedir, a mandatory explicit verified
 `-ModelAssetsRoot`, and the expected Git commit. It verifies the official Inno
 Setup 7.0.2 compiler, runs the frozen CPU doctor, fully hashes the model bundle,
 creates release metadata, and compiles `cpu-only.iss` into ignored,
-version-isolated `dist/installer-offline-0.2.0` output.
+version-isolated `dist/installer-offline-0.3.0` output.
 
 The build is fail-closed: dirty Git state, stale CPU provenance, or an invalid
 manifest, ref, size, or SHA fails before ISCC. It never falls back to a user
@@ -158,6 +158,9 @@ below 2,000,000,000 bytes; native Inno disk spanning uses slices no larger than
 The installer is per-user, non-administrative, x64, offline by default, and
 contains no CUDA runtime in the application onedir. The installer payload does
 include all pinned model weights and installs them to LocalAppData. Its stable
-AppId supports same-version repair and removal. Uninstall targets only the
-application, installer-created shortcuts, and its uninstall key; model assets
-are preserved. See `docs/cpu-only-installer-validation.md`.
+AppId supports same-version repair and removal. Repair retains the complete
+model payload. Uninstall removes the application, installer-created shortcuts,
+its uninstall key, and the fixed application-owned
+`%LOCALAPPDATA%\ru-zh-live-subtitles` directory containing models, logs and
+caches. It does not target unrelated LocalAppData content. See
+`docs/self-contained-offline-installer.md`.

@@ -65,7 +65,8 @@ must not need model-specific rewrites.
 | `dist/ru-zh-subtitles-cpu/` | Current CPU onedir | Preserve with its matching CPU metadata. |
 | `dist/ru-zh-subtitles*/` | Historical/internal GPU and console onedirs | Archive or delete only after their evidence is no longer required. |
 | `dist/installer-offline/` | Retained 0.1.0 RNNT delivery and build evidence | Preserve unchanged. Never clean recursively. |
-| `dist/installer-offline-0.2.0/` | New Large CTC installer candidate and build evidence | Preserve. Never clean recursively. |
+| `dist/installer-offline-0.2.0/` | Published Large CTC installer and build evidence | Preserve. Never clean recursively. |
+| `dist/installer-offline-0.3.0/` | Resizable-overlay/complete-uninstall candidate and build evidence | Preserve. Never clean recursively. |
 | `dist/installer/` | Historical model-less installer | Retain as history; never deliver it alone. |
 | `data/clean-machine-validation/staging/` | Canonical package/model/scripts staging | Preserve at its existing path. |
 | `data/clean-machine-validation/cpu-run-*/` | Independent clean-machine run captures | Preserve as validation evidence. |
@@ -76,7 +77,8 @@ must not need model-specific rewrites.
 
 The historical teacher installer remains
 `dist/installer-offline/ru-zh-live-subtitles-cpu-offline-0.1.0-setup.exe`.
-The new candidate uses `dist/installer-offline-0.2.0` and may consist of setup
+The new candidate uses `dist/installer-offline-0.3.0`; the retained 0.2.0
+delivery remains in `dist/installer-offline-0.2.0`. Each may consist of setup
 plus native Inno `.bin` slices. Adjacent metadata, reports, logs, instructions
 and checksums belong to their respective version and must not be mixed.
 

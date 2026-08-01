@@ -1065,3 +1065,43 @@ The console capture layer displayed Russian/Chinese with an OEM-code-page
 mojibake representation, while source output and GUI Unicode text remained
 correct. No GPU build, CUDA runtime, VMware, Sandbox, signing or Release action
 was performed.
+
+## Version 0.3.0 resizable overlay and uninstall work (2026-08-01)
+
+The source overlay now keeps native decorated resizing enabled and implements
+eight edge/corner resize directions while borderless. The 520 x 180 minimum,
+explicit Drag target, existing position presets, persistent controls and one Tk
+main thread remain authoritative. Resize events derive label wrap length from
+the actual Canvas width and retain complete Russian/Chinese strings in a bounded,
+scrollable history.
+
+An early content-fitting experiment allowed a long newest entry to enlarge the
+root window. Manual review rejected that behavior because the sudden geometry
+change could cover a presentation and did not restore the prior size naturally.
+The retained implementation treats user-selected geometry as authoritative and
+never grows the root in response to subtitle text. It instead measures the
+newest pair, reduces only the view font down to 8 px Russian / 12 px Chinese,
+restores the configured font when height permits, and keeps exceptional overflow
+complete in the internal scroll area starting at the new pair's first line.
+
+The installer retains the existing AppId and now removes only the product-owned
+`{localappdata}\ru-zh-live-subtitles` tree during uninstall. This includes the
+managed Hugging Face cache and rotated application logs. Model files are no
+longer marked `uninsneveruninstall`; repair/reinstall does not invoke uninstall
+deletion. Version-derived output is isolated under the 0.3.0 installer output,
+while historical installers, public releases and canonical model staging remain
+unchanged.
+
+Source Python 3.11.9 passed `pip check`, all 534 tests, and the 534-test coverage
+run at 80% total coverage (`gui/overlay.py` 75%). The formal CPU packaging
+environment also passed `pip check` and all 534 tests. It reports application
+0.3.0, Torch 2.10.0+cpu, TorchAudio 2.10.0+cpu, Transformers 5.14.1,
+`torch.version.cuda=None`, and `torch.cuda.is_available() == False`.
+
+The existing Silero VAD thresholds, 15-second forced segment limit, GigaAM
+Multilingual Large CTC whole-segment inference and final-only NLLB translation
+were deliberately left unchanged. Native incremental token output is not
+claimed, and periodic full-buffer pseudo-streaming was rejected for this change
+because it would introduce repeated CPU inference, unstable provisional text and
+translation flicker. Frozen onedir, real microphone, complete uninstall and
+installer validation results are recorded only after those gates complete.

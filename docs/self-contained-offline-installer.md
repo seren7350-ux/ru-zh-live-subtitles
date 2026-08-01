@@ -1,4 +1,4 @@
-# Self-contained CPU offline installer 0.2.0
+# Self-contained CPU offline installer 0.3.0
 
 This unsigned per-user course installer combines a provenance-bound CPU onedir
 with all required offline models. It needs no Python, administrator rights,
@@ -14,7 +14,7 @@ non-commercial course use and is not a production or clean-machine claim.
 - free space: at least 12 GiB;
 - system RAM: 8 GiB minimum, 16 GiB recommended;
 - Authenticode: unsigned;
-- output: ignored `dist\installer-offline-0.2.0`.
+- output: ignored `dist\installer-offline-0.3.0`.
 
 ## Pinned bundle
 
@@ -41,18 +41,26 @@ or cache/network fallback.
 
 `SHA256SUMS.txt` covers setup and every numbered `.bin`. All parts must be kept
 in one directory and setup is published last. Any failure removes same-version
-partial output without touching staging or the retained 0.1.0 delivery.
+partial output without touching staging or the retained 0.1.0 and 0.2.0
+deliveries.
+
+Repair and same-version reinstall retain and refresh the complete model payload.
+Uninstall removes the application, installer-created shortcuts and registration,
+plus the strictly scoped `%LOCALAPPDATA%\ru-zh-live-subtitles` directory. That
+directory contains managed Silero, GigaAM and NLLB assets, logs, Hugging Face
+state, Transformers dynamic modules, caches, and other application state. The
+uninstaller never targets the `%LOCALAPPDATA%` root or unrelated directories.
 
 ## Validation boundary
 
 The final candidate is validated only on the development machine from an empty
-managed-model state: install, model-doctor, real RU/ZH GUI session, same-version
-repair, uninstall/model preservation, reinstall and GUI smoke. VMware, Windows
-Sandbox, signing and GitHub Release publication are explicitly outside this
-stage. Exact final build/install/model-load, memory and latency measurements are
-recorded with the ignored build and validation reports.
+managed-model state: install, model-doctor, real RU/ZH GUI session, complete
+uninstall, reinstall, second model-doctor/GUI smoke, and a second complete
+uninstall. VMware, Windows Sandbox, signing and GitHub Release publication are
+explicitly outside this stage. Exact final build/install/model-load, memory and
+latency measurements are recorded with the ignored build and validation reports.
 
-Before the final provenance rebuild, the code-identical frozen 0.2.0 rehearsal
+For historical comparison, the code-identical frozen 0.2.0 rehearsal
 loaded Large CTC for the first time in 4.853 seconds and recognized the real
 8-second Russian WAV in 1.170 seconds (RTF 0.146). A separate full pipeline run
 loaded ASR in 3.747 seconds, NLLB in 1.655 seconds and completed at end-to-end

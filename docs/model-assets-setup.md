@@ -71,10 +71,11 @@ without copying files or setting `HF_HOME`.
 
 Installed shortcuts start with `--offline`. The process sets only its own
 `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; missing assets block Start and
-are never downloaded. Uninstall removes the application and its shortcuts but
-preserves this model root and normal Hugging Face caches. Delete external model
-assets manually only when you intend to reclaim disk space. The next installer
-build must recalculate the total because the Large CTC snapshot alone is
+are never downloaded. Uninstall removes the application, its shortcuts, and the
+entire application-owned `%LOCALAPPDATA%\ru-zh-live-subtitles` directory,
+including managed models, logs, Hugging Face state, Transformers dynamic modules,
+and other application caches. Unrelated caches outside that fixed directory are
+not touched. The next installer build must recalculate the total because the Large CTC snapshot alone is
 2,341,674,025 bytes.
 
 For development only, point the backend at the exact canonical snapshot without
