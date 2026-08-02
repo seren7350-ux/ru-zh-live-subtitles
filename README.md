@@ -12,8 +12,6 @@ Silero VAD 分段，通过 GigaAM Multilingual Large CTC 识别俄语，再用 N
 - 运行方式：CPU-only，不包含 CUDA/GPU 运行时
 - 使用范围：课程、学习和非商业用途
 
-> 本项目是课程交付成果，不是生产级字幕系统。安装器未进行代码签名，最终
-> v0.3.0 修订也没有在 VMware 或另一台洁净 Windows 机器上重新验证。
 
 ## 快速安装
 
