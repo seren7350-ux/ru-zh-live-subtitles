@@ -55,3 +55,10 @@ def positioned(rect: tuple[int, int, int, int], area: tuple[int, int, int, int],
     elif preset == "bottom":
         x, y = left + (aw - width) // 2, top + max(0, ah - height - 20)
     return x, y, width, height
+
+
+def window_placement(window, screen, rect: tuple[int, int, int, int], *,
+                     framed: bool, preset: str = "floating") -> tuple[int, int, int, int]:
+    """Position a Tk client rectangle within the usable area of its monitor."""
+    area = work_area(rect, (screen.winfo_screenwidth(), screen.winfo_screenheight()))
+    return positioned(rect, client_placement_area(window, area, framed=framed), preset)

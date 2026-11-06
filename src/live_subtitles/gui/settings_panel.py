@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
+from .workarea import window_placement
 from .commands import bind_start_stop
 from .state import SubtitleViewState
 
@@ -437,12 +438,9 @@ class SettingsPanel:
     def _fit_into_workarea(self) -> None:
         if not self.exists() or not self.is_visible():
             return
-        from .workarea import work_area, fit_rectangle, client_placement_area
         window = self.window
         rect = (window.winfo_x(), window.winfo_y(), window.winfo_width(), window.winfo_height())
-        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
-        area = client_placement_area(window, area, framed=True)
-        fitted = fit_rectangle(rect, area)
+        fitted = window_placement(window, self.root, rect, framed=True)
         if fitted != rect:
             x, y, width, height = fitted
             window.geometry(f"{width}x{height}+{x}+{y}")

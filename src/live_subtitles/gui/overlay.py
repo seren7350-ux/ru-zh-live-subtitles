@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from ..diagnostic_logging import diagnostic_logger
 from .settings_panel import MicrophonePanelCallbacks, ModelPanelCallbacks, SettingsPanel
+from .workarea import window_placement
 from .commands import bind_start_stop
 from .state import SubtitleViewState
 from .single_line import SingleLineSubtitleView, single_line_text
@@ -791,11 +792,9 @@ class SubtitleOverlay:
 
     def set_position(self, preset: str) -> None:
         self.state.set_position(preset)
-        from .workarea import work_area, positioned, client_placement_area
-        rect = self.window_rectangle()
-        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
-        area = client_placement_area(self.root, area, framed=not self.state.borderless)
-        x, y, width, height = positioned(rect, area, preset)
+        x, y, width, height = window_placement(
+            self.root, self.root, self.window_rectangle(), framed=not self.state.borderless, preset=preset
+        )
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def window_rectangle(self) -> tuple[int, int, int, int]:
@@ -804,10 +803,9 @@ class SubtitleOverlay:
                 max(MIN_WINDOW_HEIGHT, int(self.root.winfo_height())))
 
     def restore_geometry(self, rect: tuple[int, int, int, int]) -> None:
-        from .workarea import fit_rectangle, work_area, client_placement_area
-        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
-        area = client_placement_area(self.root, area, framed=not self.state.borderless)
-        x, y, width, height = fit_rectangle(rect, area)
+        x, y, width, height = window_placement(
+            self.root, self.root, rect, framed=not self.state.borderless
+        )
         self.state.set_position("floating")
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
