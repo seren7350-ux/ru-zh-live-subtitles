@@ -271,6 +271,8 @@ class SettingsPanel:
         self.window.attributes("-alpha", 1.0)
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
         self.window.bind("<Escape>", lambda _event: self.hide())
+        self.window.bind("<F8>", self._start_stop_key)
+        self.window.bind("<Control-space>", self._start_stop_key)
 
         if ttk_module is None:
             from tkinter import ttk as ttk_module
@@ -406,7 +408,7 @@ class SettingsPanel:
         self._body = self.pages["More"]
         if on_restore_defaults is not None:
             self._button("Restore defaults", on_restore_defaults)
-        self._label("Double-click subtitles: show / hide toolbar\nRight-click subtitles: settings\nCtrl+Space: start / stop   Ctrl+Q: exit")
+        self._label("Double-click subtitles: show / hide toolbar\nRight-click subtitles: settings\nF8: start / stop   Ctrl+Q: exit")
         self._body = self.pages["Diagnostics"]
         if on_open_logs is not None:
             self._button("Open logs folder", on_open_logs)
@@ -617,6 +619,14 @@ class SettingsPanel:
         self.window.lift()
         self.state_model.settings_visible = True
         self.window.after_idle(self._fit_into_workarea)
+        # geometry()/deiconify() are asynchronous WM requests. The idle pass
+        # can still see the old position, before the saved geometry is applied.
+        # Recheck once after mapping settles; never clamp while the user drags.
+        self.window.after(100, self._fit_into_workarea)
+
+    def _start_stop_key(self, _event: Any) -> str:
+        self.on_start_stop()
+        return "break"
 
     def _fit_into_workarea(self) -> None:
         if not self.exists() or not self.is_visible():
@@ -819,7 +829,8 @@ class SubtitleOverlay:
         self.root.bind("<Control-h>", lambda _event: self.toggle_toolbar())
         self.root.bind("<Control-q>", lambda _event: self.on_exit())
         self.root.bind("<Control-l>", lambda _event: self.on_clear())
-        self.root.bind("<Control-space>", lambda _event: self._start_stop())
+        self.root.bind("<F8>", self._start_stop_key)
+        self.root.bind("<Control-space>", self._start_stop_key)
         self.root.bind("<Escape>", lambda _event: self.hide_settings_panel())
         self.root.bind("<F11>", lambda _event: self.toggle_borderless())
         bind_caption = getattr(self.subtitle_view, "set_pointer_handlers", None)
@@ -833,6 +844,10 @@ class SubtitleOverlay:
                 "<Motion>": self._update_resize_cursor,
                 "<Leave>": self._clear_resize_cursor,
             })
+
+    def _start_stop_key(self, _event: Any) -> str:
+        self._start_stop()
+        return "break"
 
     def _on_context_request(self, _event: Any) -> None:
         self.toggle_settings_panel()

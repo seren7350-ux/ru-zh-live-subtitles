@@ -398,8 +398,9 @@ class GuiRuntime:
         missing = ", ".join(status.model_id for status in report.missing_models)
         return (
             f"Model setup required: {missing}. Model root: "
-            f"{display_path(report.model_root)}. Model assets are not included in the "
-            "installer. Offline mode will not download them. Prepare the assets and "
+            f"{display_path(report.model_root)}. Required model files were not found "
+            "or failed validation. Offline mode will not download them. Install the "
+            "offline model bundle or follow Model setup instructions, then "
             "choose Recheck model assets in Settings."
         )
 

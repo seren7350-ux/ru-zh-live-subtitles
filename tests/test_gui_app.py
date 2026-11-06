@@ -308,7 +308,8 @@ def test_missing_models_block_start_without_worker_or_microphone(
     assert controller.device_indexes == []
     assert gui.state.status == "Model setup required"
     assert "pinned" not in gui.state.latest_error.lower()
-    assert "not included" in gui.state.latest_error
+    assert "offline model bundle" in gui.state.latest_error
+    assert "not included" not in gui.state.latest_error
 
 
 def test_recheck_success_allows_next_start(

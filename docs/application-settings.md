@@ -15,7 +15,9 @@ Move to top/bottom positions the window within its nearest monitor's usable
 desktop area. Both placements remain freely draggable. There is no separate
 Floating mode. Drag the subtitle/background area to move; use window edges to
 resize. Double-click hides/shows the toolbar, right-click opens Settings.
-Ctrl+Space starts/stops; Ctrl+Q exits. Reactivating an invisible or toolbar-hidden
+F8 starts/stops from the subtitle or settings window; Ctrl+Q exits. Ctrl+Space
+remains a compatibility shortcut but may be intercepted by an input method.
+Reactivating an invisible or toolbar-hidden
 window from the taskbar exposes Settings so it can be recovered.
 
 Appearance, window geometry and microphone preference are saved atomically to

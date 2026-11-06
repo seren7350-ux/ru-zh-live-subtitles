@@ -78,6 +78,9 @@ class FakeWidget:
     def after_idle(self, callback: object) -> None:
         callback()
 
+    def after(self, delay: int, callback: object) -> None:
+        callback()
+
     def winfo_width(self) -> int:
         return int(self.options.get("width", 640))
 
@@ -582,6 +585,33 @@ def test_settings_panel_is_persistent_and_close_withdraws() -> None:
     assert panel.window.destroy_calls == 0
     assert panel.window.deiconify_calls == 2
     assert panel.window.lift_calls == 2
+
+
+def test_settings_rechecks_position_after_async_saved_geometry(monkeypatch) -> None:
+    from live_subtitles.gui import workarea
+    monkeypatch.setattr(workarea, "work_area", lambda *_args: (0, 0, 1920, 1040))
+    panel, _root, _tk, _calls = build_panel()
+    delayed = []
+    panel.window.after = lambda delay, callback: delayed.append(callback)
+    panel.window.options.update(x=50, y=100, width=440, height=560)
+    panel.show()  # idle sees the old in-bounds geometry
+    panel.window.options['y'] = 950  # WM applies the saved position later
+    delayed.pop()()
+    assert panel.window.geometry() == '440x560+50+480'
+    panel.hide()
+    panel.window.options['y'] = 950
+    panel._fit_into_workarea()  # a late callback must not remap a hidden dialog
+    assert panel.window.state() == 'withdrawn'
+
+
+def test_f8_starts_or_stops_from_settings_and_stops_event_propagation() -> None:
+    panel, _root, _tk, calls = build_panel()
+    assert panel.window.bindings['<F8>'](None) == 'break'
+    assert calls == ['start-stop']
+    overlay, root = overlay_stub()
+    overlay._start_stop = Mock()
+    assert overlay._start_stop_key(None) == 'break'
+    overlay._start_stop.assert_called_once_with()
 
 
 def test_settings_panel_inherits_topmost_when_shown_without_polling_wm_state() -> None:
