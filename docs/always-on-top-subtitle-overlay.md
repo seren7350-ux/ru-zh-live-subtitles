@@ -10,40 +10,60 @@ click-through, global shortcuts, PowerPoint/Acrobat integration, or packaging.
 
 ## Fixed interaction model
 
-The root always contains a persistent 38 px control bar and a subtitle content
-area. The bar exposes Drag, status, Start/Stop, Pinned/Unpinned, Settings, and
-Exit. The old compact, expanded, and captions-only modes no longer exist.
-Starting or stopping a session changes the primary button state but never hides
-the bar.
+The root contains one reusable 38 px control bar and a subtitle content area.
+The bar exposes Drag, status, Start/Stop, Pinned/Unpinned, Settings, and Exit.
+Double-clicking the subtitle field or non-button area toggles the bar; Ctrl+H
+and Settings provide the same action. Starting or stopping a session preserves
+that choice. Buttons do not trigger the drag or toolbar-toggle gestures.
 
-## Resizing and complete subtitle history
+## Resizing and single-line subtitles
 
 Version 0.3.0 keeps native Tk/Windows resizing enabled whenever Borderless is
 off. In Borderless mode, a seven-pixel root-edge hit area maps the four edges
 and four corners to the corresponding resize cursor. A drag computes geometry
 from the captured pointer/window origin, clamps it to 520 x 180 pixels, and
-marks the position preset as floating. The explicit Drag region ignores resize
-hits, and subtitle content is not a window-drag target.
+marks the position preset as floating. In the current source, subtitle text,
+blank content, status labels and toolbar blank areas can drag the window after
+a four-pixel movement threshold. Edge hits resize before any drag action;
+buttons, sliders and selectors keep their normal behavior.
 
-The subtitle area is a Canvas-backed vertical history. Every retained entry has
-separate complete Russian and Chinese labels; there is no string slicing,
-character limit, or ellipsis. Canvas Configure events set each label's
-wraplength from the current actual content width and ignore an unchanged size.
-The user's font setting is authoritative for history. Each new Russian/Chinese
-pair is measured after Tk lays it out, but content never changes the
-user-selected root-window geometry. Only the newest pair may temporarily reduce
-its view fonts as needed, down to 8 px Russian / 12 px Chinese; every older pair
-remains at the configured sizes. When another pair arrives, the former newest
-pair returns to the configured sizes before the new pair is fitted. Increasing
-the height restores the newest pair too. Changing a font setting applies the new
-configured sizes to the complete history, after which only the newest pair may
-adapt. If an exceptional newest pair still exceeds the viewport at the minimum
-sizes, all text remains intact in the internal scroll area and automatic
-following starts at that pair's beginning rather than hiding its first lines.
-New entries follow the bottom by default, scrolling upward pauses that follow
-behavior, and Clear or a new session resets the entry views, font state,
-scrollregion, and bottom-following state. The persistent control bar and the
-separate error row remain outside the scrolling area.
+The source revision after v0.3.0 replaces vertical subtitle history with the
+latest bilingual subtitle. Russian and Chinese each occupy one Canvas text
+line. Embedded whitespace and line breaks become spaces; text is neither
+truncated nor replaced with an ellipsis. There is no vertical scrollbar or
+mouse-wheel history browsing. Older text is retained in the session SRT.
+
+Actual Canvas text bounds determine overflow and vertical fitting, including
+font fallback and DPI scaling. Configured font sizes are restored when there
+is enough height; otherwise the view temporarily reduces them down to 8 pt
+Russian / 12 pt Chinese. The window minimum height accommodates both complete
+rows at those minimum sizes. During a resize that cannot yet fit a complete
+row, the view waits for layout rather than drawing half a line.
+
+Only an overflowing language moves horizontally, at 42 pixels per second with
+1.2-second pauses at the beginning and end. A fitting line stays stationary.
+New text, changed fonts, visibility, or viewport dimensions restart the layout;
+unchanged GUI polls do not restart animation. Clear and widget destruction
+cancel animation. The control bar and error row remain outside the subtitle
+viewport. This overflow-only marquee is part of the teacher's requirements;
+the user's 2026-11-05 follow-up concerned a leftover test window, not this feature.
+
+Each accepted Start creates an exclusive UTF-8 SRT file under
+`~/ru-zh-live-subtitles/subtitles`, outside the application data removed by the
+existing uninstaller. `--srt-dir` overrides that directory; Settings displays
+the current file and opens its resolved folder. Every successful subtitle is
+saved as Russian then Chinese, regardless of the Show Russian setting. Audio
+sample offsets provide the start/end times, preserving initial silence and
+gaps independently of processing latency. VAD pre-roll/padding remains part of
+those segment boundaries; these are segment timestamps, not word alignment.
+
+Each cue is written and its file closed immediately. Clear, Stop, a worker
+crash, and a subsequent Start do not remove completed cues. A restart drains
+the old session's queued tail before creating a new file. A write failure is
+logged and stays visible while live subtitles continue; Stop/Start retries in
+a new file. A partially written cue is rolled back when the filesystem allows
+it. Completed writes survive a process exit; power-loss durability is not
+guaranteed. Demo mode saves a synthetic timeline in the same format.
 
 Settings has one responsibility: show or hide the SettingsPanel. Root
 right-click invokes the same method as a shortcut. A single root binding covers
@@ -60,10 +80,32 @@ the root's current topmost value once, and lifts once. If the window manager has
 actually destroyed it or a Tk call reports a stale reference, the overlay clears
 that reference and creates one replacement.
 
-The panel contains Start/Stop, Clear, Show Russian, Always on top, Borderless,
-top/bottom/floating position presets, opacity, Chinese and Russian font sizes,
-and Exit. It uses no `grab_set`, `focus_force`, background Tk calls, ordinary
+The panel contains Start/Stop, Clear, Open subtitles folder, the current SRT
+path/save status, Show Russian, Always on top, Borderless, Toolbar, Black text
+outline, top/bottom/floating position presets, separate background/text opacity,
+Chinese and Russian font sizes, and Exit. It uses no `grab_set`, `focus_force`, background Tk calls, ordinary
 `tk.Menu`, or repeating lift/topmost timer.
+
+Windows uses two owned surfaces: the main window carries the background and
+controls; a color-keyed text surface supplies independent text alpha and black
+outline strokes. Both opacity controls range from 0 to 100 percent. The outline
+shares text opacity and moves with the glyphs. The helper does not advertise a
+taskbar entry or activate itself; it follows the main window's position,
+visibility and topmost state. Before a borderless wrapper replacement, its old
+native ownership is detached and then reattached to the current wrapper.
+After mapping, the helper checks that it is above its background and corrects
+only that relative order when needed. Native lifecycle events enter Python
+through coalesced Tcl idle callbacks, avoiding synchronous reentry from Win32
+window operations; destruction cancels pending callbacks and subtitle animation.
+
+Settings always stays fully opaque. Explicit reveal, remapping or later root
+activation opens Settings when background opacity is zero or the toolbar is
+hidden, without resetting those choices. Dismissing Settings suppresses the
+immediate focus-return reopening. Native zero-alpha/color-key pixels pass input
+through to the window below; reopening the program remains the recovery path
+even when both surfaces are invisible. Non-Windows Tk retains an opaque caption
+fallback with outline and text hiding at zero; independent partial text alpha
+is Windows-specific.
 
 ## Borderless and topmost behavior
 
@@ -73,7 +115,20 @@ One `after_idle` callback restores geometry, topmost, and opacity, then refreshe
 labels. The root, widget tree, bindings, subtitle history, controller, and live
 session are not rebuilt.
 
-Pinned/Unpinned is always available on the main bar. An explicit change applies
+The Windows source build after v0.3.0 keeps the main window in the taskbar
+in both modes. Tk can replace the native wrapper when changing the border.
+The overlay looks up the current wrapper, preserves its unrelated style bits
+and registers it as an application window. The Settings panel remains owned
+by the main window. [Windows taskbar window styles](https://learn.microsoft.com/en-us/windows/win32/shell/taskbar)
+
+Launching the live GUI again in the same Windows user session asks the
+existing window to show itself. Its current microphone session, captions and
+settings are preserved. The model-free demo has its own instance. A reveal
+request restores a minimized or withdrawn window and asks Windows to activate
+it. When Windows restricts foreground activation, the app calls for attention
+on its taskbar button. [Windows foreground activation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow)
+
+Pinned/Unpinned is available on the main bar while it is visible. An explicit change applies
 `root.attributes("-topmost", value)` immediately and synchronizes an existing
 panel once. Unpinning does not stop processing, and repinning does not start a
 new session. Rendering subtitles never calls focus, focus_set, focus_force,

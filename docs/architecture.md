@@ -92,10 +92,10 @@ subtitle results are capped at 8,192 entries.
 ```text
 GUI main thread
   -> one Tk root
-     -> persistent control bar
+     -> reusable control bar (double-click hide/show)
      -> subtitle content area
      -> one optional persistent SettingsPanel Toplevel
-  <- immutable events from one bounded multiprocessing queue
+  <- bounded local event queue <- dedicated pipe receiver thread
 Spawned live-session process
   -> cached model preparation
   -> PortAudio callback and bounded audio queue
@@ -118,16 +118,54 @@ and opacity. Neither operation rebuilds widgets or creates a new live session.
 
 Tk calls stay on the main thread. Model preparation, audio capture, VAD, ASR,
 and translation stay in the spawned child. Background work emits immutable
-queue events; subtitle rendering never changes focus, grabs input, or repeatedly
-reapplies window-manager state. Raw single-writer process counters avoid a
-Windows synchronization lock being abandoned during child shutdown. Stop sets
-a process event without blocking Tk, and Exit polls completion from the Tk event
-loop before destroying the root.
+events over a one-way pipe; subtitle rendering never changes focus, grabs input,
+or repeatedly reapplies window-manager state. A dedicated parent receiver keeps
+pipe reads off Tk, including incomplete frames when a worker is killed. Raw
+single-writer counters and a raw stop flag keep Tk away from process-shared
+synchronization locks. Exit polls completion and drains the final events before
+destroying the root, escalating to terminate/kill if cooperative shutdown times
+out. Each new Start receives a fresh communication channel.
+
+Worker exit codes are checked after the receiver drains its tail. Unexpected
+death becomes a visible fatal error, and the primary button returns to Start
+once the worker is gone. GUI timer callbacks schedule their next tick even when
+rendering raises. Full, redacted exception chains are written to rotating parent
+and worker logs. See the [repair goals](reliability-roadmap.md) for boundaries.
 
 Only one child may be alive at a time. Stop releases its microphone and workers;
 a later Start intentionally creates a fresh child and reloads each model once
 from the existing local caches. It does not reuse model objects across stopped
-sessions, create concurrent microphones, or persist subtitle text.
+sessions or create concurrent microphones. The GUI now persists successful
+subtitle results in a new UTF-8 SRT for each accepted Start. Audio sample offsets
+travel through `LiveSubtitleResult` and `SubtitleEvent`; translation completion
+time is used only for latency metrics. Each SRT append closes its file before
+returning, and a save failure leaves a separate persistent UI warning while
+captions continue. Restart drains the preceding session's tail first.
+
+The subtitle viewport displays only the latest pair as two unwrapped Canvas
+text items. Actual glyph bounds determine vertical font fitting and whether
+each language needs horizontal animation. Fitting lines have no animation
+timer; the window exposes no vertical subtitle history. Settings opens the
+SRT directory, which defaults to a user-owned folder outside uninstall data.
+
+On Windows a color-keyed, non-activating owned Tk surface renders the caption
+glyphs with their own alpha and optional black outline. The main root keeps
+background/control alpha; Settings remains opaque. Text-layer ownership and
+geometry follow current root wrappers across border changes and minimize/
+restore. Its pointer handlers share the root's edge-resize, drag and double-
+click rules. A reveal request can open Settings even at zero background alpha.
+
+Windows GUI entry points elect one primary per command, user SID and login
+session before constructing a controller. A named memory mapping carries
+coalesced reveal requests and generation-specific receipts. Launchers use a
+short named mutex transaction, while the Tk thread only attempts that mutex
+with a zero timeout. An initializing primary keeps the request until its GUI
+poll, and a closing or crashed primary can be replaced after releasing its
+mapping. Reopening the live GUI preserves the existing engine session.
+
+The main Tk wrapper is registered with the shell after mapping and after
+borderless transitions. Explicit reveal requests restore and activate it.
+Normal subtitle updates do not touch taskbar or foreground state.
 
 ## Future target
 

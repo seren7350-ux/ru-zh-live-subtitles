@@ -112,6 +112,7 @@ class LiveTerminalSession:
             external_fatal_event=self._fatal_event,
         )
         self._prepare_metrics: PipelinePrepareMetrics | None = None
+        self.preparation_progress: Callable[[str], None] | None = None
 
     def request_stop(self, reason: str = "user requested stop") -> None:
         """Request a normal, idempotent stop without blocking the caller."""
@@ -121,9 +122,12 @@ class LiveTerminalSession:
     def prepare(self) -> PipelinePrepareMetrics:
         """Validate VAD/device first, then preload ASR and translation exactly once."""
 
+        if self.preparation_progress and self._prepare_metrics is None:
+            self.preparation_progress("voice detection (VAD)")
         self.vad_session.prepare()
         if self._prepare_metrics is None:
-            self._prepare_metrics = self.pipeline.prepare()
+            self._prepare_metrics = (self.pipeline.prepare(self.preparation_progress)
+                                     if self.preparation_progress else self.pipeline.prepare())
         return self._prepare_metrics
 
     def run(self) -> LiveTerminalResult:

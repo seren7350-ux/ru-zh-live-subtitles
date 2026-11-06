@@ -21,7 +21,7 @@ def test_event_is_immutable() -> None:
 def test_state_defaults_and_status_flags() -> None:
     state = SubtitleViewState()
     assert state.history_lines == 20
-    assert state.display_lines == 2
+    assert state.display_lines == 1
     assert state.opacity == 0.88
     assert state.show_russian and state.topmost and state.borderless
     assert state.position == "bottom"
@@ -34,12 +34,12 @@ def test_state_defaults_and_status_flags() -> None:
     assert state.listening and not state.preparing
 
 
-def test_history_is_bounded_and_only_latest_two_are_visible() -> None:
+def test_history_is_bounded_and_only_latest_subtitle_is_visible() -> None:
     state = SubtitleViewState(history_lines=3)
     for index in range(1, 6):
         assert state.add_subtitle(entry(index))
     assert [item.index for item in state.entries] == [3, 4, 5]
-    assert [item.index for item in state.visible_entries] == [4, 5]
+    assert [item.index for item in state.visible_entries] == [5]
 
 
 def test_duplicate_index_is_ignored() -> None:
@@ -65,8 +65,11 @@ def test_clear_removes_only_in_memory_text_and_error() -> None:
         ({"history_lines": 0}, "History"),
         ({"history_lines": 101}, "History"),
         ({"display_lines": 0}, "Display"),
-        ({"opacity": 0.49}, "Opacity"),
-        ({"opacity": 1.01}, "Opacity"),
+        ({"display_lines": 2}, "Display"),
+        ({"opacity": -0.01}, "opacity"),
+        ({"opacity": 1.01}, "opacity"),
+        ({"text_opacity": -0.01}, "opacity"),
+        ({"text_opacity": 1.01}, "opacity"),
         ({"chinese_font_size": 15}, "Chinese"),
         ({"russian_font_size": 49}, "Russian"),
     ],
@@ -82,6 +85,19 @@ def test_segment_error_does_not_replace_successful_subtitle() -> None:
     state.set_segment_error("Segment 2: translation failed")
     assert state.entries == (entry(1),)
     assert "translation failed" in state.latest_error
+
+
+def test_background_and_text_opacity_are_independent_including_zero() -> None:
+    state = SubtitleViewState(background_opacity=0.0, text_opacity=1.0, text_outline=True)
+    assert state.opacity == state.background_opacity == 0.0
+    assert state.text_opacity == 1.0 and state.text_outline and state.toolbar_visible
+    state.background_opacity = 1.0
+    state.text_opacity = 0.0
+    state.toolbar_visible = False
+    state.begin_session()
+    state.clear()
+    assert state.opacity == 1.0 and state.text_opacity == 0.0
+    assert state.text_outline and not state.toolbar_visible
 
 
 @pytest.mark.parametrize("name", ["top", "bottom", "floating"])

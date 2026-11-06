@@ -128,15 +128,19 @@ class OfflineAudioTranslationPipeline:
     def translator(self) -> Any:
         return self._get_translator()
 
-    def prepare(self) -> PipelinePrepareMetrics:
+    def prepare(self, on_progress: Callable[[str], None] | None = None) -> PipelinePrepareMetrics:
         """Create and preload exactly one recognizer and translator."""
 
         if self.prepare_metrics is not None:
             return self.prepare_metrics
         started = self._clock()
+        if on_progress:
+            on_progress("speech recognition (ASR)")
         recognizer = self._get_recognizer()
         recognizer.prepare()
         asr_finished = self._clock()
+        if on_progress:
+            on_progress("Chinese translation")
         translator = self._get_translator()
         translator.prepare()
         finished = self._clock()

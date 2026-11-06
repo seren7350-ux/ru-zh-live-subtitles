@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..audio.wav_io import write_pcm16_mono_wav
+from ..diagnostic_logging import diagnostic_logger, sanitize_diagnostic_text
 from ..pipeline.offline_file import (
     OfflineAudioTranslationPipeline,
     PipelineAsrError,
@@ -69,6 +70,9 @@ class LiveSubtitleResult:
     succeeded: bool
     error_stage: str | None
     error: str | None
+    # Audio sample positions relative to capture start, including initial silence.
+    start_seconds: float | None = None
+    end_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,9 @@ class SegmentProcessor:
         self._next_index = 1
         self._accepting = False
         self._fatal_error: str | None = None
+        # Only the serial worker owns this context. Keep it through temporary
+        # file cleanup and result callbacks, where an exception may echo text.
+        self._active_sensitive_text: tuple[str, ...] = ()
         self._results: deque[LiveSubtitleResult] = deque(maxlen=8_192)
         self._successful = 0
         self._failed = 0
@@ -271,7 +278,9 @@ class SegmentProcessor:
             chinese_text="",
             succeeded=False,
             error_stage=stage,
-            error=str(error),
+            error=sanitize_diagnostic_text(error, sensitive_text=(russian_text,)),
+            start_seconds=item.segment.start_sample / SAMPLE_RATE,
+            end_seconds=item.segment.end_sample / SAMPLE_RATE,
         )
 
     def _process(self, item: QueuedSegment) -> LiveSubtitleResult:
@@ -285,15 +294,30 @@ class SegmentProcessor:
         try:
             path = self._temp_wav(item.segment)
             try:
+                diagnostic_logger().info(
+                    "ASR stage started; segment=%d; audio_seconds=%.3f",
+                    item.index, item.segment.duration_seconds,
+                )
                 russian_text, asr_metrics = self.pipeline.transcribe_file(path)
             except PipelineAsrError as exc:
+                diagnostic_logger().exception("ASR stage failed; segment=%d", item.index)
                 result = self._result_for_error(item, processing_started, "asr", exc)
             else:
+                self._active_sensitive_text = (russian_text,)
                 russian_ready = self._clock()
                 asr_seconds = float(asr_metrics.recognition_seconds)
+                diagnostic_logger().info(
+                    "ASR stage finished; segment=%d; elapsed_seconds=%.3f",
+                    item.index, asr_seconds,
+                )
                 try:
+                    diagnostic_logger().info("Translation stage started; segment=%d", item.index)
                     chinese_text, translation_metrics = self.pipeline.translate_text(russian_text)
                 except PipelineTranslationError as exc:
+                    diagnostic_logger().exception(
+                        "Translation stage failed; segment=%d", item.index,
+                        extra={"sensitive_text": (russian_text,)},
+                    )
                     result = self._result_for_error(
                         item,
                         processing_started,
@@ -304,7 +328,13 @@ class SegmentProcessor:
                         asr_seconds=asr_seconds,
                     )
                 else:
+                    self._active_sensitive_text = (russian_text, chinese_text)
                     chinese_ready = self._clock()
+                    translation_seconds = float(translation_metrics.translation_seconds)
+                    diagnostic_logger().info(
+                        "Translation stage finished; segment=%d; elapsed_seconds=%.3f",
+                        item.index, translation_seconds,
+                    )
                     duration = item.segment.duration_seconds
                     processing = max(0.0, chinese_ready - processing_started)
                     result = LiveSubtitleResult(
@@ -319,7 +349,7 @@ class SegmentProcessor:
                         audio_duration_seconds=duration,
                         queue_wait_seconds=max(0.0, processing_started - item.queued_at),
                         asr_seconds=asr_seconds,
-                        translation_seconds=float(translation_metrics.translation_seconds),
+                        translation_seconds=translation_seconds,
                         processing_seconds=processing,
                         rtf=processing / duration if duration > 0 else None,
                         vad_release_latency_seconds=max(
@@ -336,6 +366,8 @@ class SegmentProcessor:
                         succeeded=True,
                         error_stage=None,
                         error=None,
+                        start_seconds=item.segment.start_sample / SAMPLE_RATE,
+                        end_seconds=item.segment.end_sample / SAMPLE_RATE,
                     )
         finally:
             if path is not None:
@@ -361,8 +393,12 @@ class SegmentProcessor:
             self.on_result(result)
 
     def _worker(self) -> None:
+        result: LiveSubtitleResult | None = None
+        diagnostic_logger().info("Subtitle processing worker started")
         try:
             while True:
+                result = None
+                self._active_sensitive_text = ()
                 item = self._queue.get()
                 try:
                     if item is _STOP:
@@ -383,8 +419,13 @@ class SegmentProcessor:
                 finally:
                     self._queue.task_done()
         except Exception as exc:
-            self._fatal_error = (
-                f"Subtitle processing worker failed ({type(exc).__name__}): {exc}"
+            diagnostic_logger().exception(
+                "Subtitle processing worker failed; processed_segments=%d", self._dequeued,
+                extra={"sensitive_text": self._active_sensitive_text},
+            )
+            self._fatal_error = sanitize_diagnostic_text(
+                f"Subtitle processing worker failed ({type(exc).__name__}): {exc}",
+                sensitive_text=self._active_sensitive_text,
             )
             self.fatal_event.set()
             while True:
@@ -395,7 +436,13 @@ class SegmentProcessor:
                 else:
                     self._queue.task_done()
         finally:
+            self._active_sensitive_text = ()
             self._worker_exited.set()
+            diagnostic_logger().info(
+                "Subtitle processing worker exited; reason=%s; processed_segments=%d",
+                "infrastructure error" if self._fatal_error else "stop signal",
+                self._dequeued,
+            )
 
     def finish(self) -> None:
         """Stop accepting, drain complete segments, and join the worker."""

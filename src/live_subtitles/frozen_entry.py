@@ -68,25 +68,23 @@ def run_frozen(
     if not effective_arguments:
         effective_arguments = default_arguments(mode)
 
-    # This import intentionally follows multiprocessing.freeze_support() in the
-    # tiny packaging/entrypoint.py script.
-    from .cli import main as cli_main
-
+    result: int | None = None
     try:
+        # Import after freeze_support() and within the logged startup boundary.
+        from .cli import main as cli_main
+
         result = int(cli_main(effective_arguments))
     except SystemExit as exc:
         result = int(exc.code or 0)
         if logger is not None and result:
             logger.warning("Command-line parsing failed; exit_code=%s", result)
-    except BaseException as exc:
+    except BaseException:
         if logger is not None:
-            # Log only the exception class: exception text can contain a path,
-            # microphone name, user text, or other data not suitable for logs.
-            logger.error("Unhandled launcher failure; type=%s", type(exc).__name__)
+            logger.exception("Unhandled launcher failure")
         raise
     finally:
         if logger is not None:
-            logger.info("Application exit")
+            logger.info("Application exit; exit_code=%s", result if result is not None else "unhandled")
     return result
 
 

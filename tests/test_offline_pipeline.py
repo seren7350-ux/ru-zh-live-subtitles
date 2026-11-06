@@ -106,6 +106,21 @@ def make_pipeline(
     return pipeline, recognizer_creations, translator_creations
 
 
+def test_preparation_reports_stages_and_can_cancel_before_translation():
+    recognizer, translator = FakeRecognizer(), FakeTranslator()
+    pipeline, _, _ = make_pipeline(recognizer, translator, times=[0, 1, 2])
+    stages = []
+    def progress(stage):
+        stages.append(stage)
+        if stage == "Chinese translation":
+            raise InterruptedError("cancelled")
+    with pytest.raises(InterruptedError):
+        pipeline.prepare(progress)
+    assert stages == ["speech recognition (ASR)", "Chinese translation"]
+    assert recognizer.prepare_calls == 1
+    assert translator.prepare_calls == 0
+
+
 def test_default_translation_candidate_is_nllb() -> None:
     assert DEFAULT_TRANSLATION_ENGINE == "nllb"
     assert DEFAULT_TRANSLATION_MODEL == DEFAULT_NLLB_MODEL

@@ -49,3 +49,9 @@ def log_directory() -> Path:
     """Return the per-user diagnostic log directory without creating it."""
 
     return user_data_directory() / "logs"
+
+
+def subtitle_directory() -> Path:
+    """Keep user transcripts outside the application data removed by uninstall."""
+
+    return Path.home() / APPLICATION_DIRECTORY_NAME / "subtitles"

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from live_subtitles.audio.recording import AudioDevice, AudioDeviceError
+from live_subtitles import diagnostic_logging
 from live_subtitles.cli import build_parser, main
 from live_subtitles.gui import app
 from live_subtitles.gui.controller import GuiEventQueue, GuiMetrics
@@ -25,12 +26,20 @@ class FakeOverlay:
         self.render_count = 0
         self.running_states: list[tuple[bool, bool]] = []
         self.settings_panel = None
+        self.state = _state
+        self.running = False
+        self.closing = False
+        self.on_start = callbacks["on_start"]
+        self.on_stop = callbacks["on_stop"]
 
     def render(self) -> None:
         self.render_count += 1
 
     def set_running(self, running: bool, *, closing: bool = False) -> None:
         self.running_states.append((running, closing))
+        self.running = running
+        self.closing = closing
+        self.render()
 
 
 class FakeRoot:
@@ -53,6 +62,29 @@ class FakeController:
         self.started = 0
         self.stop_reasons: list[str] = []
         self.device_indexes: list[int | None] = []
+        self.pending_events: list[object] = []
+        self.terminated = 0
+        self.killed = 0
+        self.disposed = 0
+        self.tail_pending = False
+
+    @property
+    def shutdown_complete(self) -> bool:
+        return not self.running and not self.tail_pending
+
+    def poll_process(self) -> tuple[object, ...]:
+        events = tuple(self.pending_events)
+        self.pending_events.clear()
+        return events
+
+    def terminate(self) -> None:
+        self.terminated += 1
+
+    def kill(self) -> None:
+        self.killed += 1
+
+    def dispose(self) -> None:
+        self.disposed += 1
 
     def start(self) -> bool:
         if self.running:
@@ -72,6 +104,17 @@ class FakeController:
             return False
         self.device_indexes.append(device_index)
         return True
+
+
+@pytest.fixture
+def isolated_subtitle_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    monkeypatch.setattr(app, "subtitle_directory", lambda: tmp_path / "subtitles")
+    return tmp_path / "subtitles"
+
+
+@pytest.fixture(autouse=True)
+def use_isolated_subtitle_directory(isolated_subtitle_directory: Path) -> None:
+    pass
 
 
 @pytest.fixture
@@ -102,7 +145,8 @@ def test_gui_command_help_starts_without_window(command: str, capsys: pytest.Cap
 @pytest.mark.parametrize(
     "argv",
     [
-        ["overlay-demo", "--opacity", "0.4"],
+        ["overlay-demo", "--opacity", "-0.01"],
+        ["overlay-demo", "--text-opacity", "1.01"],
         ["overlay-demo", "--history-lines", "101"],
         ["overlay-demo", "--chinese-font-size", "10"],
         ["overlay-demo", "--russian-font-size", "99"],
@@ -112,6 +156,18 @@ def test_gui_command_help_starts_without_window(command: str, capsys: pytest.Cap
 def test_gui_cli_bounds_are_enforced(argv: list[str]) -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(argv)
+
+
+def test_gui_cli_accepts_independent_opacity_extremes_and_outline() -> None:
+    parser = build_parser()
+    args = parser.parse_args([
+        "overlay-demo", "--background-opacity", "0", "--text-opacity", "1", "--text-outline",
+    ])
+    state = app._state_from_args(args)
+    assert state.background_opacity == 0 and state.text_opacity == 1 and state.text_outline
+    args = parser.parse_args(["overlay-demo", "--opacity", "1", "--text-opacity", "0", "--no-text-outline"])
+    state = app._state_from_args(args)
+    assert state.background_opacity == 1 and state.text_opacity == 0 and not state.text_outline
 
 
 def test_start_does_not_duplicate_background_session(runtime: tuple[app.GuiRuntime, FakeRoot, FakeController]) -> None:
@@ -356,7 +412,7 @@ def test_close_destroys_after_background_finishes(runtime: tuple[app.GuiRuntime,
     assert root.destroyed
 
 
-def test_close_timeout_is_explicit(runtime: tuple[app.GuiRuntime, FakeRoot, FakeController]) -> None:
+def test_close_timeout_terminates_then_kills_and_waits_for_exit(runtime: tuple[app.GuiRuntime, FakeRoot, FakeController]) -> None:
     gui, root, controller = runtime
     controller.running = True
     gui.close()
@@ -365,7 +421,20 @@ def test_close_timeout_is_explicit(runtime: tuple[app.GuiRuntime, FakeRoot, Fake
     gui._poll_close()
     assert gui.exit_code == 2
     assert "timed out" in gui.state.latest_error
-    assert root.after_calls[-1][0] == 250
+    assert controller.terminated == 1
+    assert controller.killed == 0
+    assert not root.destroyed
+    gui._poll_close()
+    assert controller.terminated == 1
+    gui.clock = lambda: gui.close_started_at + 40.0  # type: ignore[assignment]
+    gui._poll_close()
+    gui._poll_close()
+    assert controller.killed == 1
+    assert not root.destroyed
+    controller.running = False
+    gui._poll_close()
+    assert root.destroyed
+    assert controller.disposed == 1
 
 
 def test_event_consumption_updates_subtitle_and_render_latency(runtime: tuple[app.GuiRuntime, FakeRoot, FakeController]) -> None:
@@ -404,7 +473,7 @@ def test_controller_source_has_no_tk_calls_and_no_user_path() -> None:
     assert "c:\\users\\" not in source
 
 
-def test_cli_uses_process_isolation_without_persisting_subtitles() -> None:
+def test_cli_uses_process_isolation() -> None:
     source = Path(app.__file__).read_text(encoding="utf-8")
     assert "LiveProcessOverlayController(" in source
     assert "write_text(" not in source
@@ -413,20 +482,29 @@ def test_cli_uses_process_isolation_without_persisting_subtitles() -> None:
 
 def test_tk_callback_exception_is_visible_and_requests_safe_stop(
     runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
-    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     gui, _root, controller = runtime
+    monkeypatch.setattr(diagnostic_logging, "log_directory", lambda: tmp_path)
+    monkeypatch.setattr(sys, "stderr", diagnostic_logging.NullTextStream())
+    logger = diagnostic_logging.configure_diagnostic_logging()
     try:
-        raise RuntimeError("synthetic callback failure")
-    except RuntimeError as exc:
-        gui._handle_tk_callback_exception(type(exc), exc, exc.__traceback__)
+        try:
+            raise RuntimeError("synthetic callback failure")
+        except RuntimeError as exc:
+            gui._handle_tk_callback_exception(type(exc), exc, exc.__traceback__)
+        content = (tmp_path / "application.log").read_text(encoding="utf-8")
+    finally:
+        for handler in tuple(logger.handlers):
+            if getattr(handler, "_ru_zh_handler", False):
+                handler.close()
+                logger.removeHandler(handler)
     assert gui.exit_code == 2
     assert gui.state.status == "Fatal error"
     assert "synthetic callback failure" in gui.state.latest_error
     assert controller.stop_reasons == ["GUI callback error"]
-    stderr = capsys.readouterr().err
-    assert "Traceback" in stderr
-    assert "RuntimeError: synthetic callback failure" in stderr
+    assert "Traceback" in content
+    assert "RuntimeError: synthetic callback failure" in content
 
 
 def test_runtime_installs_tk_callback_exception_handler(
@@ -434,3 +512,399 @@ def test_runtime_installs_tk_callback_exception_handler(
 ) -> None:
     gui, root, _controller = runtime
     assert root.report_callback_exception == gui._handle_tk_callback_exception
+
+
+def test_dead_worker_restores_primary_button_and_allows_restart(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+) -> None:
+    from live_subtitles.gui.overlay import SubtitleOverlay
+
+    gui, _root, controller = runtime
+    gui.start()
+    controller.running = False
+    controller.pending_events.append(FatalErrorEvent("Worker died; exitcode=23", 1.0))
+    gui.poll()
+    assert gui.state.status == "Fatal error"
+    assert not gui.overlay.running
+    # Exercise the actual button dispatcher, not a direct runtime.start call.
+    SubtitleOverlay._start_stop(gui.overlay)
+    assert controller.started == 2
+    assert gui.state.preparing
+    assert not gui.state.latest_error
+
+
+def test_fatal_error_survives_tail_subtitles_and_normal_stop_events(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+) -> None:
+    gui, _root, controller = runtime
+    controller.events.put(FatalErrorEvent("engine failure", 1.0))
+    controller.events.put(SubtitleEvent(1, "Привет", "你好", 1.0, 0.2, 0.4, 1.1))
+    controller.events.put(StoppedEvent("cleanup finished", 1.2))
+    gui._consume_events()
+    assert gui.state.latest_error == "engine failure"
+    assert gui.state.status == "Fatal error"
+    assert gui.state.entries[0].chinese_text == "你好"
+
+
+def test_normal_stop_keeps_controls_stopping_until_worker_really_exits(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    controller.events.put(StoppedEvent("done", 1.0))
+    gui.poll()
+    assert gui.state.stopping
+    assert gui.overlay.running
+    assert not gui.can_change_microphone()
+    controller.running = False
+    controller.pending_events.append(StoppedEvent("worker exited", 1.1))
+    gui.poll()
+    assert gui.state.status == "Stopped"
+    assert not gui.overlay.running
+    assert gui.can_change_microphone()
+
+
+def test_poll_render_failure_preserves_one_timer_and_consumes_later_stop(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, root, controller = runtime
+    gui.start()
+    render = gui.overlay.render
+
+    def fail_render() -> None:
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(gui.overlay, "render", fail_render)
+    try:
+        gui.poll()
+    except RuntimeError as exc:
+        gui._handle_tk_callback_exception(type(exc), exc, exc.__traceback__)
+    assert len(root.after_calls) == 1
+    assert root.after_calls[0][1] == gui.poll
+    assert controller.stop_reasons == ["GUI callback error"]
+    monkeypatch.setattr(gui.overlay, "render", render)
+    controller.running = False
+    controller.pending_events.append(StoppedEvent("cleanup", 2.0))
+    root.after_calls.pop()[1]()
+    assert not gui.overlay.running
+    assert len(root.after_calls) == 1
+    assert gui.state.latest_error == "GUI error: RuntimeError: render failed"
+
+
+def test_close_waits_for_receiver_tail_and_logs_failure_before_destroy(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+) -> None:
+    gui, root, controller = runtime
+    gui.start()
+    gui.close()
+    controller.running = False
+    controller.tail_pending = True
+    gui._poll_close()
+    assert not root.destroyed
+    assert controller.disposed == 0
+    controller.tail_pending = False
+    controller.pending_events.append(FatalErrorEvent("worker exitcode=17", 2.0))
+    gui._poll_close()
+    assert root.destroyed
+    assert gui.exit_code == 2
+    assert "exitcode=17" in gui.state.latest_error
+    assert controller.disposed == 1
+
+
+def test_close_render_failure_still_requests_stop_and_schedules_cleanup(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, root, controller = runtime
+    gui.start()
+
+    def fail_render() -> None:
+        raise RuntimeError("render failure during close")
+
+    monkeypatch.setattr(gui.overlay, "render", fail_render)
+    with pytest.raises(RuntimeError):
+        gui.close()
+    assert controller.stop_reasons == ["window closed"]
+    assert root.after_calls[-1][1] == gui._poll_close
+    gui.clock = lambda: gui.close_started_at + 36.0
+    with pytest.raises(RuntimeError):
+        gui._poll_close()
+    assert controller.terminated == 1
+    assert root.after_calls[-1][1] == gui._poll_close
+    assert not root.destroyed
+
+
+def test_failed_process_start_keeps_error_visible_and_can_retry(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, _root, controller = runtime
+    start = controller.start
+
+    def fail_start() -> bool:
+        raise OSError("could not spawn")
+
+    monkeypatch.setattr(controller, "start", fail_start)
+    gui.start()
+    assert gui.state.status == "Fatal error"
+    assert not gui.overlay.running
+    assert "could not spawn" in gui.state.latest_error
+    monkeypatch.setattr(controller, "start", start)
+    gui.start()
+    assert gui.state.preparing
+    assert not gui.state.latest_error
+
+
+def test_retry_preflight_error_is_not_overwritten_by_previous_fatal(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController],
+) -> None:
+    gui, _root, _controller = runtime
+    gui._consume_event(FatalErrorEvent("old engine failure", 1.0))
+
+    def unavailable(_index: int | None) -> AudioDevice:
+        raise AudioDeviceError("device disconnected")
+
+    gui.microphone_selector = MicrophoneSelectorModel(99, resolve_device=unavailable)
+    gui.start()
+    gui.poll()
+    assert gui.state.status == "Ready"
+    assert "device disconnected" in gui.state.latest_error
+    assert "old engine failure" not in gui.state.latest_error
+
+
+@pytest.mark.parametrize("command", ["live-overlay", "overlay-demo"])
+def test_secondary_gui_launch_exits_before_constructing_controller(
+    command: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from live_subtitles.gui import single_instance
+
+    calls: list[str] = []
+
+    def duplicate(*, name):
+        calls.append(name)
+        return SimpleNamespace(primary=False, close=lambda: calls.append("close"))
+
+    def fail_controller(*args, **kwargs):
+        pytest.fail("A second launcher must not construct a controller or open a window")
+
+    monkeypatch.setattr(single_instance, "acquire_instance", duplicate)
+    monkeypatch.setattr(app, "LiveProcessOverlayController", fail_controller)
+    monkeypatch.setattr(app, "DemoOverlayController", fail_controller)
+    assert main([command]) == 0
+    assert calls == [command, "close"]
+
+
+def test_primary_lease_released_when_gui_initialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from live_subtitles import cli
+    from live_subtitles.gui import single_instance
+
+    released: list[bool] = []
+    lease = SimpleNamespace(primary=True, close=lambda: released.append(True))
+    monkeypatch.setattr(single_instance, "acquire_instance", lambda **_: lease)
+    monkeypatch.setattr(cli, "configure_diagnostic_logging", lambda: None)
+
+    def fail_tk(_state, _controller, args):
+        assert args.instance_lease is lease
+        raise RuntimeError("synthetic Tk startup failure")
+
+    monkeypatch.setattr(app, "_run_tk", fail_tk)
+    assert main(["overlay-demo"]) == 1
+    assert released == [True]
+
+
+def test_duplicate_activation_preserves_live_session_and_only_reveals_on_request(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, root, controller = runtime
+    requests = iter((False, True, False))
+    calls: list[str] = []
+    gui.instance_lease = SimpleNamespace(
+        take_activation=lambda: next(requests),
+        begin_close=lambda: calls.append("begin close"),
+    )
+    monkeypatch.setattr(gui.overlay, "reveal", lambda: calls.append("reveal"), raising=False)
+    gui.start()
+    controller.events.put(SubtitleEvent(1, "Текст", "字幕", 1.0, None, None, 1.0))
+    for _ in range(3):
+        gui.poll()
+    assert calls == ["reveal"]
+    assert controller.started == 1 and controller.running
+    assert not controller.stop_reasons and gui.state.entries[0].index == 1
+    gui.close()
+    assert calls == ["reveal", "begin close"]
+    assert not root.destroyed
+
+
+def test_reveal_failure_leaves_running_engine_and_poll_timer_intact(
+    runtime: tuple[app.GuiRuntime, FakeRoot, FakeController], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, root, controller = runtime
+    gui.start()
+    gui.instance_lease = SimpleNamespace(take_activation=lambda: True)
+
+    def fail_reveal():
+        raise OSError("synthetic shell failure")
+
+    monkeypatch.setattr(gui.overlay, "reveal", fail_reveal, raising=False)
+    gui.poll()
+    assert controller.running and not controller.stop_reasons
+    assert gui.exit_code == 0 and root.after_calls[-1][1] == gui.poll
+
+
+def timed_subtitle(index: int = 1, start: float = 2.125, end: float = 4.5) -> SubtitleEvent:
+    return SubtitleEvent(
+        index, "Привет\nмир", "你好\r\n世界", end - start, 8.0, 12.0, 9_999.0,
+        start_seconds=start, end_seconds=end,
+    )
+
+
+def test_srt_is_saved_incrementally_with_audio_timing_even_when_russian_is_hidden(runtime) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    gui.state.show_russian = False
+    path = Path(gui.state.srt_path)
+    controller.events.put(timed_subtitle())
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    assert controller.running
+    assert path.read_text(encoding="utf-8") == (
+        "1\n00:00:02,125 --> 00:00:04,500\nПривет мир\n你好 世界\n\n"
+    )
+    assert not gui.state.srt_error
+
+
+def test_clear_and_stop_preserve_srt_and_shutdown_saves_tail_before_destroy(runtime) -> None:
+    gui, root, controller = runtime
+    gui.start()
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    path = Path(gui.state.srt_path)
+    original = path.read_bytes()
+    gui.clear()
+    assert gui.state.entries == ()
+    assert path.read_bytes() == original
+    assert gui.state.srt_path == str(path)
+    gui.close()
+    controller.running = False
+    controller.pending_events.extend([
+        FatalErrorEvent("worker exitcode=17", 50.0), timed_subtitle(2, 7.0, 8.0),
+    ])
+    gui._poll_close()
+    assert root.destroyed
+    assert path.read_bytes().startswith(original)
+    assert "2\n00:00:07,000 --> 00:00:08,000" in path.read_text(encoding="utf-8")
+    assert gui.state.latest_error == "worker exitcode=17"
+
+
+def test_restart_creates_new_srt_without_overwriting_previous_session(runtime) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    first = Path(gui.state.srt_path)
+    original = first.read_bytes()
+    controller.running = False
+    gui.start()
+    second = Path(gui.state.srt_path)
+    controller.events.put(timed_subtitle(1, 37.0, 38.0))
+    gui.poll()
+    assert first != second and first.read_bytes() == original
+    assert second.read_text(encoding="utf-8").startswith("1\n00:00:37,000 --> 00:00:38,000\n")
+
+
+def test_immediate_restart_drains_finished_session_into_its_original_srt(runtime) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    first = Path(gui.state.srt_path)
+    controller.events.put(timed_subtitle())
+    controller.running = False
+    gui.start()
+    second = Path(gui.state.srt_path)
+    assert first != second
+    assert "00:00:02,125 --> 00:00:04,500" in first.read_text(encoding="utf-8")
+    assert second.read_bytes() == b""
+    controller.events.put(timed_subtitle(1, 20.0, 21.0))
+    gui.poll()
+    assert second.read_text(encoding="utf-8").startswith("1\n00:00:20,000 --> 00:00:21,000\n")
+
+
+def test_restart_drains_more_than_one_gui_tick_of_old_captions(runtime) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    first = Path(gui.state.srt_path)
+    for index in range(1, 201):
+        assert controller.events.put(timed_subtitle(index, index * 2, index * 2 + 1))
+    controller.running = False
+    gui.start()
+    assert controller.events.size == 0
+    assert len(first.read_text(encoding="utf-8").strip().split("\n\n")) == 200
+    assert Path(gui.state.srt_path).read_bytes() == b""
+
+
+def test_srt_creation_failure_keeps_live_captions_and_latches_warning(runtime, monkeypatch) -> None:
+    gui, _root, controller = runtime
+
+    def fail_create(_directory):
+        raise PermissionError("synthetic readonly destination")
+
+    monkeypatch.setattr(app.SrtSession, "create", fail_create)
+    gui.start()
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    assert controller.running and not controller.stop_reasons
+    assert gui.state.entries[0].index == 1
+    assert gui.state.srt_error.startswith("SRT saving failed")
+    assert gui.state.srt_path == "" and gui.exit_code == 2
+    gui.clear()
+    assert gui.state.srt_error.startswith("SRT saving failed")
+
+
+def test_srt_write_failure_keeps_completed_cues_and_retries_only_in_new_session(runtime, monkeypatch) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    first = Path(gui.state.srt_path)
+    original = first.read_bytes()
+
+    def fail_append(*_args):
+        raise OSError("synthetic full disk")
+
+    monkeypatch.setattr(gui._srt_session, "append", fail_append)
+    controller.events.put(timed_subtitle(2, 5.0, 6.0))
+    gui.poll()
+    controller.events.put(timed_subtitle(3, 7.0, 8.0))
+    gui.poll()
+    assert first.read_bytes() == original
+    assert gui.state.entries[-1].index == 3
+    assert gui.state.srt_error and controller.running
+    controller.running = False
+    gui.start()
+    assert not gui.state.srt_error and gui.state.srt_path != str(first)
+    controller.events.put(timed_subtitle())
+    gui.poll()
+    assert Path(gui.state.srt_path).read_bytes() == original
+
+
+def test_missing_audio_timing_is_not_replaced_by_translation_completion(runtime) -> None:
+    gui, _root, controller = runtime
+    gui.start()
+    controller.events.put(SubtitleEvent(1, "Текст", "字幕", 1.0, 5.0, 8.0, 9_999.0))
+    gui.poll()
+    assert Path(gui.state.srt_path).read_bytes() == b""
+    assert gui.state.srt_error and controller.running
+
+
+def test_open_subtitles_folder_uses_resolved_output_path(runtime, tmp_path, monkeypatch) -> None:
+    gui, _root, _controller = runtime
+    gui.srt_directory = tmp_path / "custom captions.with.dots"
+    gui.start()
+    opened = []
+    monkeypatch.setattr(app.os, "startfile", opened.append, raising=False)
+    gui.open_subtitles_folder()
+    assert opened == [str(gui.srt_directory.resolve(strict=True))]
+    args = build_parser().parse_args(["live-overlay", "--srt-dir", str(gui.srt_directory)])
+    assert args.srt_dir == gui.srt_directory

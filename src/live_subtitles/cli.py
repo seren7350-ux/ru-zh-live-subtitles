@@ -22,6 +22,7 @@ from .config import (
     DEFAULT_TRANSLATION_ENGINE,
 )
 from .diagnostics import collect_diagnostics, format_report
+from .diagnostic_logging import configure_diagnostic_logging, diagnostic_logger
 from .model_assets import (
     ModelAssetError,
     format_model_report,
@@ -874,7 +875,24 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args.explicit_options = {
+        token.split("=", 1)[0].removeprefix("--").removeprefix("no-").replace("-", "_")
+        for token in (sys.argv[1:] if argv is None else argv) if token.startswith("--")
+    }
+    if "background_opacity" in args.explicit_options:
+        args.explicit_options.add("opacity")
+    lease = None
     try:
+        if args.command in {"live-overlay", "overlay-demo"}:
+            from .gui.single_instance import acquire_instance
+
+            lease = acquire_instance(name=args.command)
+            if not lease.primary:
+                return 0
+            args.instance_lease = lease
+            configure_diagnostic_logging()
+            from .fault_diagnostics import enable_fault_diagnostics
+            enable_fault_diagnostics("gui")
         return int(args.handler(args))
     except (
         AsrError,
@@ -891,11 +909,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         ModelAssetError,
         ValueError,
     ) as exc:
+        diagnostic_logger().exception("Command failed; command=%s", args.command)
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
+        diagnostic_logger().info("Command cancelled by user; command=%s", args.command)
         print("Error: operation cancelled by user.", file=sys.stderr)
         return 130
     except Exception as exc:  # preserve a non-zero result without exposing a traceback to users
+        diagnostic_logger().exception("Unexpected command failure; command=%s", args.command)
         print(f"Unexpected error ({type(exc).__name__}): {exc}", file=sys.stderr)
         return 1
+    finally:
+        from .fault_diagnostics import close_fault_diagnostics
+        close_fault_diagnostics()
+        if lease is not None:
+            lease.close()

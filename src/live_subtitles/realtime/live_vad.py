@@ -15,6 +15,7 @@ import numpy as np
 
 from ..audio.recording import AudioDevice
 from ..audio.wav_io import write_pcm16_mono_wav
+from ..diagnostic_logging import diagnostic_logger
 from .metrics import AudioBlock, LiveVadMetrics, TimingAccumulator
 from .microphone import MicrophoneCapture, validate_live_input_device
 from .segmenter import AudioSegment, VadSegmenter
@@ -167,6 +168,7 @@ class LiveVadSession:
         return device
 
     def _worker(self) -> None:
+        diagnostic_logger().info("VAD worker started")
         segmenter = VadSegmenter(
             threshold=self.threshold,
             negative_threshold=self.negative_threshold,
@@ -218,12 +220,26 @@ class LiveVadSession:
                     if self.on_segment is not None:
                         self.on_segment(len(self._segments), segment)
         except Exception as exc:
+            diagnostic_logger().exception("VAD worker failed; processed_blocks=%d", self._processed_blocks)
             self._worker_error = f"VAD worker failed ({type(exc).__name__}): {exc}"
             self._fatal_event.set()
         finally:
             self._ignored_short_segments = segmenter.ignored_short_segments
-            self.vad.reset()
-            self._worker_exited.set()
+            try:
+                self.vad.reset()
+            except Exception as exc:
+                diagnostic_logger().exception("VAD worker cleanup failed")
+                self._worker_error = self._worker_error or (
+                    f"VAD worker cleanup failed ({type(exc).__name__}): {exc}"
+                )
+                self._fatal_event.set()
+            finally:
+                self._worker_exited.set()
+                diagnostic_logger().info(
+                    "VAD worker exited; reason=%s; processed_blocks=%d; segments=%d",
+                    "infrastructure error" if self._worker_error else "stop signal",
+                    self._processed_blocks, len(self._segments),
+                )
 
     def _request_worker_stop(self) -> None:
         if self._worker_exited.is_set():
@@ -297,6 +313,7 @@ class LiveVadSession:
         except KeyboardInterrupt:
             stop_reason = "Ctrl+C"
         except Exception:
+            diagnostic_logger().exception("Microphone/VAD session failed")
             capture.close()
             self._request_worker_stop()
             worker.join(self.join_timeout)
@@ -360,6 +377,10 @@ class LiveVadSession:
             microphone_closed=capture.closed,
         )
         assert self.vad.model_path is not None
+        diagnostic_logger().info(
+            "Microphone/VAD session finished; reason=%s; elapsed_seconds=%.3f; worker_exited=%s; errors=%d",
+            stop_reason, session_seconds, metrics.worker_exited, len(errors),
+        )
         return LiveVadResult(
             device=device,
             model_version=PACKAGE_VERSION,

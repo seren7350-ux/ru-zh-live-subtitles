@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import time
-import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..audio.recording import AudioDeviceError
 from ..diagnostic_logging import diagnostic_logger
@@ -18,7 +16,9 @@ from ..model_assets import (
     configure_offline_environment,
     display_path,
 )
-from ..runtime_paths import bundled_resource_path, is_frozen
+from ..runtime_paths import bundled_resource_path, is_frozen, subtitle_directory
+from ..subtitles import SrtSession
+from ..preferences import Preferences, BOOL_FIELDS, NUM_FIELDS
 from ..config import (
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
@@ -46,8 +46,12 @@ from .process_controller import (
 )
 from .state import SubtitleEntry, SubtitleViewState
 
+if TYPE_CHECKING:
+    from .single_instance import InstanceLease
+
 
 CLOSE_TIMEOUT_SECONDS = 35.0
+FORCE_STOP_GRACE_SECONDS = 3.0
 
 
 def _bounded_float(minimum: float, maximum: float, label: str) -> Callable[[str], float]:
@@ -81,9 +85,21 @@ def _bounded_int(minimum: int, maximum: int, label: str) -> Callable[[str], int]
 
 
 def _add_gui_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--opacity", type=_bounded_float(0.5, 1.0, "Opacity"), default=0.88)
     parser.add_argument(
-        "--history-lines", type=_bounded_int(1, 100, "History lines"), default=20
+        "--background-opacity", "--opacity", dest="opacity",
+        type=_bounded_float(0.0, 1.0, "Background opacity"), default=0.88,
+    )
+    parser.add_argument(
+        "--text-opacity", type=_bounded_float(0.0, 1.0, "Text opacity"), default=1.0,
+    )
+    parser.add_argument("--text-outline", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--history-lines", type=_bounded_int(1, 100, "History lines"), default=20,
+        help="number of recent captions retained in memory; only the latest is displayed",
+    )
+    parser.add_argument(
+        "--srt-dir", type=Path,
+        help="folder for automatically saved bilingual SRT sessions (default: ~/ru-zh-live-subtitles/subtitles)",
     )
     parser.add_argument(
         "--show-russian", action=argparse.BooleanOptionalAction, default=True
@@ -191,7 +207,11 @@ class GuiRuntime:
         microphone_selector: MicrophoneSelectorModel | None = None,
         model_assets: ModelAssetsModel | None = None,
         offline: bool = False,
+        instance_lease: InstanceLease | None = None,
+        srt_directory: Path | None = None,
         clock: Callable[[], float] = time.perf_counter,
+        preferences: Preferences | None = None,
+        saved_preferences: dict[str, Any] | None = None,
     ) -> None:
         self.root = root
         self.state = state
@@ -199,14 +219,29 @@ class GuiRuntime:
         self.microphone_selector = microphone_selector
         self.model_assets = model_assets
         self.offline = offline
+        self.instance_lease = instance_lease
+        self.srt_directory = (
+            srt_directory.expanduser() if srt_directory is not None
+            else subtitle_directory()
+        )
+        self._srt_session: SrtSession | None = None
         self.ui_poll_ms = ui_poll_ms
         self.clock = clock
         self.exit_code = 0
         self.closing = False
         self.close_started_at: float | None = None
+        self._terminate_started_at: float | None = None
+        self._kill_requested = False
+        self._destroyed = False
+        self._fatal_message = ""
         self._last_heartbeat = self.clock()
         self._queue_fatal_seen = False
         self._logger = diagnostic_logger()
+        self.preferences = preferences
+        self._preference_snapshot: dict[str, Any] | None = None
+        self._preference_check_at = self.clock()
+        self._preparation_stage = "Preparing models"
+        self._preparation_started_at = self.clock()
         microphone_callbacks = None
         if microphone_selector is not None:
             microphone_callbacks = MicrophonePanelCallbacks(
@@ -230,10 +265,16 @@ class GuiRuntime:
             on_stop=self.stop,
             on_clear=self.clear,
             on_exit=self.close,
+            on_open_subtitles=self.open_subtitles_folder,
             microphone=microphone_callbacks,
             models=model_callbacks,
         )
         self.root.report_callback_exception = self._handle_tk_callback_exception
+        self.overlay.on_restore_defaults = self.restore_defaults
+        self.overlay.on_open_logs = self.open_logs_folder
+        self.overlay.on_dump_threads = self.dump_diagnostics
+        if saved_preferences and "window_rect" in saved_preferences:
+            self.overlay.restore_geometry(tuple(saved_preferences["window_rect"]))
         if model_assets is not None:
             self.refresh_model_assets()
 
@@ -243,27 +284,80 @@ class GuiRuntime:
         exception: BaseException,
         traceback_object: Any,
     ) -> None:
-        """Print developer details and request a normal background stop."""
+        """Persist the traceback even when the executable has no console."""
 
-        self._logger.error("Tk callback failed; type=%s", exception_type.__name__)
-        if sys.stderr is not None:
-            traceback.print_exception(
-                exception_type,
-                exception,
-                traceback_object,
-                file=sys.stderr,
-            )
+        self._logger.error(
+            "Tk callback failed; type=%s", exception_type.__name__,
+            exc_info=(exception_type, exception, traceback_object),
+            extra={"sensitive_text": self._caption_texts()},
+        )
         self.exit_code = 2
+        self._fatal_message = f"GUI error: {type(exception).__name__}: {sanitize_message(exception)}"
         self.state.set_status("Fatal error")
-        self.state.latest_error = f"GUI error: {type(exception).__name__}: {exception}"
+        self.state.latest_error = self._fatal_message
         try:
             self.overlay.set_running(self.controller.running, closing=self.closing)
             self.overlay.render()
         except Exception:
-            self._logger.error("Tk error recovery failed")
-            if sys.stderr is not None:
-                traceback.print_exc(file=sys.stderr)
-        self.controller.request_stop("GUI callback error")
+            self._logger.exception(
+                "Tk error display failed", extra={"sensitive_text": self._caption_texts()}
+            )
+        try:
+            self.controller.request_stop("GUI callback error")
+        except Exception:
+            self._logger.exception("Unable to request stop after Tk callback failure")
+
+    def _caption_texts(self) -> tuple[str, ...]:
+        return tuple(
+            text for entry in self.state.entries
+            for text in (entry.russian_text, entry.chinese_text) if text
+        )
+
+    def save_preferences(self) -> None:
+        if self.preferences is None or self._destroyed:
+            return
+        values = {key: getattr(self.state, key) for key in (*BOOL_FIELDS, *NUM_FIELDS)}
+        values["window_rect"] = list(self.overlay.window_rectangle())
+        if self.microphone_selector is not None:
+            values["microphone_name"] = self.microphone_selector.preference_name()
+        if values == self._preference_snapshot:
+            return
+        try:
+            self.preferences.save(values)
+        except OSError:
+            self._logger.exception("Could not save preferences")
+        else:
+            self._preference_snapshot = values
+
+    def restore_defaults(self) -> None:
+        if self.preferences is None:
+            self.preferences = Preferences()
+        defaults = SubtitleViewState()
+        overlay = self.overlay
+        for key, toggle in (("borderless", overlay.toggle_borderless),
+                            ("topmost", overlay.toggle_topmost)):
+            if getattr(self.state, key) != getattr(defaults, key):
+                toggle()
+        for key in (*BOOL_FIELDS, *NUM_FIELDS):
+            setattr(self.state, key, getattr(defaults, key))
+        overlay.set_opacity(defaults.opacity)
+        overlay._sync_toolbar()
+        def reset_geometry() -> None:
+            overlay.restore_geometry((self.root.winfo_x(), self.root.winfo_y(), 900, 280))
+            overlay.set_position("bottom")
+        self.root.after_idle(reset_geometry)
+        if self.can_change_microphone() and self.microphone_selector is not None:
+            self.select_microphone(None)
+        panel = overlay.settings_panel
+        if panel is not None:
+            for scale, value in ((panel.opacity_scale, defaults.opacity * 100),
+                                 (panel.text_opacity_scale, defaults.text_opacity * 100),
+                                 (panel.chinese_scale, defaults.chinese_font_size),
+                                 (panel.russian_scale, defaults.russian_font_size)):
+                scale.set(value)
+        overlay.render()
+        # Frame changes finish at idle; save after their geometry reconciliation.
+        self.root.after_idle(self.save_preferences)
 
     def can_change_microphone(self) -> bool:
         return not (
@@ -343,6 +437,20 @@ class GuiRuntime:
         if self.model_assets is not None:
             self._open_path(self.model_assets.snapshot().model_root)
 
+    def open_logs_folder(self) -> None:
+        from ..runtime_paths import log_directory
+        directory = log_directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        self._open_path(directory.resolve(strict=True))
+
+    def dump_diagnostics(self) -> None:
+        from ..fault_diagnostics import dump_threads
+        dump_threads()
+        request = getattr(self.controller, "request_diagnostics", None)
+        if callable(request):
+            request()
+        self._logger.info("Thread diagnostics saved; active engine dump requested if available")
+
     def open_model_instructions(self) -> None:
         path = (
             bundled_resource_path("MODEL_SETUP.txt")
@@ -351,9 +459,48 @@ class GuiRuntime:
         )
         self._open_path(path)
 
+    def open_subtitles_folder(self) -> None:
+        directory = Path(self.state.srt_path).parent if self.state.srt_path else self.srt_directory
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            self._open_path(directory.resolve(strict=True))
+        except OSError as exc:
+            self.state.latest_error = f"Unable to open subtitles folder: {sanitize_message(exc)}"
+            self.overlay.render()
+
+    def _srt_failure(self) -> None:
+        self._logger.exception(
+            "SRT saving failed", extra={"sensitive_text": self._caption_texts()}
+        )
+        self._srt_session = None
+        self.exit_code = 2
+        self.state.srt_error = (
+            "SRT saving failed. Earlier saved captions are retained; new captions are not being saved. "
+            "Check the subtitles folder and diagnostic log, then Stop and Start to retry."
+        )
+
+    def _save_subtitle(self, event: SubtitleEvent) -> None:
+        if self._srt_session is None:
+            return
+        try:
+            self._srt_session.append(
+                event.index, event.start_seconds, event.end_seconds,
+                event.russian_text, event.chinese_text,
+            )
+        except (OSError, ValueError):
+            # Saving failure must remain visible without discarding live captions
+            # or replacing an engine error. Do not retry an ambiguous partial write.
+            self._srt_failure()
+
     def start(self) -> None:
         if self.closing or self.controller.running:
             return
+        # A finished demo/thread can still have queued tail captions. Save them
+        # to the previous session before resetting indices and opening a new SRT.
+        self._consume_events(limit=self.controller.events.capacity + 1)
+        # An explicit retry may expose a newer preflight failure. Do not let a
+        # previous session's fatal latch overwrite that actionable diagnosis.
+        self._fatal_message = ""
         if self.model_assets is not None:
             report = self.refresh_model_assets()
             if not report.ready:
@@ -385,18 +532,36 @@ class GuiRuntime:
                 self.overlay.render()
                 return
         self._logger.info("Subtitle session start requested")
+        self._preparation_started_at = self.clock()
+        self._preparation_stage = "Preparing models"
+        try:
+            started = self.controller.start()
+        except Exception as exc:
+            self._handle_tk_callback_exception(type(exc), exc, exc.__traceback__)
+            return
+        if not started:
+            self.state.set_status("Stopping...")
+            self.state.latest_error = "The previous subtitle session is still shutting down."
+            self.overlay.set_running(self.controller.running)
+            return
+        self._queue_fatal_seen = False
         self.state.begin_session()
+        self._srt_session = None
+        try:
+            self._srt_session = SrtSession.create(self.srt_directory)
+            self.state.srt_path = str(self._srt_session.path)
+        except OSError:
+            self._srt_failure()
         self.overlay.set_running(True)
         self.overlay.render()
-        if not self.controller.start():
-            self.state.latest_error = "A subtitle session is already running."
-            self.overlay.render()
 
     def stop(self) -> None:
         if not self.controller.running:
+            self._consume_events()
             return
         self._logger.info("Subtitle session stop requested")
         self.state.set_status("Stopping...")
+        self._cancel_requested_at = self.clock()
         self.overlay.set_running(True)
         self.overlay.render()
         self.controller.request_stop("user requested stop")
@@ -409,41 +574,87 @@ class GuiRuntime:
         if self.closing:
             return
         self._logger.info("Application close requested")
+        self.save_preferences()
         self.closing = True
         self.close_started_at = self.clock()
         self.state.set_status("Stopping...")
-        self.overlay.set_running(self.controller.running, closing=True)
-        close_popover = getattr(self.overlay, "close_popover", None)
-        if callable(close_popover):
-            close_popover()
-        self.overlay.render()
-        self.controller.close()
-        self.root.after(self.ui_poll_ms, self._poll_close)
+        try:
+            if self.instance_lease is not None:
+                self.instance_lease.begin_close()
+            self.overlay.set_running(self.controller.running, closing=True)
+            close_popover = getattr(self.overlay, "close_popover", None)
+            if callable(close_popover):
+                close_popover()
+        finally:
+            try:
+                self.controller.close()
+            finally:
+                self.root.after(self.ui_poll_ms, self._poll_close)
 
     def _poll_close(self) -> None:
-        self._consume_events()
-        if not self.controller.running:
-            self._logger.info("Background session stopped; destroying GUI")
-            self.root.destroy()
+        if self._destroyed:
             return
-        assert self.close_started_at is not None
-        if self.clock() - self.close_started_at >= CLOSE_TIMEOUT_SECONDS:
-            self.exit_code = 2
-            self.state.status = "Fatal error"
-            self.state.latest_error = "Shutdown timed out after 35 seconds."
-            self.overlay.render()
-            self.root.after(250, self.root.destroy)
-            return
-        self.root.after(self.ui_poll_ms, self._poll_close)
+        if self.clock() - self._preference_check_at >= 1.0:
+            self._preference_check_at = self.clock()
+            from ..fault_diagnostics import arm_gui_watchdog
+            arm_gui_watchdog()
+        try:
+            try:
+                self._consume_events()
+            except Exception as exc:
+                self._handle_tk_callback_exception(type(exc), exc, exc.__traceback__)
+            shutdown_complete = getattr(
+                self.controller, "shutdown_complete", not self.controller.running
+            )
+            if shutdown_complete:
+                dispose = getattr(self.controller, "dispose", None)
+                if callable(dispose):
+                    dispose()
+                self._logger.info("Background session stopped; destroying GUI")
+                self.root.destroy()
+                self._destroyed = True
+                return
+            assert self.close_started_at is not None
+            now = self.clock()
+            if self.controller.running and now - self.close_started_at >= CLOSE_TIMEOUT_SECONDS:
+                self.exit_code = 2
+                if self._terminate_started_at is None:
+                    self._fatal_message = "Shutdown timed out after 35 seconds; terminating the engine."
+                    self._logger.error(self._fatal_message)
+                    terminate = getattr(self.controller, "terminate", None)
+                    if callable(terminate):
+                        terminate()
+                    self._terminate_started_at = now
+                elif not self._kill_requested and now - self._terminate_started_at >= FORCE_STOP_GRACE_SECONDS:
+                    self._logger.error("Engine still alive after terminate; requesting kill")
+                    kill = getattr(self.controller, "kill", None)
+                    if callable(kill):
+                        kill()
+                    self._kill_requested = True
+                self.state.set_status("Stopping...")
+                self.state.latest_error = self._fatal_message
+                self.overlay.render()
+        finally:
+            # Keep checking even if rendering or cleanup raises. Never hide the
+            # window while its owned engine is still alive.
+            if not self._destroyed:
+                self.root.after(self.ui_poll_ms, self._poll_close)
 
     def _consume_event(self, event: Any) -> bool:
         subtitle_added = False
         if isinstance(event, PreparingEvent):
-            self._logger.info("Model preparation started")
-            self.state.set_status("Preparing...")
+            self._logger.info("%s", event.message)
+            if not self.state.stopping and not self.closing:
+                self._preparation_stage = event.message
+                self.state.set_status(event.message)
         elif isinstance(event, ModelsReadyEvent):
-            self._logger.info("Models ready")
-            self.state.set_status("Models ready")
+            self._logger.info(
+                "Models ready; vad_seconds=%.3f; asr_seconds=%.3f; translation_seconds=%.3f; device=%s",
+                event.vad_prepare_seconds, event.asr_prepare_seconds,
+                event.translation_prepare_seconds, event.translation_device,
+            )
+            if not self.state.stopping and not self.closing:
+                self.state.set_status("Models ready")
         elif isinstance(event, ListeningEvent):
             self._logger.info("Microphone listening started")
             self.state.set_status(f"Listening... {event.device_name}")
@@ -459,44 +670,69 @@ class GuiRuntime:
                 )
             )
             if added:
+                self._save_subtitle(event)
                 self.controller.metrics.displayed_subtitles += 1
                 subtitle_added = True
         elif isinstance(event, SegmentErrorEvent):
-            self._logger.warning("Segment infrastructure failure; stage=%s", event.stage)
+            self._logger.warning(
+                "Segment infrastructure failure; segment=%d; stage=%s; error=%s",
+                event.index, event.stage, event.message,
+                extra={"sensitive_text": self._caption_texts()},
+            )
             self.controller.metrics.failed_segments += 1
             self.state.set_segment_error(
                 f"Segment {event.index}: {event.stage} failed — {event.message}"
             )
         elif isinstance(event, SessionFinishedEvent):
-            self._logger.info("Subtitle session finished")
-            self.state.set_status("Stopped")
-            self.overlay.set_running(False, closing=self.closing)
+            self._logger.info(
+                "Subtitle session finished; succeeded=%s; reason=%s; successful=%d; failed=%d; metrics=%s",
+                event.succeeded, event.stop_reason, event.successful_subtitles,
+                event.failed_subtitles, event.metrics,
+            )
+            self.state.set_status("Stopping..." if self.controller.running else "Stopped")
         elif isinstance(event, StoppedEvent):
-            self._logger.info("Subtitle session stopped")
-            self.state.set_status("Stopped")
-            self.overlay.set_running(False, closing=self.closing)
+            self._logger.info("Subtitle session stopped; reason=%s", event.reason)
+            self.state.set_status("Stopping..." if self.controller.running else "Stopped")
         elif isinstance(event, FatalErrorEvent):
-            self._logger.error("Background session reported a fatal error")
+            self._logger.error(
+                "Background session reported a fatal error; error=%s", event.message,
+                extra={"sensitive_text": self._caption_texts()},
+            )
             self.exit_code = 2
+            self._fatal_message = event.message
             self.state.set_status("Fatal error")
-            self.state.latest_error = event.message
-            self.overlay.set_running(False, closing=self.closing)
+        if self._fatal_message:
+            # Queued subtitles and normal cleanup messages must not erase the
+            # failure. Only an explicit new Start attempt clears it.
+            self.state.set_status("Fatal error")
+            self.state.latest_error = self._fatal_message
         return subtitle_added
 
-    def _consume_events(self) -> None:
+    def _consume_events(self, *, limit: int = 128) -> None:
         rendered_subtitle_events: list[SubtitleEvent] = []
-        for event in self.controller.events.drain():
+        for event in self.controller.events.drain(limit=limit):
             if self._consume_event(event) and isinstance(event, SubtitleEvent):
                 rendered_subtitle_events.append(event)
+        poll_process = getattr(self.controller, "poll_process", None)
+        if callable(poll_process):
+            for event in poll_process():
+                if self._consume_event(event) and isinstance(event, SubtitleEvent):
+                    rendered_subtitle_events.append(event)
         fatal_message = self.controller.events.fatal_message
-        if fatal_message and not self._queue_fatal_seen:
-            self._logger.error("GUI event queue overflow")
+        if not callable(poll_process) and fatal_message and not self._queue_fatal_seen:
+            self._logger.error("GUI event transport failure; error=%s", fatal_message)
             self._queue_fatal_seen = True
             self.exit_code = 2
+            self._fatal_message = fatal_message
             self.state.set_status("Fatal error")
             self.state.latest_error = fatal_message
-            self.controller.request_stop("GUI event queue overflow")
-        self.overlay.render()
+            self.controller.request_stop("GUI event transport failure")
+        if self._fatal_message:
+            self.state.set_status("Fatal error")
+            self.state.latest_error = self._fatal_message
+        elif self.state.stopping and not self.controller.running:
+            self.state.set_status("Stopped")
+        self.overlay.set_running(self.controller.running, closing=self.closing)
         rendered_at = self.clock()
         for event in rendered_subtitle_events:
             self.controller.metrics.render_latencies.add(
@@ -504,16 +740,37 @@ class GuiRuntime:
             )
 
     def poll(self) -> None:
-        if self.closing:
+        if self.closing or self._destroyed:
             return
         now = self.clock()
+        if now - self._preference_check_at >= 1.0:
+            self._preference_check_at = now
+            self.save_preferences()
+            from ..fault_diagnostics import arm_gui_watchdog
+            arm_gui_watchdog()
+            if self.state.preparing:
+                self.state.set_status(f"{self._preparation_stage} · {int(now - self._preparation_started_at)}s")
+            elif self.state.stopping and hasattr(self, "_cancel_requested_at"):
+                self.state.set_status(f"Stopping... waiting for engine · {int(now - self._cancel_requested_at)}s")
         expected = self.ui_poll_ms / 1_000.0
         self.controller.metrics.mainloop_delays.add(
             max(0.0, now - self._last_heartbeat - expected)
         )
         self._last_heartbeat = now
-        self._consume_events()
-        self.root.after(self.ui_poll_ms, self.poll)
+        try:
+            if self.instance_lease is not None:
+                try:
+                    if self.instance_lease.take_activation():
+                        self.overlay.reveal()
+                except Exception:
+                    # A Windows activation failure must not stop live subtitles.
+                    self._logger.exception("Unable to reveal the existing subtitle window")
+            self._consume_events()
+        finally:
+            # Tk invokes report_callback_exception after a failure. Arrange the
+            # next tick first so that stop/death events can still be consumed.
+            if not self.closing and not self._destroyed:
+                self.root.after(self.ui_poll_ms, self.poll)
 
     def run(self, *, auto_start: bool) -> int:
         self._logger.info("Tk mainloop starting")
@@ -529,6 +786,8 @@ def _state_from_args(args: argparse.Namespace) -> SubtitleViewState:
     return SubtitleViewState(
         history_lines=args.history_lines,
         opacity=args.opacity,
+        text_opacity=getattr(args, "text_opacity", 1.0),
+        text_outline=bool(getattr(args, "text_outline", False)),
         chinese_font_size=args.chinese_font_size,
         russian_font_size=args.russian_font_size,
         show_russian=args.show_russian,
@@ -578,6 +837,10 @@ def _run_tk(
         microphone_selector=microphone_selector,
         model_assets=model_assets,
         offline=bool(getattr(args, "offline", False)),
+        instance_lease=getattr(args, "instance_lease", None),
+        srt_directory=getattr(args, "srt_dir", None),
+        preferences=getattr(args, "preferences", None),
+        saved_preferences=getattr(args, "saved_preferences", None),
     )
     exit_code = runtime.run(auto_start=args.auto_start)
     _print_gui_summary(controller.metrics.snapshot())
@@ -592,7 +855,26 @@ def _overlay_demo(args: argparse.Namespace) -> int:
 
 
 def _live_overlay(args: argparse.Namespace) -> int:
+    args.preferences = Preferences()
+    try:
+        saved = args.preferences.load()
+    except (OSError, ValueError):
+        diagnostic_logger().exception("Could not read preferences; using defaults")
+        saved = {}
+        # Preserve a malformed file for diagnosis until the user resets defaults.
+        args.preferences = None
+    args.saved_preferences = saved
+    explicit = getattr(args, "explicit_options", set())
+    for key in (*BOOL_FIELDS, *NUM_FIELDS):
+        if key in saved and key not in explicit:
+            setattr(args, key, saved[key])
     state = _state_from_args(args)
+    state.toolbar_visible = getattr(args, "toolbar_visible", True)
+    selector = MicrophoneSelectorModel(args.device)
+    if "device" not in explicit and saved.get("microphone_name"):
+        if not selector.restore_name(saved["microphone_name"]):
+            diagnostic_logger().warning("Saved microphone missing or ambiguous; using system default")
+        args.device = selector.selected_index
     controller = LiveProcessOverlayController(
         LiveWorkerConfig(
             device_index=args.device,
@@ -619,7 +901,7 @@ def _live_overlay(args: argparse.Namespace) -> int:
         state,
         controller,
         args,
-        microphone_selector=MicrophoneSelectorModel(args.device),
+        microphone_selector=selector,
         model_assets=ModelAssetsModel(),
     )
     _log_live_exit_metrics(controller)

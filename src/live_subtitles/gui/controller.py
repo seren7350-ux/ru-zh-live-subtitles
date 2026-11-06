@@ -28,13 +28,13 @@ from .events import (
 
 
 DEMO_LONG_RUSSIAN = (
-    "Это демонстрационный фрагмент для проверки переноса строк, изменения размера "
-    "окна и доступности всей истории субтитров без сокращения или удаления текста. "
+    "Это демонстрационный фрагмент для проверки одной строки, изменения размера "
+    "окна и бегущей строки при переполнении. Полный текст сохраняется в SRT. "
     * 5
 ).strip()
 DEMO_LONG_CHINESE = (
-    "这是一段用于验证自动换行、窗口缩放和字幕历史完整可访问性的演示文本，"
-    "界面不得截断、删除或用省略号隐藏任何字符。" * 8
+    "这是一段用于验证单行字幕、窗口缩放和溢出时横向跑马灯的演示文本，"
+    "完整双语内容和音频时间戳会自动保存在SRT文件中。" * 8
 )
 
 DEFAULT_GUI_QUEUE_SIZE = 256
@@ -207,6 +207,8 @@ class LiveOverlayController:
                     russian_latency_seconds=result.russian_latency_seconds,
                     chinese_latency_seconds=result.chinese_latency_seconds,
                     created_at=created,
+                    start_seconds=getattr(result, "start_seconds", None),
+                    end_seconds=getattr(result, "end_seconds", None),
                 )
             )
         else:
@@ -388,7 +390,11 @@ class DemoOverlayController:
                 russian, chinese = samples[index % len(samples)]
                 index += 1
                 if not self._emit(
-                    SubtitleEvent(index, russian, chinese, 1.5, 0.3, 0.7, now)
+                    SubtitleEvent(
+                        index, russian, chinese, 1.5, 0.3, 0.7, now,
+                        start_seconds=(index - 1) * 2.0,
+                        end_seconds=(index - 1) * 2.0 + 1.5,
+                    )
                 ):
                     break
                 next_emit = now + 2.0

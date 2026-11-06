@@ -19,6 +19,17 @@ def device(
     return AudioDevice(index, name, channels, 48_000.0, default)
 
 
+def test_saved_microphone_restores_new_index_but_never_guesses_duplicate_names():
+    model = MicrophoneSelectorModel(3, enumerate_devices=lambda: [device(11, "USB")])
+    assert model.restore_name("USB")
+    assert model.selected_index == 11
+    assert model.preference_name() == "USB"
+    model = MicrophoneSelectorModel(enumerate_devices=lambda: [device(3, "USB"), device(9, "USB")])
+    assert not model.restore_name("USB")
+    assert model.selected_index is None
+    assert not model.restore_name("unplugged")
+
+
 def test_system_default_is_none_and_specific_choices_keep_portaudio_indexes() -> None:
     model = MicrophoneSelectorModel(
         enumerate_devices=lambda: [device(3, default=True), device(8)],

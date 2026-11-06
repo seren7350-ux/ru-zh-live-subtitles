@@ -172,6 +172,30 @@ def test_latency_timestamps_and_metrics_use_one_monotonic_clock() -> None:
     )
 
 
+@pytest.mark.parametrize("fail_asr", [False, True])
+def test_srt_offsets_preserve_leading_silence_and_ignore_processing_clock(fail_asr: bool) -> None:
+    from dataclasses import replace
+
+    # The audio timeline has initial silence while the monotonic process clock
+    # and completion delay can be arbitrarily large.
+    audio = replace(
+        segment(), start_sample=160_000, end_sample=176_000,
+        started_at=5_010.0, ended_at=5_011.0,
+    )
+    now = iter([6_000.0 + step * 10 for step in range(100)])
+    processor = SegmentProcessor(
+        FakePipeline(fail_first_asr=fail_asr), queue_size=1, clock=lambda: next(now)
+    )
+    processor.start()
+    processor.enqueue(1, audio)
+    processor.finish()
+
+    result = processor.results[0]
+    assert result.succeeded is not fail_asr
+    assert (result.start_seconds, result.end_seconds) == (10.0, 11.0)
+    assert result.processing_started_at >= 6_000.0
+
+
 def test_segment_queue_overflow_is_fatal_and_never_silently_drops() -> None:
     entered = threading.Event()
     release = threading.Event()

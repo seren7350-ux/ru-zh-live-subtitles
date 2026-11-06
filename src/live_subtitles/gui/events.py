@@ -36,6 +36,9 @@ class SubtitleEvent:
     russian_latency_seconds: float | None
     chinese_latency_seconds: float | None
     created_at: float
+    # Session audio offsets, independent of ASR/translation completion time.
+    start_seconds: float | None = None
+    end_seconds: float | None = None
 
 
 @dataclass(frozen=True)

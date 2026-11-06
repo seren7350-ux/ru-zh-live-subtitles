@@ -113,6 +113,8 @@ class FakeSession:
                 chinese_latency_seconds=0.4,
                 error_stage=None,
                 error=None,
+                start_seconds=4.25,
+                end_seconds=5.25,
             )
         )
         return fake_result()
@@ -142,6 +144,8 @@ def test_controller_callbacks_only_enqueue_immutable_events() -> None:
     events = controller.events.drain()
     assert isinstance(events[0], PreparingEvent)
     assert any(isinstance(event, SubtitleEvent) for event in events)
+    subtitle = next(event for event in events if isinstance(event, SubtitleEvent))
+    assert (subtitle.start_seconds, subtitle.end_seconds) == (4.25, 5.25)
     assert isinstance(events[-1], StoppedEvent)
 
 
@@ -223,6 +227,10 @@ def test_demo_emits_events_without_live_session_dependencies() -> None:
     assert any(isinstance(event, SubtitleEvent) for event in events)
     assert any(isinstance(event, SegmentErrorEvent) for event in events)
     assert not any(isinstance(event, FatalErrorEvent) for event in events)
+    subtitles = [event for event in events if isinstance(event, SubtitleEvent)]
+    assert [(event.start_seconds, event.end_seconds) for event in subtitles] == [
+        (0.0, 1.5), (2.0, 3.5),
+    ]
 
 
 def test_demo_long_subtitles_are_nonempty_full_unicode_acceptance_content() -> None:

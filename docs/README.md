@@ -14,6 +14,8 @@ of current defaults.
 - [Development notes](development.md): chronological implementation and validation
   record.
 - [Model assets setup](model-assets-setup.md): pinned local model cache contract.
+- [Teacher feedback repair goals](reliability-roadmap.md): ordered repair scope,
+  diagnostics and lifecycle recovery behavior, and validation boundaries.
 
 ## Runtime components
 

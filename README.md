@@ -12,6 +12,12 @@ Silero VAD 分段，通过 GigaAM Multilingual Large CTC 识别俄语，再用 N
 - 运行方式：CPU-only，不包含 CUDA/GPU 运行时
 - 使用范围：课程、学习和非商业用途
 
+当前工作区源码正在按[老师反馈修复路线](docs/reliability-roadmap.md)更新，包含窗口唤回、
+单行双语字幕、溢出跑马灯及 SRT 保存；这些修改尚未包含在上面的 v0.3.0 安装包中。
+
+本地应用化验收构建采用四页设置、偏好保存、显示器工作区定位、分阶段启动反馈和线程诊断。
+变更与验收见[应用化目标](docs/application-improvement-goals.md)，操作说明见[设置与诊断](docs/application-settings.md)。
+本地验收安装包与上面的历史公开 Release 分开保存，尚未发布到 GitHub。
 
 ## 快速安装
 
@@ -75,7 +81,7 @@ Get-FileHash .\ru-zh-live-subtitles-cpu-offline-0.3.0-setup-2.bin -Algorithm SHA
 这是“VAD 完成分段后识别整段短音频”的近实时字幕，不是原生逐词流式 ASR。
 说话过程中会等待分段闭合，识别和翻译完成后一次显示该条最终结果。
 
-### 字幕窗口
+### v0.3.0 安装版字幕窗口
 
 - 主控制条始终保留 Start/Stop、Pinned/Unpinned、Settings 和 Exit；
 - 支持普通窗口原生缩放，以及 borderless 模式八方向缩放；
@@ -88,6 +94,25 @@ Get-FileHash .\ru-zh-live-subtitles-cpu-offline-0.3.0-setup-2.bin -Algorithm SHA
 - 超长最新字幕达到最小字号后仍可在内部滚动区域完整查看，不会自行撑大窗口；
 - 置顶只改变窗口层级，不持续抢占 PowerPoint 等应用的键盘焦点；
 - Settings 是可复用窗口，关闭它不会停止实时字幕会话。
+
+### 当前源码的字幕显示与保存
+
+字幕区域只显示最新一条，俄文、中文各占一行；只有文字超出可用宽度的语言行
+横向移动，短句保持静止。没有纵向历史滚动，字体随可用高度适配，避免半行裁切。
+
+字幕、空白处和状态文字均可拖动窗口，边缘优先用于缩放；按钮保持原有操作。
+双击字幕区或工具栏空白处可隐藏/恢复底部工具栏，也可使用 Ctrl+H 或 Settings
+中的工具栏开关。背景与文字不透明度可分别调整到 0–100%，并可开启黑色文字描边。
+Settings 始终不透明；窗口完全透明时，再次启动程序可唤回设置面板。
+
+每次 Start 自动新建一个 UTF-8 双语 SRT，逐条写入。时间轴从本次音频采集的第一个
+采样点开始，包含开头静音和句间间隔，不使用翻译完成时间。Clear 只清空显示；
+Stop、重启及关闭不删除已写出的文件，隐藏俄文也不影响保存双语内容。
+
+默认保存在 `%USERPROFILE%\ru-zh-live-subtitles\subtitles`，可在 Settings 点击
+`Open subtitles folder` 打开实际目录。源码命令可用 `--srt-dir output/subtitles`
+指定项目内保存位置。写入失败时界面持续提示，字幕继续显示；解决目录或磁盘问题
+后 Stop/Start 会新建文件重试。演示模式也保存 SRT，使用模拟音频时间轴。
 
 ### 麦克风选择
 
@@ -228,7 +253,7 @@ CPU onedir 使用 `.venv-packaging-cpu` 和
 - NLLB-200 distilled 600M 采用 CC-BY-NC-4.0，不允许商业使用；
 - 不支持系统音频采集、PowerPoint/Acrobat 插件、点击穿透、全局快捷键、自动更新
   或代码签名；
-- 字幕历史不会跨应用重启保存；
+- v0.3.0 安装版不保存字幕历史；当前源码会自动保存 SRT，但不会把旧文件重新载入字幕窗口；
 - 最终 v0.3.0 修订在开发机完成 onedir、安装、真实字幕和完全卸载验证，但没有
   重新执行 VMware/Windows Sandbox 洁净机验证；
 - PowerPoint 幻灯片交互已进行过人工验证；本机没有 Acrobat，因此未声明

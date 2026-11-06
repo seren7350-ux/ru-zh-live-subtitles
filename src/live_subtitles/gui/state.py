@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 
 DEFAULT_HISTORY_LINES = 20
-DEFAULT_DISPLAY_LINES = 2
+DEFAULT_DISPLAY_LINES = 1
 DEFAULT_OPACITY = 0.88
 DEFAULT_CHINESE_FONT_SIZE = 34
 DEFAULT_RUSSIAN_FONT_SIZE = 20
@@ -35,6 +35,10 @@ class SubtitleViewState:
         history_lines: int = DEFAULT_HISTORY_LINES,
         display_lines: int = DEFAULT_DISPLAY_LINES,
         opacity: float = DEFAULT_OPACITY,
+        background_opacity: float | None = None,
+        text_opacity: float = 1.0,
+        text_outline: bool = False,
+        toolbar_visible: bool = True,
         chinese_font_size: int = DEFAULT_CHINESE_FONT_SIZE,
         russian_font_size: int = DEFAULT_RUSSIAN_FONT_SIZE,
         show_russian: bool = True,
@@ -44,10 +48,14 @@ class SubtitleViewState:
     ) -> None:
         if not 1 <= history_lines <= 100:
             raise ValueError("History lines must be between 1 and 100.")
-        if not 1 <= display_lines <= 5:
-            raise ValueError("Display lines must be between 1 and 5.")
-        if not 0.5 <= opacity <= 1.0:
-            raise ValueError("Opacity must be between 0.5 and 1.0.")
+        if display_lines != 1:
+            raise ValueError("Display lines must be 1 (one current bilingual subtitle).")
+        if background_opacity is not None:
+            opacity = background_opacity
+        if not 0.0 <= opacity <= 1.0:
+            raise ValueError("Background opacity must be between 0 and 1.")
+        if not 0.0 <= text_opacity <= 1.0:
+            raise ValueError("Text opacity must be between 0 and 1.")
         if not 16 <= chinese_font_size <= 72:
             raise ValueError("Chinese font size must be between 16 and 72.")
         if not 10 <= russian_font_size <= 48:
@@ -57,6 +65,9 @@ class SubtitleViewState:
         self.history_lines = history_lines
         self.display_lines = display_lines
         self.opacity = opacity
+        self.text_opacity = text_opacity
+        self.text_outline = text_outline
+        self.toolbar_visible = toolbar_visible
         self.chinese_font_size = chinese_font_size
         self.russian_font_size = russian_font_size
         self.show_russian = show_russian
@@ -69,8 +80,19 @@ class SubtitleViewState:
         self.preparing = False
         self.stopping = False
         self.latest_error = ""
+        self.srt_path = ""
+        self.srt_error = ""
         self._entries: deque[SubtitleEntry] = deque(maxlen=history_lines)
         self._seen_indices: set[int] = set()
+
+    @property
+    def background_opacity(self) -> float:
+        return self.opacity
+
+    @background_opacity.setter
+    def background_opacity(self, value: float) -> None:
+        # Keep the original opacity attribute/CLI alias compatible.
+        self.opacity = value
 
     @property
     def entries(self) -> tuple[SubtitleEntry, ...]:
@@ -86,6 +108,8 @@ class SubtitleViewState:
         self.listening = False
         self.stopping = False
         self.latest_error = ""
+        self.srt_path = ""
+        self.srt_error = ""
         self._entries.clear()
         self._seen_indices.clear()
 

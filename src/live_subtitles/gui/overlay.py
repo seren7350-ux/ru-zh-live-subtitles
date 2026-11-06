@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from pathlib import Path
+from typing import Any, Callable
 
+from ..diagnostic_logging import diagnostic_logger
 from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
-from .state import SubtitleEntry, SubtitleViewState
+from .state import SubtitleViewState
+from .single_line import SingleLineSubtitleView, single_line_text
+from .windows_taskbar import WindowsTaskbar, bind_window_lifecycle
 
 
 STATUS_COLORS = {
@@ -23,8 +28,6 @@ STATUS_COLORS = {
 MIN_WINDOW_WIDTH = 520
 MIN_WINDOW_HEIGHT = 180
 RESIZE_BORDER_PIXELS = 7
-MIN_AUTO_FIT_RUSSIAN_FONT_SIZE = 8
-MIN_AUTO_FIT_CHINESE_FONT_SIZE = 12
 RESIZE_DIRECTIONS = frozenset({"n", "s", "e", "w", "ne", "nw", "se", "sw"})
 RESIZE_CURSORS = {
     "n": "sb_v_double_arrow",
@@ -127,363 +130,6 @@ class ModelPanelCallbacks:
     open_instructions: Callable[[], None]
 
 
-@dataclass(frozen=True)
-class SubtitleEntryView:
-    """Widgets belonging to one complete Russian/Chinese subtitle pair."""
-
-    frame: Any
-    russian_widget: Any | None
-    chinese_widget: Any
-
-
-class ScrollableSubtitleHistory:
-    """A width-aware, vertically scrollable sequence of complete subtitle pairs."""
-
-    def __init__(
-        self,
-        parent: Any,
-        *,
-        tk_module: Any,
-        initial_wraplength: int,
-        on_wraplength_changed: Callable[[int], None] | None = None,
-    ) -> None:
-        self.tk = tk_module
-        self._background = "#111318"
-        self._on_wraplength_changed = on_wraplength_changed
-        self._content_size: tuple[int, int] | None = None
-        self.wraplength = max(120, int(initial_wraplength))
-        self._requested_russian_font_size = 20
-        self._requested_chinese_font_size = 34
-        self.effective_russian_font_size = 20
-        self.effective_chinese_font_size = 34
-        self.auto_follow = True
-        self._signature: tuple[object, ...] | None = None
-        self._entry_views: list[SubtitleEntryView] = []
-        self._pending_scroll_fraction: float | None = None
-        self._fit_pending = False
-
-        self.container = tk_module.Frame(parent, background=self._background)
-        self.scrollbar = tk_module.Scrollbar(
-            self.container,
-            orient="vertical",
-            command=self._on_scrollbar,
-        )
-        self.scrollbar.pack(side="right", fill="y")
-        self.canvas = tk_module.Canvas(
-            self.container,
-            background=self._background,
-            highlightthickness=0,
-            borderwidth=0,
-            yscrollcommand=self.scrollbar.set,
-        )
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.body = tk_module.Frame(self.canvas, background=self._background)
-        self._body_window = self.canvas.create_window(
-            (0, 0), window=self.body, anchor="nw"
-        )
-        self.body.bind("<Configure>", self._on_body_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self._bind_mousewheel(self.canvas)
-        self._bind_mousewheel(self.body)
-
-    @property
-    def _entry_frames(self) -> list[Any]:
-        """Compatibility view used by layout tests and internal measurements."""
-
-        return [entry.frame for entry in self._entry_views]
-
-    @property
-    def russian_widgets(self) -> list[Any]:
-        """Return the visible Russian labels without owning font state globally."""
-
-        return [
-            entry.russian_widget
-            for entry in self._entry_views
-            if entry.russian_widget is not None
-        ]
-
-    @property
-    def chinese_widgets(self) -> list[Any]:
-        """Return the Chinese labels without owning font state globally."""
-
-        return [entry.chinese_widget for entry in self._entry_views]
-
-    def _bind_mousewheel(self, widget: Any) -> None:
-        widget.bind("<MouseWheel>", self._on_mousewheel)
-
-    def _on_scrollbar(self, *arguments: object) -> None:
-        self.canvas.yview(*arguments)
-        self.canvas.after_idle(self._sync_auto_follow)
-
-    def _on_mousewheel(self, event: Any) -> str:
-        delta = int(getattr(event, "delta", 0))
-        if delta == 0:
-            return "break"
-        units = -max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120)
-        if units < 0:
-            self.auto_follow = False
-        self.canvas.yview_scroll(units, "units")
-        self.canvas.after_idle(self._sync_auto_follow)
-        return "break"
-
-    def _sync_auto_follow(self) -> None:
-        try:
-            _top, bottom = self.canvas.yview()
-            self.auto_follow = float(bottom) >= 0.999
-        except self.tk.TclError:
-            return
-
-    def _on_body_configure(self, _event: Any = None) -> None:
-        self._refresh_scrollregion()
-
-    def _refresh_scrollregion(self) -> None:
-        try:
-            bounds = self.canvas.bbox("all") or (0, 0, 0, 0)
-            self.canvas.configure(scrollregion=bounds)
-            if self.auto_follow:
-                self._follow_latest(bounds)
-            elif self._pending_scroll_fraction is not None:
-                self.canvas.yview_moveto(self._pending_scroll_fraction)
-            self._pending_scroll_fraction = None
-        except self.tk.TclError:
-            return
-
-    def _follow_latest(self, bounds: tuple[int, int, int, int]) -> None:
-        """Show a complete fitting pair, or the start of an oversized pair."""
-
-        if not self._entry_views:
-            self.canvas.yview_moveto(0.0)
-            return
-        latest = self._entry_views[-1].frame
-        latest.update_idletasks()
-        available_height = max(
-            1,
-            int(
-                self._content_size[1]
-                if self._content_size is not None
-                else self.canvas.winfo_height()
-            ),
-        )
-        if int(latest.winfo_reqheight()) <= available_height:
-            self.canvas.yview_moveto(1.0)
-            return
-        content_height = max(1, int(bounds[3]) - int(bounds[1]))
-        self.canvas.yview_moveto(
-            min(1.0, max(0.0, float(latest.winfo_y()) / content_height))
-        )
-
-    def _on_canvas_configure(self, event: Any) -> bool:
-        """Apply actual viewport size once; return whether layout changed."""
-
-        width = max(1, int(getattr(event, "width", self.canvas.winfo_width())))
-        height = max(1, int(getattr(event, "height", self.canvas.winfo_height())))
-        wraplength = max(120, width - 24)
-        if self._content_size == (width, height) and self.wraplength == wraplength:
-            return False
-        old_width = self._content_size[0] if self._content_size is not None else None
-        old_height = self._content_size[1] if self._content_size is not None else None
-        self._content_size = (width, height)
-        self.wraplength = wraplength
-        if old_width != width:
-            self.canvas.itemconfigure(self._body_window, width=width)
-            for widget in (*self.russian_widgets, *self.chinese_widgets):
-                widget.configure(wraplength=wraplength)
-            if self._on_wraplength_changed is not None:
-                self._on_wraplength_changed(wraplength)
-        if old_height is not None and height > old_height:
-            self._restore_latest_requested_fonts()
-        self._schedule_latest_fit()
-        self.canvas.after_idle(self._refresh_scrollregion)
-        return True
-
-    def _apply_latest_font_sizes(self, russian_size: int, chinese_size: int) -> None:
-        """Apply temporary fitting sizes to the newest pair and no history."""
-
-        self.effective_russian_font_size = russian_size
-        self.effective_chinese_font_size = chinese_size
-        if not self._entry_views:
-            return
-        latest = self._entry_views[-1]
-        if latest.russian_widget is not None:
-            latest.russian_widget.configure(font=("Segoe UI", russian_size))
-        latest.chinese_widget.configure(
-            font=("Microsoft YaHei UI", chinese_size, "bold")
-        )
-
-    def _restore_latest_requested_fonts(self) -> None:
-        if (
-            self.effective_russian_font_size == self._requested_russian_font_size
-            and self.effective_chinese_font_size == self._requested_chinese_font_size
-        ):
-            return
-        self._apply_latest_font_sizes(
-            self._requested_russian_font_size,
-            self._requested_chinese_font_size,
-        )
-
-    def _schedule_latest_fit(self) -> None:
-        if not self._entry_views:
-            return
-        if self._fit_pending:
-            return
-        self._fit_pending = True
-        self.canvas.after_idle(self._fit_latest_entry)
-
-    def _fit_latest_entry(self) -> None:
-        """Keep the newest complete RU/ZH pair visible without truncating text."""
-
-        self._fit_pending = False
-        if not self._entry_views:
-            return
-        try:
-            latest = self._entry_views[-1]
-            latest.frame.update_idletasks()
-            required_height = max(1, int(latest.frame.winfo_reqheight()))
-            available_height = max(
-                1,
-                int(
-                    self._content_size[1]
-                    if self._content_size is not None
-                    else self.canvas.winfo_height()
-                ),
-            )
-            if required_height <= available_height:
-                return
-            can_shrink = (
-                self.effective_russian_font_size > MIN_AUTO_FIT_RUSSIAN_FONT_SIZE
-                or self.effective_chinese_font_size > MIN_AUTO_FIT_CHINESE_FONT_SIZE
-            )
-            if can_shrink:
-                scale = max(
-                    0.1,
-                    min(
-                        0.98,
-                        (float(available_height) / required_height) ** 0.5 * 0.95,
-                    ),
-                )
-                russian_size = max(
-                    MIN_AUTO_FIT_RUSSIAN_FONT_SIZE,
-                    min(
-                        self.effective_russian_font_size - 1,
-                        round(self.effective_russian_font_size * scale),
-                    ),
-                )
-                chinese_size = max(
-                    MIN_AUTO_FIT_CHINESE_FONT_SIZE,
-                    min(
-                        self.effective_chinese_font_size - 1,
-                        round(self.effective_chinese_font_size * scale),
-                    ),
-                )
-                self._apply_latest_font_sizes(russian_size, chinese_size)
-                self.canvas.after_idle(self._refresh_scrollregion)
-                self._schedule_latest_fit()
-                return
-            self.canvas.after_idle(self._refresh_scrollregion)
-        except self.tk.TclError:
-            return
-
-    def _destroy_entries(self) -> None:
-        for entry in self._entry_views:
-            entry.frame.destroy()
-        self._entry_views.clear()
-
-    def render_entries(
-        self,
-        entries: Sequence[SubtitleEntry],
-        *,
-        show_russian: bool,
-        russian_font_size: int,
-        chinese_font_size: int,
-    ) -> bool:
-        """Render complete text without truncation and preserve manual history viewing."""
-
-        signature: tuple[object, ...] = (
-            show_russian,
-            int(russian_font_size),
-            int(chinese_font_size),
-            tuple(
-                (entry.index, entry.russian_text, entry.chinese_text)
-                for entry in entries
-            ),
-        )
-        if signature == self._signature:
-            return False
-        self._requested_russian_font_size = int(russian_font_size)
-        self._requested_chinese_font_size = int(chinese_font_size)
-        self.effective_russian_font_size = self._requested_russian_font_size
-        self.effective_chinese_font_size = self._requested_chinese_font_size
-        if not self.auto_follow:
-            try:
-                self._pending_scroll_fraction = float(self.canvas.yview()[0])
-            except self.tk.TclError:
-                self._pending_scroll_fraction = None
-        self._signature = signature
-        self._destroy_entries()
-        if not entries:
-            self.auto_follow = True
-            self._pending_scroll_fraction = None
-            self._fit_pending = False
-            self.canvas.configure(scrollregion=(0, 0, 0, 0))
-            self.canvas.yview_moveto(0.0)
-            return True
-
-        for position, entry in enumerate(entries):
-            frame = self.tk.Frame(
-                self.body,
-                background=self._background,
-                padx=8,
-                pady=6,
-            )
-            frame.pack(fill="x", expand=True)
-            self._bind_mousewheel(frame)
-            if position:
-                separator = self.tk.Frame(frame, background="#303540", height=1)
-                separator.pack(fill="x", pady=(0, 6))
-                self._bind_mousewheel(separator)
-            if show_russian:
-                russian = self.tk.Label(
-                    frame,
-                    text=entry.russian_text,
-                    background=self._background,
-                    foreground="#d8dbe2",
-                    justify="center",
-                    anchor="center",
-                    wraplength=self.wraplength,
-                    font=("Segoe UI", self.effective_russian_font_size),
-                )
-                russian.pack(fill="x", pady=(0, 3))
-                self._bind_mousewheel(russian)
-            else:
-                russian = None
-            chinese = self.tk.Label(
-                frame,
-                text=entry.chinese_text,
-                background=self._background,
-                foreground="#ffffff",
-                justify="center",
-                anchor="center",
-                wraplength=self.wraplength,
-                font=(
-                    "Microsoft YaHei UI",
-                    self.effective_chinese_font_size,
-                    "bold",
-                ),
-            )
-            chinese.pack(fill="x")
-            self._bind_mousewheel(chinese)
-            self._entry_views.append(
-                SubtitleEntryView(
-                    frame=frame,
-                    russian_widget=russian,
-                    chinese_widget=chinese,
-                )
-            )
-        self.canvas.after_idle(self._refresh_scrollregion)
-        self._schedule_latest_fit()
-        return True
-
-
 def position_coordinates(
     *,
     screen_width: int,
@@ -518,33 +164,35 @@ class OverlayRenderer:
         error_widget: Any,
         russian_widget: Any | None = None,
         chinese_widget: Any | None = None,
-        history_view: ScrollableSubtitleHistory | None = None,
+        subtitle_view: SingleLineSubtitleView | None = None,
     ) -> None:
-        if history_view is None and (russian_widget is None or chinese_widget is None):
-            raise ValueError("Subtitle widgets or a scrollable history view are required.")
+        if subtitle_view is None and (russian_widget is None or chinese_widget is None):
+            raise ValueError("Subtitle widgets or a single-line subtitle view are required.")
         self.root = root
         self.status_widget = status_widget
         self.russian_widget = russian_widget
         self.chinese_widget = chinese_widget
-        self.history_view = history_view
+        self.subtitle_view = subtitle_view
         self.error_widget = error_widget
         self._drag_offset = (0, 0)
 
     def render(self, state: SubtitleViewState) -> None:
-        entries = state.entries
-        russian = "\n".join(entry.russian_text for entry in entries)
-        chinese = "\n".join(entry.chinese_text for entry in entries)
+        entries = state.entries[-1:]
+        russian = single_line_text(entries[0].russian_text) if entries else ""
+        chinese = single_line_text(entries[0].chinese_text) if entries else ""
         status_prefix = state.status.split("...", 1)[0]
         self.status_widget.config(
-            text=state.status,
+            text="Listening" if state.status.startswith("Listening...") else state.status,
             foreground=STATUS_COLORS.get(status_prefix, "#b0b0b0"),
         )
-        if self.history_view is not None:
-            self.history_view.render_entries(
+        if self.subtitle_view is not None:
+            self.subtitle_view.render_entries(
                 entries,
                 show_russian=state.show_russian,
                 russian_font_size=state.russian_font_size,
                 chinese_font_size=state.chinese_font_size,
+                text_opacity=state.text_opacity,
+                text_outline=state.text_outline,
             )
         else:
             assert self.russian_widget is not None
@@ -557,7 +205,7 @@ class OverlayRenderer:
                 text=chinese,
                 font=("Microsoft YaHei UI", state.chinese_font_size, "bold"),
             )
-        self.error_widget.config(text=state.latest_error)
+        self.error_widget.config(text=state.latest_error or state.srt_error)
 
     def begin_drag(self, event: Any) -> None:
         self._drag_offset = (
@@ -592,6 +240,14 @@ class SettingsPanel:
         is_running: Callable[[], bool],
         microphone: MicrophonePanelCallbacks | None = None,
         models: ModelPanelCallbacks | None = None,
+        on_open_subtitles: Callable[[], None] | None = None,
+        on_text_opacity: Callable[[float], None] | None = None,
+        on_toggle_outline: Callable[[], None] | None = None,
+        on_toggle_toolbar: Callable[[], None] | None = None,
+        on_hide: Callable[[], None] | None = None,
+        on_restore_defaults: Callable[[], None] | None = None,
+        on_open_logs: Callable[[], None] | None = None,
+        on_dump_threads: Callable[[], None] | None = None,
         tk_module: Any | None = None,
         ttk_module: Any | None = None,
     ) -> None:
@@ -605,15 +261,30 @@ class SettingsPanel:
         self.is_running = is_running
         self.microphone = microphone
         self.models = models
+        self._on_hide = on_hide
         self.last_geometry: str | None = None
         self.window = tk_module.Toplevel(root)
         self.window.title("Subtitle settings")
         self.window.transient(root)
         self.window.configure(background="#20242c", padx=12, pady=10)
         self.window.attributes("-topmost", bool(state.topmost))
+        self.window.attributes("-alpha", 1.0)
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
         self.window.bind("<Escape>", lambda _event: self.hide())
 
+        if ttk_module is None:
+            from tkinter import ttk as ttk_module
+        self._checks: dict[str, Any] = {}
+        self._body = tk_module.Frame(self.window, background="#20242c")
+        self._body.pack(side="bottom", fill="x", pady=(6, 0))
+        self.start_stop_button = self._button("Start", on_start_stop)
+        clear_button = self._button("Clear display", on_clear)
+        exit_button = self._button("Exit application", on_exit, danger=True)
+        for button in (self.start_stop_button, clear_button, exit_button):
+            button.pack(side="left", fill="none", padx=3, pady=2)
+        from .settings_pages import create_settings_pages
+        self.pages = create_settings_pages(self.window, root, tk_module, ttk_module)
+        self._body = self.pages["General"]
         self.microphone_combobox: Any | None = None
         self.microphone_refresh_button: Any | None = None
         self.microphone_status: Any | None = None
@@ -623,7 +294,7 @@ class SettingsPanel:
                 from tkinter import ttk as ttk_module
 
             self._label("Microphone input")
-            microphone_row = tk_module.Frame(self.window, background="#20242c")
+            microphone_row = tk_module.Frame(self._body, background="#20242c")
             microphone_row.pack(fill="x", pady=(2, 2))
             self.microphone_combobox = ttk_module.Combobox(
                 microphone_row,
@@ -641,7 +312,7 @@ class SettingsPanel:
             )
             self.microphone_refresh_button.pack(side="left", padx=(6, 0))
             self.microphone_status = tk_module.Label(
-                self.window,
+                self._body,
                 text="",
                 anchor="w",
                 justify="left",
@@ -654,12 +325,13 @@ class SettingsPanel:
             # explicit Refresh button. Rendering and showing do not poll.
             self._refresh_microphones(initial=True)
 
+        self._body = self.pages["Diagnostics"]
         self.model_status: Any | None = None
         self.model_recheck_button: Any | None = None
         if models is not None:
             self._label("Model assets")
             self.model_status = tk_module.Label(
-                self.window,
+                self._body,
                 text="",
                 anchor="w",
                 justify="left",
@@ -674,26 +346,46 @@ class SettingsPanel:
             self._button("Open model folder", models.open_folder)
             self._button("Open model setup instructions", models.open_instructions)
 
-        self.start_stop_button = self._button("", on_start_stop)
-        self._button("Clear", on_clear)
-        self.russian_button = self._button("", on_toggle_russian)
-        self.pin_button = self._button("", on_toggle_topmost)
-        self.border_button = self._button("", on_toggle_borderless)
+        self._body = self.pages["General"]
+        self.progress_status = self._label("Ready")
+        self.russian_button = self._check("Show Russian", "show_russian", on_toggle_russian)
+        self.pin_button = self._check("Always on top", "topmost", on_toggle_topmost)
+        self._body = self.pages["More"]
+        self.border_button = self._check("Borderless window", "borderless", on_toggle_borderless)
+        self.toolbar_button = self._check("Show toolbar", "toolbar_visible", on_toggle_toolbar or (lambda: None))
+        self._body = self.pages["Appearance"]
+        self.outline_button = self._check("Black text outline", "text_outline", on_toggle_outline or (lambda: None))
+        self._body = self.pages["More"]
+        self.subtitles_button: Any | None = None
+        self.subtitles_status: Any | None = None
+        if on_open_subtitles is not None:
+            self.subtitles_button = self._button("Open subtitles folder", on_open_subtitles)
+            self.subtitles_status = tk_module.Label(
+                self._body, anchor="w", justify="left", wraplength=360,
+                background="#20242c", foreground="#c8ccd4",
+            )
+            self.subtitles_status.pack(fill="x", pady=(1, 3))
 
         self._label("Position")
-        position_row = tk_module.Frame(self.window, background="#20242c")
+        position_row = tk_module.Frame(self._body, background="#20242c")
         position_row.pack(fill="x", pady=(0, 6))
-        for preset in ("top", "bottom", "floating"):
+        for preset in ("top", "bottom"):
             tk_module.Button(
                 position_row,
-                text=preset.title(),
+                text=f"Move to {preset}",
                 command=lambda selected=preset: on_position(selected),
                 **self._button_style(),
             ).pack(side="left", padx=2)
 
-        self._label("Opacity")
+        self._body = self.pages["Appearance"]
+        self._label("Background opacity (%)")
         self.opacity_scale = self._scale(
-            0.5, 1.0, 0.01, state.opacity, lambda value: on_opacity(float(value))
+            0, 100, 1, state.opacity * 100, lambda value: on_opacity(float(value) / 100)
+        )
+        self._label("Text opacity (%)")
+        self.text_opacity_scale = self._scale(
+            0, 100, 1, state.text_opacity * 100,
+            lambda value: on_text_opacity(float(value) / 100) if on_text_opacity else None,
         )
         self._label("Chinese font size")
         self.chinese_scale = self._scale(
@@ -711,7 +403,15 @@ class SettingsPanel:
             state.russian_font_size,
             lambda value: on_russian_font(int(float(value))),
         )
-        self._button("Exit", on_exit, danger=True)
+        self._body = self.pages["More"]
+        if on_restore_defaults is not None:
+            self._button("Restore defaults", on_restore_defaults)
+        self._label("Double-click subtitles: show / hide toolbar\nRight-click subtitles: settings\nCtrl+Space: start / stop   Ctrl+Q: exit")
+        self._body = self.pages["Diagnostics"]
+        if on_open_logs is not None:
+            self._button("Open logs folder", on_open_logs)
+        if on_dump_threads is not None:
+            self._button("Save thread diagnostics", on_dump_threads)
         self.sync()
 
     def _refresh_microphones(self, *, initial: bool = False) -> None:
@@ -786,7 +486,7 @@ class SettingsPanel:
             return
         report = self.models.snapshot()
         if report.ready:
-            status = "Ready. All pinned model assets passed the quick offline check."
+            status = "Models ready for offline use."
         else:
             missing = ", ".join(item.model_id for item in report.missing_models)
             status = (
@@ -812,18 +512,32 @@ class SettingsPanel:
         style = self._button_style()
         if danger:
             style["background"] = "#a83232"
-        button = self.tk.Button(self.window, text=text, command=command, **style)
+        button = self.tk.Button(self._body, text=text, command=command, **style)
         button.pack(fill="x", pady=2)
         return button
 
-    def _label(self, text: str) -> None:
-        self.tk.Label(
-            self.window,
+    def _check(self, text: str, name: str, command: Callable[[], None]) -> Any:
+        variable = self.tk.BooleanVar(self.window, value=bool(getattr(self.state_model, name)))
+        self._checks[name] = variable
+        check = self.tk.Checkbutton(
+            self._body, text=text, variable=variable, command=command,
+            background="#20242c", foreground="#ffffff", selectcolor="#303744",
+            activebackground="#20242c", activeforeground="#ffffff", anchor="w",
+        )
+        check.pack(fill="x", pady=6)
+        return check
+
+    def _label(self, text: str) -> Any:
+        label = self.tk.Label(
+            self._body,
             text=text,
             anchor="w",
             background="#20242c",
             foreground="#d8dbe2",
-        ).pack(fill="x", pady=(7, 0))
+            justify="left", wraplength=300,
+        )
+        label.pack(fill="x", pady=(7, 0))
+        return label
 
     def _scale(
         self,
@@ -834,7 +548,7 @@ class SettingsPanel:
         command: Callable[[str], None],
     ) -> Any:
         scale = self.tk.Scale(
-            self.window,
+            self._body,
             from_=minimum,
             to=maximum,
             resolution=resolution,
@@ -865,6 +579,7 @@ class SettingsPanel:
     def sync(self) -> None:
         if not self.exists():
             return
+        self.progress_status.configure(text=self.state_model.status)
         running = self.is_running()
         stopping = self.state_model.stopping
         if stopping:
@@ -878,17 +593,17 @@ class SettingsPanel:
             state="disabled" if stopping else "normal",
             background="#b63838" if running else "#2166a5",
         )
-        self.russian_button.config(
-            text=f"Show Russian: {'on' if self.state_model.show_russian else 'off'}"
-        )
-        self.pin_button.config(
-            text=f"Always on top: {'pinned' if self.state_model.topmost else 'unpinned'}"
-        )
-        self.border_button.config(
-            text=f"Borderless: {'on' if self.state_model.borderless else 'off'}"
-        )
+        for name, variable in self._checks.items():
+            variable.set(bool(getattr(self.state_model, name)))
         self._sync_microphone_controls()
         self._sync_model_controls()
+        if self.subtitles_status is not None:
+            path = self.state_model.srt_path
+            error = self.state_model.srt_error
+            text = error or ("Subtitles are saved automatically (SRT)." if path else "SRT recording starts with the next session.")
+            self.subtitles_status.config(
+                text=text, foreground="#ff8a80" if error else "#c8ccd4",
+            )
 
     def show(self) -> None:
         if not self.exists():
@@ -897,15 +612,32 @@ class SettingsPanel:
         if self.last_geometry:
             self.window.geometry(self.last_geometry)
         self.sync()
+        self.window.attributes("-alpha", 1.0)
         self.window.attributes("-topmost", bool(self.state_model.topmost))
         self.window.lift()
         self.state_model.settings_visible = True
+        self.window.after_idle(self._fit_into_workarea)
+
+    def _fit_into_workarea(self) -> None:
+        if not self.exists() or not self.is_visible():
+            return
+        from .workarea import work_area, fit_rectangle, client_placement_area
+        window = self.window
+        rect = (window.winfo_x(), window.winfo_y(), window.winfo_width(), window.winfo_height())
+        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
+        area = client_placement_area(window, area, framed=True)
+        fitted = fit_rectangle(rect, area)
+        if fitted != rect:
+            x, y, width, height = fitted
+            window.geometry(f"{width}x{height}+{x}+{y}")
 
     def hide(self) -> None:
         if not self.exists():
             self.state_model.settings_visible = False
             return
         try:
+            if self._on_hide is not None:
+                self._on_hide()
             self.last_geometry = str(self.window.geometry())
             self.window.withdraw()
         finally:
@@ -926,6 +658,7 @@ class SubtitleOverlay:
         on_exit: Callable[[], None],
         microphone: MicrophonePanelCallbacks | None = None,
         models: ModelPanelCallbacks | None = None,
+        on_open_subtitles: Callable[[], None] | None = None,
     ) -> None:
         import tkinter as tk
 
@@ -938,26 +671,33 @@ class SubtitleOverlay:
         self.on_exit = on_exit
         self.microphone_callbacks = microphone
         self.model_callbacks = models
+        self.on_open_subtitles = on_open_subtitles
+        self.on_restore_defaults: Callable[[], None] | None = None
+        self.on_open_logs: Callable[[], None] | None = None
+        self.on_dump_threads: Callable[[], None] | None = None
         self.running = False
         self.closing = False
         self.settings_panel: SettingsPanel | None = None
+        self._taskbar = WindowsTaskbar() if sys.platform == "win32" else None
         self._borderless_transition_pending = False
         self._dragging = False
+        self._drag_origin: tuple[int, int] | None = None
+        self._drag_moved = False
+        self._focus_recovery_ready = True
+        self._initial_fit_pending = True
         self._resize_session: ResizeSession | None = None
         self._window_width = max(640, int(self.root.winfo_screenwidth() * 0.8))
         self._window_height = 280
+        self._minimum_window_height = MIN_WINDOW_HEIGHT
         self._last_root_size = (self._window_width, self._window_height)
 
         self.root.title("Russian–Chinese Live Subtitles")
         self.root.configure(background="#111318")
         self.root.protocol("WM_DELETE_WINDOW", on_exit)
-        x, y = position_coordinates(
-            screen_width=self.root.winfo_screenwidth(),
-            screen_height=self.root.winfo_screenheight(),
-            window_width=self._window_width,
-            window_height=self._window_height,
-            preset=state.position,
-        )
+        from .workarea import work_area, positioned
+        initial = (0, 0, self._window_width, self._window_height)
+        area = work_area(initial, (root.winfo_screenwidth(), root.winfo_screenheight()))
+        x, y, self._window_width, self._window_height = positioned(initial, area, state.position)
         self.root.geometry(f"{self._window_width}x{self._window_height}+{x}+{y}")
         configure_window_resizing(self.root)
         self.root.attributes("-topmost", bool(state.topmost))
@@ -974,16 +714,12 @@ class SubtitleOverlay:
             highlightbackground="#547aa5" if state.topmost else "#404550",
         )
         self.control_bar.pack(fill="x", side="bottom")
+        self._toolbar_packed = True
         self.control_bar.pack_propagate(False)
-        self.drag_area = tk.Label(
-            self.control_bar,
-            text="⋮⋮  Drag",
-            background="#292e38",
-            foreground="#c8ccd4",
-            width=9,
-            anchor="w",
-        )
-        self.drag_area.pack(side="left")
+        # Allocate actions before the expanding status. A long device/error
+        # label must never consume the space needed to stop or close the app.
+        self.actions = tk.Frame(self.control_bar, background="#292e38")
+        self.actions.pack(side="right")
         self.status = tk.Label(
             self.control_bar,
             background="#292e38",
@@ -1015,27 +751,28 @@ class SubtitleOverlay:
             wraplength=max(120, self._window_width - 60),
         )
         self.error.pack(fill="x", side="bottom")
-        self.history_view = ScrollableSubtitleHistory(
+        self.subtitle_view = SingleLineSubtitleView(
             self.content,
             tk_module=tk,
-            initial_wraplength=max(120, self._window_width - 60),
-            on_wraplength_changed=self._set_error_wraplength,
+            on_width_changed=self._set_error_wraplength,
+            on_minimum_height=self._set_subtitle_minimum_height,
         )
-        self.history_view.container.pack(fill="both", expand=True)
+        self.subtitle_view.container.pack(fill="both", expand=True)
         self.renderer = OverlayRenderer(
             root,
             status_widget=self.status,
             error_widget=self.error,
-            history_view=self.history_view,
+            subtitle_view=self.subtitle_view,
         )
         self._bind_interactions_once()
+        self._sync_toolbar()
         self.render()
 
     def _control_button(
         self, text: str, command: Callable[[], None], *, danger: bool = False
     ) -> Any:
         button = self.tk.Button(
-            self.control_bar,
+            self.actions,
             text=text,
             command=command,
             background="#a83232" if danger else "#3a3f4b",
@@ -1048,6 +785,16 @@ class SubtitleOverlay:
         button.pack(side="left", padx=2)
         return button
 
+    def _set_subtitle_minimum_height(self, height: int) -> None:
+        if not hasattr(self, "subtitle_view"):
+            return
+        chrome_height = self.root.winfo_height() - self.subtitle_view.canvas.winfo_height()
+        minimum = max(MIN_WINDOW_HEIGHT, chrome_height + height)
+        if minimum != self._minimum_window_height:
+            self._minimum_window_height = minimum
+            self.root.minsize(MIN_WINDOW_WIDTH, minimum)
+            self.root.after_idle(self._keep_in_workarea)
+
     def _set_error_wraplength(self, wraplength: int) -> None:
         self.error.configure(wraplength=max(120, int(wraplength)))
 
@@ -1055,23 +802,117 @@ class SubtitleOverlay:
         # A Toplevel bindtag naturally receives descendant events. Binding every
         # child as well would toggle twice (open, then immediately withdraw).
         self.root.bind("<ButtonRelease-3>", self._on_context_request)
-        for widget in (self.drag_area, self.status):
-            widget.bind("<ButtonPress-1>", self._begin_drag)
-            widget.bind("<B1-Motion>", self._drag)
         self.root.bind("<Motion>", self._update_resize_cursor)
         self.root.bind("<Leave>", self._clear_resize_cursor)
-        self.root.bind("<ButtonPress-1>", self._begin_resize)
-        self.root.bind("<B1-Motion>", self._resize_drag)
+        self.root.bind("<ButtonPress-1>", self._begin_pointer_action)
+        self.root.bind("<B1-Motion>", self._pointer_drag)
         self.root.bind("<ButtonRelease-1>", self._end_pointer_action)
-        self.root.bind("<Configure>", self._on_root_configure)
+        self.root.bind("<Double-Button-1>", self._toggle_toolbar_event)
+        for sequence, callback in (
+            ("<Configure>", self._on_root_configure),
+            ("<Map>", self._on_root_map),
+            ("<Unmap>", self._on_root_unmap),
+            ("<FocusIn>", self._on_root_focus),
+            ("<FocusOut>", self._on_root_focus_out),
+        ):
+            bind_window_lifecycle(self.root, sequence, callback)
+        self.root.bind("<Control-h>", lambda _event: self.toggle_toolbar())
         self.root.bind("<Control-q>", lambda _event: self.on_exit())
         self.root.bind("<Control-l>", lambda _event: self.on_clear())
         self.root.bind("<Control-space>", lambda _event: self._start_stop())
         self.root.bind("<Escape>", lambda _event: self.hide_settings_panel())
         self.root.bind("<F11>", lambda _event: self.toggle_borderless())
+        bind_caption = getattr(self.subtitle_view, "set_pointer_handlers", None)
+        if callable(bind_caption):
+            bind_caption({
+                "<ButtonPress-1>": self._begin_pointer_action,
+                "<B1-Motion>": self._pointer_drag,
+                "<ButtonRelease-1>": self._end_pointer_action,
+                "<Double-Button-1>": self._toggle_toolbar_event,
+                "<ButtonRelease-3>": self._on_context_request,
+                "<Motion>": self._update_resize_cursor,
+                "<Leave>": self._clear_resize_cursor,
+            })
 
     def _on_context_request(self, _event: Any) -> None:
         self.toggle_settings_panel()
+
+    def _on_root_map(self, event: Any) -> None:
+        if event.widget is self.root and not self.closing:
+            if getattr(self, "_initial_fit_pending", False):
+                self._initial_fit_pending = False
+                self.root.after_idle(self._keep_in_workarea)
+            self._focus_recovery_ready = True
+            self.root.after_idle(self._sync_taskbar)
+            self.root.after_idle(self._sync_caption_window)
+            self.root.after_idle(self._recover_controls)
+
+    def _on_root_unmap(self, event: Any) -> None:
+        if event.widget is self.root:
+            self._sync_caption_window()
+
+    def _on_root_focus(self, event: Any) -> None:
+        if event.widget is self.root:
+            self.root.after_idle(self._sync_caption_window)
+            if getattr(self, "_focus_recovery_ready", True):
+                self._recover_controls()
+
+    def _on_root_focus_out(self, event: Any) -> None:
+        if event.widget is self.root:
+            self._focus_recovery_ready = True
+
+    def _suppress_focus_recovery(self) -> None:
+        # Withdrawing Settings can return focus directly to the invisible root.
+        # Respect dismissal until a later activation or explicit reveal.
+        self._focus_recovery_ready = False
+
+    def _sync_caption_window(self) -> None:
+        if self._borderless_transition_pending:
+            return
+        view = getattr(self, "subtitle_view", None)
+        sync = getattr(view, "sync_window", None)
+        if callable(sync):
+            sync()
+
+    def _recover_controls(self) -> None:
+        if self.closing or self._borderless_transition_pending:
+            return
+        if self.state.opacity > 0 and self.state.toolbar_visible:
+            return
+        panel = self._existing_settings_panel()
+        if panel is None:
+            panel = self._create_settings_panel()
+        if not panel.is_visible():
+            panel.show()
+
+    def _sync_taskbar(self) -> None:
+        if self._taskbar is not None and not self.closing:
+            try:
+                self._taskbar.ensure_button(self.root)
+            except OSError:
+                diagnostic_logger().exception("Could not register the subtitle taskbar window")
+
+    def reveal(self) -> None:
+        """Handle an explicit request to show this instance on the Tk thread."""
+
+        if self.closing:
+            return
+        if self.root.state() in {"withdrawn", "iconic"}:
+            self.root.deiconify()
+        if self._taskbar is None:
+            self.root.lift()
+        else:
+            self._sync_taskbar()
+            try:
+                self._taskbar.activate(self.root)
+            except OSError:
+                diagnostic_logger().exception("Could not activate the subtitle taskbar window")
+        self._sync_caption_window()
+        # Native restoration can complete Tk's owner mapping after this call.
+        # Reconcile the owned text surface once at the next idle boundary.
+        self.root.after_idle(self._sync_caption_window)
+        self._focus_recovery_ready = True
+        self._recover_controls()
 
     def _root_relative_pointer(self, event: Any) -> tuple[int, int]:
         root_x_getter = getattr(self.root, "winfo_rootx", self.root.winfo_x)
@@ -1096,7 +937,7 @@ class SubtitleOverlay:
         if self._resize_session is not None:
             direction = self._resize_session.direction
         else:
-            direction = self._resize_direction_for_event(event)
+            direction = None if self._pointer_on_control(event) else self._resize_direction_for_event(event)
         self.root.configure(cursor=RESIZE_CURSORS.get(direction, ""))
 
     def _clear_resize_cursor(self, _event: Any = None) -> None:
@@ -1108,13 +949,72 @@ class SubtitleOverlay:
             self._dragging = False
             return
         self._dragging = True
+        self._drag_origin = (int(event.x_root), int(event.y_root))
+        self._drag_moved = False
         self.renderer.begin_drag(event)
 
     def _drag(self, event: Any) -> None:
         if not self._dragging or self._resize_session is not None:
             return
+        origin = self._drag_origin
+        if not self._drag_moved and origin is not None:
+            if max(abs(int(event.x_root) - origin[0]), abs(int(event.y_root) - origin[1])) < 4:
+                return
+            self._drag_moved = True
         self.state.set_position("floating")
         self.renderer.drag(event)
+
+    @staticmethod
+    def _pointer_on_control(event: Any) -> bool:
+        widget = getattr(event, "widget", None)
+        widget_class = getattr(widget, "winfo_class", lambda: "")()
+        return widget_class in {
+            "Button", "TButton", "Scale", "TScale", "TCombobox", "Entry", "TEntry",
+            "Checkbutton", "TCheckbutton", "Radiobutton", "TRadiobutton", "Scrollbar",
+        }
+
+    def _begin_pointer_action(self, event: Any) -> None:
+        self._dragging = False
+        self._drag_origin = None
+        self._resize_session = None
+        if self.closing or self._pointer_on_control(event):
+            return
+        self._begin_resize(event)
+        if self._resize_session is None:
+            self._begin_drag(event)
+
+    def _pointer_drag(self, event: Any) -> None:
+        if self._resize_session is not None:
+            self._resize_drag(event)
+        else:
+            self._drag(event)
+
+    def _toggle_toolbar_event(self, event: Any) -> str | None:
+        if self.closing or self._pointer_on_control(event) or self._resize_direction_for_event(event):
+            return None
+        self._dragging = False
+        self._drag_origin = None
+        self._resize_session = None
+        self.toggle_toolbar()
+        return "break"
+
+    def _sync_toolbar(self) -> None:
+        visible = self.state.toolbar_visible
+        if visible == self._toolbar_packed:
+            return
+        if visible:
+            self.control_bar.pack(fill="x", side="bottom", before=self.content)
+        else:
+            self.control_bar.pack_forget()
+        self._toolbar_packed = visible
+        self.root.after_idle(self._sync_caption_window)
+
+    def toggle_toolbar(self) -> None:
+        if self.closing:
+            return
+        self.state.toolbar_visible = not self.state.toolbar_visible
+        self._sync_toolbar()
+        self.render()
 
     def _begin_resize(self, event: Any) -> None:
         direction = self._resize_direction_for_event(event)
@@ -1146,6 +1046,7 @@ class SubtitleOverlay:
                 direction=session.direction,
                 delta_x=int(event.x_root) - session.pointer_x,
                 delta_y=int(event.y_root) - session.pointer_y,
+                minimum_height=self._minimum_window_height,
             )
             self.root.geometry(f"{width}x{height}+{x}+{y}")
         except (self.tk.TclError, ValueError):
@@ -1154,12 +1055,14 @@ class SubtitleOverlay:
 
     def _end_pointer_action(self, event: Any) -> None:
         self._dragging = False
+        self._drag_origin = None
         self._resize_session = None
         self._update_resize_cursor(event)
 
     def _on_root_configure(self, event: Any) -> None:
         if getattr(event, "widget", self.root) is not self.root:
             return
+        self._sync_caption_window()
         width = int(getattr(event, "width", self.root.winfo_width()))
         height = int(getattr(event, "height", self.root.winfo_height()))
         if width <= 1 or height <= 1:
@@ -1225,6 +1128,14 @@ class SubtitleOverlay:
             is_running=lambda: self.running,
             microphone=self.microphone_callbacks,
             models=self.model_callbacks,
+            on_open_subtitles=self.on_open_subtitles,
+            on_text_opacity=self.set_text_opacity,
+            on_toggle_outline=self.toggle_text_outline,
+            on_toggle_toolbar=self.toggle_toolbar,
+            on_hide=self._suppress_focus_recovery,
+            on_restore_defaults=self.on_restore_defaults,
+            on_open_logs=self.on_open_logs,
+            on_dump_threads=self.on_dump_threads,
         )
         self.settings_panel = panel
         return panel
@@ -1271,6 +1182,7 @@ class SubtitleOverlay:
     def toggle_topmost(self) -> None:
         self.state.topmost = not self.state.topmost
         self.root.attributes("-topmost", bool(self.state.topmost))
+        self._sync_caption_window()
         panel = self._existing_settings_panel()
         if panel is not None:
             panel.window.attributes("-topmost", bool(self.state.topmost))
@@ -1285,6 +1197,9 @@ class SubtitleOverlay:
         self._resize_session = None
         self.state.borderless = not self.state.borderless
         self._borderless_transition_pending = True
+        prepare = getattr(getattr(self, "subtitle_view", None), "prepare_window_change", None)
+        if callable(prepare):
+            prepare()
         self.root.overrideredirect(bool(self.state.borderless))
         self.root.after_idle(lambda: self._finish_borderless_toggle(geometry))
 
@@ -1292,14 +1207,25 @@ class SubtitleOverlay:
         self.root.geometry(geometry)
         self.root.attributes("-topmost", bool(self.state.topmost))
         self.root.attributes("-alpha", float(self.state.opacity))
-        self.root.resizable(True, True)
+        # Resizability was set at construction. Repeating it replaces the
+        # native shell wrapper on Windows even when neither axis changes.
+        self._sync_taskbar()
         self.root.configure(cursor="")
         self._borderless_transition_pending = False
+        self._sync_caption_window()
         self.render()
 
     def set_opacity(self, value: float) -> None:
-        self.state.opacity = min(1.0, max(0.5, float(value)))
+        self.state.opacity = min(1.0, max(0.0, float(value)))
         self.root.attributes("-alpha", float(self.state.opacity))
+
+    def set_text_opacity(self, value: float) -> None:
+        self.state.text_opacity = min(1.0, max(0.0, float(value)))
+        self.render()
+
+    def toggle_text_outline(self) -> None:
+        self.state.text_outline = not self.state.text_outline
+        self.render()
 
     def set_chinese_font(self, value: int) -> None:
         self.state.chinese_font_size = min(72, max(16, int(value)))
@@ -1311,13 +1237,29 @@ class SubtitleOverlay:
 
     def set_position(self, preset: str) -> None:
         self.state.set_position(preset)
-        x, y = position_coordinates(
-            screen_width=self.root.winfo_screenwidth(),
-            screen_height=self.root.winfo_screenheight(),
-            window_width=max(MIN_WINDOW_WIDTH, int(self.root.winfo_width())),
-            window_height=max(MIN_WINDOW_HEIGHT, int(self.root.winfo_height())),
-            preset=preset,
-            current_x=int(self.root.winfo_x()),
-            current_y=int(self.root.winfo_y()),
-        )
-        self.root.geometry(f"+{x}+{y}")
+        from .workarea import work_area, positioned, client_placement_area
+        rect = self.window_rectangle()
+        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
+        area = client_placement_area(self.root, area, framed=not self.state.borderless)
+        x, y, width, height = positioned(rect, area, preset)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def window_rectangle(self) -> tuple[int, int, int, int]:
+        return (int(self.root.winfo_x()), int(self.root.winfo_y()),
+                max(MIN_WINDOW_WIDTH, int(self.root.winfo_width())),
+                max(MIN_WINDOW_HEIGHT, int(self.root.winfo_height())))
+
+    def restore_geometry(self, rect: tuple[int, int, int, int]) -> None:
+        from .workarea import fit_rectangle, work_area, client_placement_area
+        area = work_area(rect, (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
+        area = client_placement_area(self.root, area, framed=not self.state.borderless)
+        x, y, width, height = fit_rectangle(rect, area)
+        self.state.set_position("floating")
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _keep_in_workarea(self) -> None:
+        if self.closing or self._borderless_transition_pending:
+            return
+        if self.root.winfo_width() <= 1 or self.root.winfo_height() <= 1:
+            return
+        self.restore_geometry(self.window_rectangle())

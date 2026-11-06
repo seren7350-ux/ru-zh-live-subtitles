@@ -68,6 +68,16 @@ class MicrophoneSelectorModel:
     def has_refreshed(self) -> bool:
         return self._has_refreshed
 
+    def preference_name(self) -> str:
+        return next((d.name for d in self._devices if d.index == self.selected_index), "")
+
+    def restore_name(self, name: str) -> bool:
+        """Never reuse a stale numeric index or guess between duplicate names."""
+        self.refresh()
+        matches = [d for d in self._devices if d.name == name]
+        self.selected_index = matches[0].index if len(matches) == 1 else None
+        return len(matches) == 1
+
     def select(self, device_index: int | None) -> MicrophoneSelectorSnapshot:
         """Select by index only; callers decide when mutation is permitted."""
 

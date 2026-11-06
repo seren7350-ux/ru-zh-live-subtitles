@@ -36,3 +36,7 @@ data/
 .DS_Store
 Thumbs.db
 /packaging-manifest.json
+
+# Local deliverables, model staging, diagnostics and document scratch files.
+/output/
+/tmp/
