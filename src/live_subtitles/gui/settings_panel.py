@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .. import __version__
 from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
 from .workarea import window_placement
@@ -139,6 +140,7 @@ class SettingsPanel:
             self._refresh_microphones(initial=True)
 
         self._body = self.pages["Diagnostics"]
+        self._label(f"Russian–Chinese Live Subtitles {__version__}")
         self.model_status: Any | None = None
         self.model_recheck_button: Any | None = None
         if models is not None:

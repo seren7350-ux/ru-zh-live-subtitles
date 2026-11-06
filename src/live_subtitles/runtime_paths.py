@@ -45,6 +45,11 @@ def user_data_directory() -> Path:
     return base / APPLICATION_DIRECTORY_NAME
 
 
+def user_model_root() -> Path:
+    """Shared default for asset checks, preparation, and offline inference."""
+    return user_data_directory() / "models"
+
+
 def log_directory() -> Path:
     """Return the per-user diagnostic log directory without creating it."""
 

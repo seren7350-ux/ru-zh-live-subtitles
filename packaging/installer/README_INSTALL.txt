@@ -20,6 +20,17 @@ Application location:
 Model location:
   %LOCALAPPDATA%\ru-zh-live-subtitles\models
 
+After installation, open Russian-Chinese Live Subtitles from the Start menu.
+Press F8 to start or stop. Settings > Diagnostics shows the application version
+and whether the offline models are ready.
+
+Preferences and logs:
+  %LOCALAPPDATA%\ru-zh-live-subtitles\preferences.json
+  %LOCALAPPDATA%\ru-zh-live-subtitles\logs
+
+Saved transcripts:
+  %USERPROFILE%\ru-zh-live-subtitles\subtitles
+
 The Start-menu shortcut launches:
   live-overlay --translation-device cpu --offline --no-auto-start
 

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable
 from urllib.request import urlopen
 
+from ..runtime_paths import user_model_root
+
 PACKAGE_NAME = "silero-vad"
 PACKAGE_VERSION = "6.2.1"
 WHEEL_FILENAME = "silero_vad-6.2.1-py3-none-any.whl"
@@ -54,9 +56,7 @@ class VadAssetInfo:
 def vad_cache_dir() -> Path:
     """Return the per-user model cache without creating it."""
 
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    base = Path(local_app_data) if local_app_data else Path.home() / ".cache"
-    return base / "ru-zh-live-subtitles" / "models" / "silero-vad" / PACKAGE_VERSION
+    return user_model_root() / PACKAGE_NAME / PACKAGE_VERSION
 
 
 def _sha256_stream(stream: BinaryIO) -> str:

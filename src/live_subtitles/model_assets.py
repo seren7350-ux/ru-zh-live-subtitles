@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .runtime_paths import user_data_directory
+from .runtime_paths import user_model_root
 
 SILERO_VERSION = "6.2.1"
 GIGAAM_MULTILINGUAL_MODEL_ID = "ai-sage/GigaAM-Multilingual"
@@ -159,12 +159,6 @@ class ModelAssetsReport:
         return tuple(
             status for status in self.statuses if status.required and not status.ready
         )
-
-
-def user_model_root() -> Path:
-    """Return the per-user model root without creating it."""
-
-    return user_data_directory() / "models"
 
 
 def managed_hf_home(model_root: Path | None = None) -> Path:
