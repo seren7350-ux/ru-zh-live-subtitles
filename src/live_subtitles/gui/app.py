@@ -44,6 +44,7 @@ from .process_controller import (
     LiveWorkerConfig,
     LiveWorkerSummary,
 )
+from .session_progress import SessionProgress
 from .state import SubtitleEntry, SubtitleViewState
 
 if TYPE_CHECKING:
@@ -240,8 +241,7 @@ class GuiRuntime:
         self.preferences = preferences
         self._preference_snapshot: dict[str, Any] | None = None
         self._preference_check_at = self.clock()
-        self._preparation_stage = "Preparing models"
-        self._preparation_started_at = self.clock()
+        self.progress = SessionProgress(self.clock())
         microphone_callbacks = None
         if microphone_selector is not None:
             microphone_callbacks = MicrophonePanelCallbacks(
@@ -533,8 +533,7 @@ class GuiRuntime:
                 self.overlay.render()
                 return
         self._logger.info("Subtitle session start requested")
-        self._preparation_started_at = self.clock()
-        self._preparation_stage = "Preparing models"
+        self.progress = SessionProgress(self.clock())
         try:
             started = self.controller.start()
         except Exception as exc:
@@ -561,8 +560,7 @@ class GuiRuntime:
             self._consume_events()
             return
         self._logger.info("Subtitle session stop requested")
-        self.state.set_status("Stopping...")
-        self._cancel_requested_at = self.clock()
+        self.progress.request_stop(self.state, self.clock())
         self.overlay.set_running(True)
         self.overlay.render()
         self.controller.request_stop("user requested stop")
@@ -645,9 +643,7 @@ class GuiRuntime:
         subtitle_added = False
         if isinstance(event, PreparingEvent):
             self._logger.info("%s", event.message)
-            if not self.state.stopping and not self.closing:
-                self._preparation_stage = event.message
-                self.state.set_status(event.message)
+            self.progress.preparing(self.state, event.message, self.closing)
         elif isinstance(event, ModelsReadyEvent):
             self._logger.info(
                 "Models ready; vad_seconds=%.3f; asr_seconds=%.3f; translation_seconds=%.3f; device=%s",
@@ -658,7 +654,8 @@ class GuiRuntime:
                 self.state.set_status("Models ready")
         elif isinstance(event, ListeningEvent):
             self._logger.info("Microphone listening started")
-            self.state.set_status(f"Listening... {event.device_name}")
+            if not self.state.stopping and not self.closing:
+                self.state.set_status(f"Listening... {event.device_name}")
         elif isinstance(event, SubtitleEvent):
             added = self.state.add_subtitle(
                 SubtitleEntry(
@@ -749,10 +746,7 @@ class GuiRuntime:
             self.save_preferences()
             from ..fault_diagnostics import arm_gui_watchdog
             arm_gui_watchdog()
-            if self.state.preparing:
-                self.state.set_status(f"{self._preparation_stage} · {int(now - self._preparation_started_at)}s")
-            elif self.state.stopping and hasattr(self, "_cancel_requested_at"):
-                self.state.set_status(f"Stopping... waiting for engine · {int(now - self._cancel_requested_at)}s")
+            self.progress.refresh(self.state, now)
         expected = self.ui_poll_ms / 1_000.0
         self.controller.metrics.mainloop_delays.add(
             max(0.0, now - self._last_heartbeat - expected)
