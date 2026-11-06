@@ -740,8 +740,12 @@ def overlay_stub() -> tuple[SubtitleOverlay, FakeRoot]:
     overlay.running = False
     overlay.closing = False
     overlay.settings_panel = None
-    overlay._taskbar = None
-    overlay._borderless_transition_pending = False
+    from live_subtitles.gui.window_coordinator import WindowCoordinator
+    overlay.windows = WindowCoordinator(
+        overlay.root, overlay.state, taskbar=None,
+        caption=lambda: getattr(overlay, "subtitle_view", None),
+        settings=overlay._existing_settings_panel, closing=lambda: overlay.closing,
+    )
     overlay._dragging = False
     overlay._drag_origin = None
     overlay._drag_moved = False
@@ -768,7 +772,7 @@ def overlay_stub() -> tuple[SubtitleOverlay, FakeRoot]:
 def test_taskbar_sync_only_follows_main_window_map_while_open() -> None:
     overlay, root = overlay_stub()
     taskbar = Mock()
-    overlay._taskbar = taskbar
+    overlay.windows.taskbar = taskbar
     overlay._on_root_map(SimpleNamespace(widget=FakeWidget()))
     assert root.after_idle_callbacks == []
     overlay._on_root_map(SimpleNamespace(widget=root))
@@ -789,12 +793,12 @@ def test_render_and_session_status_changes_do_not_touch_taskbar() -> None:
     overlay.content = FakeWidget()
     overlay.pin_button = FakeWidget()
     overlay.start_stop_button = FakeWidget()
-    overlay._taskbar = Mock()
+    overlay.windows.taskbar = Mock()
     overlay.set_running(True)
     overlay.state.add_subtitle(SubtitleEntry(1, "Привет", "你好", 0.0, 0.1, 0.2))
     overlay.render()
     overlay.set_running(False)
-    assert overlay._taskbar.method_calls == []
+    assert overlay.windows.taskbar.method_calls == []
     assert not (root.attribute_calls or root.override_calls or root.geometry_calls)
 
 
@@ -958,7 +962,7 @@ def test_borderless_toggle_withdraws_panel_then_restores_window_state_idle() -> 
     root.run_idle()
     assert root.geometry() == original_geometry
     assert root.attribute_calls[-2:] == [("-topmost", True), ("-alpha", 0.88)]
-    assert not overlay._borderless_transition_pending
+    assert not overlay.windows.transition_pending
 
 
 def test_ten_borderless_round_trips_do_not_rebuild_or_accumulate() -> None:
@@ -974,6 +978,18 @@ def test_ten_borderless_round_trips_do_not_rebuild_or_accumulate() -> None:
     assert root.destroy_calls == 0
     assert overlay.settings_panel is panel
     assert overlay.session_identity is session_identity
+
+
+def test_close_during_decoration_change_does_not_remap_windows() -> None:
+    overlay, root = overlay_stub()
+    overlay.toggle_borderless()
+    overlay.closing = True
+    root.geometry_calls.clear()
+    root.attribute_calls.clear()
+    root.run_idle()
+    assert not overlay.windows.transition_pending
+    assert root.geometry_calls == []
+    assert root.attribute_calls == []
 
 
 def test_direct_primary_button_stops_without_settings_or_right_click() -> None:

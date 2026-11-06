@@ -6,10 +6,10 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ..diagnostic_logging import diagnostic_logger
 from .settings_panel import MicrophonePanelCallbacks, ModelPanelCallbacks, SettingsPanel
 from .workarea import window_placement
 from .commands import bind_start_stop
+from .window_coordinator import WindowCoordinator
 from .state import SubtitleViewState
 from .single_line import SingleLineSubtitleView, single_line_text
 from .windows_taskbar import WindowsTaskbar, bind_window_lifecycle
@@ -233,8 +233,6 @@ class SubtitleOverlay:
         self.running = False
         self.closing = False
         self.settings_panel: SettingsPanel | None = None
-        self._taskbar = WindowsTaskbar() if sys.platform == "win32" else None
-        self._borderless_transition_pending = False
         self._dragging = False
         self._drag_origin: tuple[int, int] | None = None
         self._drag_moved = False
@@ -318,6 +316,13 @@ class SubtitleOverlay:
             status_widget=self.status,
             error_widget=self.error,
             subtitle_view=self.subtitle_view,
+        )
+        self.windows = WindowCoordinator(
+            self.root, self.state,
+            taskbar=WindowsTaskbar() if sys.platform == "win32" else None,
+            caption=lambda: self.subtitle_view,
+            settings=self._existing_settings_panel,
+            closing=lambda: self.closing,
         )
         self._bind_interactions_once()
         self._sync_toolbar()
@@ -422,15 +427,10 @@ class SubtitleOverlay:
         self._focus_recovery_ready = False
 
     def _sync_caption_window(self) -> None:
-        if self._borderless_transition_pending:
-            return
-        view = getattr(self, "subtitle_view", None)
-        sync = getattr(view, "sync_window", None)
-        if callable(sync):
-            sync()
+        self.windows.sync_caption()
 
     def _recover_controls(self) -> None:
-        if self.closing or self._borderless_transition_pending:
+        if self.closing or self.windows.transition_pending:
             return
         if self.state.opacity > 0 and self.state.toolbar_visible:
             return
@@ -441,31 +441,13 @@ class SubtitleOverlay:
             panel.show()
 
     def _sync_taskbar(self) -> None:
-        if self._taskbar is not None and not self.closing:
-            try:
-                self._taskbar.ensure_button(self.root)
-            except OSError:
-                diagnostic_logger().exception("Could not register the subtitle taskbar window")
+        self.windows.sync_taskbar()
 
     def reveal(self) -> None:
         """Handle an explicit request to show this instance on the Tk thread."""
-
         if self.closing:
             return
-        if self.root.state() in {"withdrawn", "iconic"}:
-            self.root.deiconify()
-        if self._taskbar is None:
-            self.root.lift()
-        else:
-            self._sync_taskbar()
-            try:
-                self._taskbar.activate(self.root)
-            except OSError:
-                diagnostic_logger().exception("Could not activate the subtitle taskbar window")
-        self._sync_caption_window()
-        # Native restoration can complete Tk's owner mapping after this call.
-        # Reconcile the owned text surface once at the next idle boundary.
-        self.root.after_idle(self._sync_caption_window)
+        self.windows.reveal()
         self._focus_recovery_ready = True
         self._recover_controls()
 
@@ -626,7 +608,7 @@ class SubtitleOverlay:
         if current_size == self._last_root_size:
             return
         self._last_root_size = current_size
-        if not self._borderless_transition_pending:
+        if not self.windows.transition_pending:
             self.state.set_position("floating")
 
     def _start_stop(self) -> None:
@@ -706,7 +688,7 @@ class SubtitleOverlay:
         return None
 
     def toggle_settings_panel(self) -> None:
-        if self.closing or self._borderless_transition_pending:
+        if self.closing or self.windows.transition_pending:
             return
         panel = self._existing_settings_panel()
         if panel is None:
@@ -736,39 +718,17 @@ class SubtitleOverlay:
 
     def toggle_topmost(self) -> None:
         self.state.topmost = not self.state.topmost
-        self.root.attributes("-topmost", bool(self.state.topmost))
-        self._sync_caption_window()
-        panel = self._existing_settings_panel()
-        if panel is not None:
-            panel.window.attributes("-topmost", bool(self.state.topmost))
+        self.windows.apply_topmost()
         self.render()
 
     def toggle_borderless(self) -> None:
-        if self.closing or self._borderless_transition_pending:
+        if self.closing or self.windows.transition_pending:
             return
-        geometry = str(self.root.geometry())
         self.hide_settings_panel()
         self._dragging = False
         self._resize_session = None
         self.state.borderless = not self.state.borderless
-        self._borderless_transition_pending = True
-        prepare = getattr(getattr(self, "subtitle_view", None), "prepare_window_change", None)
-        if callable(prepare):
-            prepare()
-        self.root.overrideredirect(bool(self.state.borderless))
-        self.root.after_idle(lambda: self._finish_borderless_toggle(geometry))
-
-    def _finish_borderless_toggle(self, geometry: str) -> None:
-        self.root.geometry(geometry)
-        self.root.attributes("-topmost", bool(self.state.topmost))
-        self.root.attributes("-alpha", float(self.state.opacity))
-        # Resizability was set at construction. Repeating it replaces the
-        # native shell wrapper on Windows even when neither axis changes.
-        self._sync_taskbar()
-        self.root.configure(cursor="")
-        self._borderless_transition_pending = False
-        self._sync_caption_window()
-        self.render()
+        self.windows.begin_decoration_change(self.render)
 
     def set_opacity(self, value: float) -> None:
         self.state.opacity = min(1.0, max(0.0, float(value)))
@@ -810,7 +770,7 @@ class SubtitleOverlay:
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def _keep_in_workarea(self) -> None:
-        if self.closing or self._borderless_transition_pending:
+        if self.closing or self.windows.transition_pending:
             return
         if self.root.winfo_width() <= 1 or self.root.winfo_height() <= 1:
             return
