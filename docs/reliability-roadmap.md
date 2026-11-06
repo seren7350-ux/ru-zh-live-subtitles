@@ -246,3 +246,13 @@ Automatic approval review rejected removal of this task's pytest temporary direc
 - C:\Users\seren\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\RuZhOffline\be6efdfe48939e1ae18c：5 个文件，84 字节。
 
 未完成的 payload.tar.xz 不是可交付文件；packaging/single_file 为原型源码，verification 为诊断材料。以前保留的安装器、运行时和模型不属于本次残余。
+
+### 2026-11-07：用户请求全项目盘点与清理（追加）
+
+本轮项目盘点（不含 .git 与既有 maintenance 诊断）普通文件逻辑总量 30,713,825,067 字节，不跟随重解析点。已通过同一 PowerShell 脚本核对物理路径、祖先及子项重解析点、活动进程引用和文件计数/大小后，成功删除 3,790,656,861 字节：.pytest_cache、build/cpu-provenance、build/refactor-cpu-20261107、build/refactor-final-cpu-20261107、build/single-offline、build/single-smoke、build/windows-fixes-20261107。中断的 payload.tar.xz 此时已删除，不再属于当前残留；此前清单作为历史快照保留。构建诊断 txt/html/json 另存后再清理。
+
+旧发行与回滚目录合计 17,004,456,988 字节按既有要求保留；tmp 中 23,176,945 字节为文档生成脚本/翻译缓存/渲染预览，未按目录名推断可删。.venv、当前最终程序/安装包、SRT、日志、源码、诊断和模型保留。取消的 single_file 原型已在 README 明确标注并归档到 Git。
+
+本轮没有再次执行历史被拒绝的删除。项目内旧中间程序 dist/cpu-application-20261106（600,812,360 字节）和可选模型打包副本 output/application-build-20261106/model-assets（4,826,654,800 字节）的用户手动脚本仅运行了预览，未删除；删除模型副本会使后续离线打包需要重建暂存。项目外历史缓存没有重新扫描，其旧清单仍保留。
+
+本轮完整目录统计 inventory.json、删除后状态 result.json、说明 REPORT.md、构建诊断与两份清理脚本均在 output/maintenance/project-cleanup-20261107。manual-retained.ps1 默认只预览，-Execute 才删除；-IncludeModelStaging 才包括模型打包副本。脚本遇到路径重定向、活动项目进程、重解析点或盘点变化会停止。
