@@ -222,3 +222,27 @@ Computer Use 实际鼠标验证覆盖空白区拖动、字幕文字拖动、Sett
 安装包完成后另行检查本轮模型打包副本 `C:\Users\seren\Documents\ru-zh-live-subtitles\output\application-build-20261106\model-assets`：18文件，4,826,654,800字节，无重解析点；模型清单已保存到同级 `model-manifest-evidence.json`。编译器及测试程序退出后，对这个独立目标的清理也被自动安全审查以 `blocked by policy` 拒绝。命令未执行，删除数为零，全部保留且不重试。详见 `output/maintenance/application-model-staging-cleanup-inventory.json` 和 `application-model-staging-cleanup-result.json`。
 
 本轮两次被拒绝清理合计 **11,406个普通文件、5,748,763,714字节及777个重解析点**，全部续在此前记录后面。正式运行模型、旧安装包、最终验收包和诊断证据均保留。
+
+
+### 2026-11-07 Windows acceptance repair: retained cleanup (append)
+
+Automatic approval review rejected removal of this task's pytest temporary directory (`blocked by policy`). No alternate deletion method was attempted. All files remain.
+
+- Root: `C:\Users\seren\.codex\cache\agent-temp\subtitle-windows-fixes-20261107`
+- Inventory: 1910 files, 3540570 bytes, 231 reparse points.
+- Evidence: `output/verification/windows-fixes-20261107/temp-inventory.json` and `cleanup.json`. Earlier denied cleanup entries remain unchanged.
+- Old distribution retained for rollback; new distribution and build provenance retained for delivery/reproducibility; model assets and diagnostic records retained.
+
+
+### 单文件 EXE 压缩中止后保留项（2026-11-07）
+
+按用户指令中止压缩。构建及压缩进程已停止，等待成品的验证任务已退出。未生成最终 EXE，没有删除以下文件。逐文件清单位于 output/verification/single-exe/interrupted-inventory.json（写入清单前的快照）。
+
+- C:\Users\seren\Documents\ru-zh-live-subtitles\build\single-offline：1 个文件，2,865,545,156 字节。
+- C:\Users\seren\Documents\ru-zh-live-subtitles\build\single-smoke：7 个文件，26,016 字节。
+- C:\Users\seren\Documents\ru-zh-live-subtitles\dist\single-offline：0 个文件，0 字节。
+- C:\Users\seren\Documents\ru-zh-live-subtitles\output\verification\single-exe：5 个文件，1,996 字节。
+- C:\Users\seren\Documents\ru-zh-live-subtitles\packaging\single_file：3 个文件，10,027 字节。
+- C:\Users\seren\AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\RuZhOffline\be6efdfe48939e1ae18c：5 个文件，84 字节。
+
+未完成的 payload.tar.xz 不是可交付文件；packaging/single_file 为原型源码，verification 为诊断材料。以前保留的安装器、运行时和模型不属于本次残余。
