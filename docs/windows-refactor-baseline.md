@@ -15,3 +15,17 @@
 | 新 Windows 用户离线运行安装器及开始菜单入口 | 全部模型随分卷安装，无开发机依赖 | 用户确认打包可行；干净系统条件未确认 |
 
 既有证据位于 output/verification/windows-acceptance-20261107 和 output/verification/windows-fixes-20261107。当前参考包保留用于对照和回滚。
+
+## 2026-11-07 重构中间包验证
+
+addb8b44397872319ca3045b530ea2cd16ac2889 的干净源码克隆已生成 CPU EXE 和分卷安装包，分别保存在 dist/refactor-cpu-20261107 和 dist/refactor-installer-20261107。这是中间回滚点，不代表整个重构完成。
+
+- output/refactor-release/build.log 和 installer.log 记录成功构建；安装器报告提交一致、源码干净，模型清单含 17 个文件。
+- frozen-smoke.json：实际 EXE 无参数启动、重复实例退出码 0 并保留原窗口、关闭退出码 0；无音频演示生成有时间戳的俄中双语 SRT。
+- verify_payload.py 独立重算安装 EXE 与两个分卷的 SHA-256，均与清单相符。
+- output/verification/refactor-windows 的原生窗口测试覆盖 38 个用例，包括重叠、位移、样式、恢复和越界；144 DPI 测试同样通过。窗口样式检查不等同于点击任务栏测试，单屏 DPI 测试不等同于跨屏移动。
+- 全量源码测试 688 通过、1 跳过；跳过的 torch 用例已在实际运行环境单独通过。
+
+随后继续拆分 session_view.py，把 worker 事件到视图状态的映射从 app.py 分离；取消/失败/尾部字幕回归及 GUI/controller/process 测试共 82 项通过。这部分晚于上述发行包，包内尚不包含它。
+
+仍需完成：窗口协调职责与会话生命周期边界复核、最终版本重建后实际交互验收、干净 Windows 离线安装与模型运行、跨显示器 DPI 验证。本机尚未发现可用 Windows Sandbox 入口；准备的 .wsb 不是已执行的验收证据。

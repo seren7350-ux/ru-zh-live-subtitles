@@ -45,7 +45,8 @@ from .process_controller import (
     LiveWorkerSummary,
 )
 from .session_progress import SessionProgress
-from .state import SubtitleEntry, SubtitleViewState
+from .state import SubtitleViewState
+from .session_view import apply_session_event
 
 if TYPE_CHECKING:
     from .single_instance import InstanceLease
@@ -640,37 +641,16 @@ class GuiRuntime:
                 self.root.after(self.ui_poll_ms, self._poll_close)
 
     def _consume_event(self, event: Any) -> bool:
-        subtitle_added = False
         if isinstance(event, PreparingEvent):
             self._logger.info("%s", event.message)
-            self.progress.preparing(self.state, event.message, self.closing)
         elif isinstance(event, ModelsReadyEvent):
             self._logger.info(
                 "Models ready; vad_seconds=%.3f; asr_seconds=%.3f; translation_seconds=%.3f; device=%s",
                 event.vad_prepare_seconds, event.asr_prepare_seconds,
                 event.translation_prepare_seconds, event.translation_device,
             )
-            if not self.state.stopping and not self.closing:
-                self.state.set_status("Models ready")
         elif isinstance(event, ListeningEvent):
             self._logger.info("Microphone listening started")
-            if not self.state.stopping and not self.closing:
-                self.state.set_status(f"Listening... {event.device_name}")
-        elif isinstance(event, SubtitleEvent):
-            added = self.state.add_subtitle(
-                SubtitleEntry(
-                    index=event.index,
-                    russian_text=event.russian_text,
-                    chinese_text=event.chinese_text,
-                    received_at=event.created_at,
-                    russian_latency_seconds=event.russian_latency_seconds,
-                    chinese_latency_seconds=event.chinese_latency_seconds,
-                )
-            )
-            if added:
-                self._save_subtitle(event)
-                self.controller.metrics.displayed_subtitles += 1
-                subtitle_added = True
         elif isinstance(event, SegmentErrorEvent):
             self._logger.warning(
                 "Segment infrastructure failure; segment=%d; stage=%s; error=%s",
@@ -678,19 +658,14 @@ class GuiRuntime:
                 extra={"sensitive_text": self._caption_texts()},
             )
             self.controller.metrics.failed_segments += 1
-            self.state.set_segment_error(
-                f"Segment {event.index}: {event.stage} failed — {event.message}"
-            )
         elif isinstance(event, SessionFinishedEvent):
             self._logger.info(
                 "Subtitle session finished; succeeded=%s; reason=%s; successful=%d; failed=%d; metrics=%s",
                 event.succeeded, event.stop_reason, event.successful_subtitles,
                 event.failed_subtitles, event.metrics,
             )
-            self.state.set_status("Stopping..." if self.controller.running else "Stopped")
         elif isinstance(event, StoppedEvent):
             self._logger.info("Subtitle session stopped; reason=%s", event.reason)
-            self.state.set_status("Stopping..." if self.controller.running else "Stopped")
         elif isinstance(event, FatalErrorEvent):
             self._logger.error(
                 "Background session reported a fatal error; error=%s", event.message,
@@ -698,12 +673,14 @@ class GuiRuntime:
             )
             self.exit_code = 2
             self._fatal_message = event.message
-            self.state.set_status("Fatal error")
-        if self._fatal_message:
-            # Queued subtitles and normal cleanup messages must not erase the
-            # failure. Only an explicit new Start attempt clears it.
-            self.state.set_status("Fatal error")
-            self.state.latest_error = self._fatal_message
+        subtitle_added = apply_session_event(
+            self.state, self.progress, event,
+            running=self.controller.running, closing=self.closing,
+            fatal_message=self._fatal_message,
+        )
+        if subtitle_added:
+            self._save_subtitle(event)
+            self.controller.metrics.displayed_subtitles += 1
         return subtitle_added
 
     def _consume_events(self, *, limit: int = 128) -> None:
