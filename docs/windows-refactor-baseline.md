@@ -28,4 +28,8 @@ addb8b44397872319ca3045b530ea2cd16ac2889 的干净源码克隆已生成 CPU EXE 
 
 随后继续拆分 session_view.py，把 worker 事件到视图状态的映射从 app.py 分离；取消/失败/尾部字幕回归及 GUI/controller/process 测试共 82 项通过。这部分晚于上述发行包，包内尚不包含它。
 
+退出升级策略进一步移入 shutdown.py：35 秒请求 terminate，再等 3 秒请求 kill；调用抛错不记录为成功，可在后续 tick 重试。GUI 仍等待 controller.shutdown_complete 并 dispose 后才销毁。此次全量回归 692 通过、1 个 torch 环境用例跳过（output/refactor-release/pytest-session-refactor.log）。
+
+用户于本轮明确确认：此前分卷安装测试是在另一台未安装 Python／项目依赖的 Windows 电脑完成。这是此前版本的部署证据；尚未确认该机器测试时是否断网，也不是本轮重构源码的最终包验收。
+
 仍需完成：窗口协调职责与会话生命周期边界复核、最终版本重建后实际交互验收、干净 Windows 离线安装与模型运行、跨显示器 DPI 验证。本机尚未发现可用 Windows Sandbox 入口；准备的 .wsb 不是已执行的验收证据。

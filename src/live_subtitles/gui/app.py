@@ -45,6 +45,7 @@ from .process_controller import (
     LiveWorkerSummary,
 )
 from .session_progress import SessionProgress
+from .shutdown import ShutdownProgress
 from .state import SubtitleViewState
 from .session_view import apply_session_event
 
@@ -52,8 +53,6 @@ if TYPE_CHECKING:
     from .single_instance import InstanceLease
 
 
-CLOSE_TIMEOUT_SECONDS = 35.0
-FORCE_STOP_GRACE_SECONDS = 3.0
 
 
 def _bounded_float(minimum: float, maximum: float, label: str) -> Callable[[str], float]:
@@ -231,9 +230,7 @@ class GuiRuntime:
         self.clock = clock
         self.exit_code = 0
         self.closing = False
-        self.close_started_at: float | None = None
-        self._terminate_started_at: float | None = None
-        self._kill_requested = False
+        self.shutdown = ShutdownProgress()
         self._destroyed = False
         self._fatal_message = ""
         self._last_heartbeat = self.clock()
@@ -570,13 +567,17 @@ class GuiRuntime:
         self.state.clear()
         self.overlay.render()
 
+    @property
+    def close_started_at(self) -> float | None:
+        return self.shutdown.started_at
+
     def close(self) -> None:
         if self.closing:
             return
         self._logger.info("Application close requested")
         self.save_preferences()
         self.closing = True
-        self.close_started_at = self.clock()
+        self.shutdown.begin(self.clock())
         self.state.set_status("Stopping...")
         try:
             if self.instance_lease is not None:
@@ -614,23 +615,17 @@ class GuiRuntime:
                 self.root.destroy()
                 self._destroyed = True
                 return
-            assert self.close_started_at is not None
             now = self.clock()
-            if self.controller.running and now - self.close_started_at >= CLOSE_TIMEOUT_SECONDS:
+            action = self.shutdown.action_due(running=self.controller.running, now=now)
+            if action is not None:
                 self.exit_code = 2
-                if self._terminate_started_at is None:
+                if action == "terminate":
                     self._fatal_message = "Shutdown timed out after 35 seconds; terminating the engine."
                     self._logger.error(self._fatal_message)
-                    terminate = getattr(self.controller, "terminate", None)
-                    if callable(terminate):
-                        terminate()
-                    self._terminate_started_at = now
-                elif not self._kill_requested and now - self._terminate_started_at >= FORCE_STOP_GRACE_SECONDS:
+                else:
                     self._logger.error("Engine still alive after terminate; requesting kill")
-                    kill = getattr(self.controller, "kill", None)
-                    if callable(kill):
-                        kill()
-                    self._kill_requested = True
+                self.shutdown.execute(self.controller, action, now)
+            if self.controller.running and self.shutdown.terminate_started_at is not None:
                 self.state.set_status("Stopping...")
                 self.state.latest_error = self._fatal_message
                 self.overlay.render()
