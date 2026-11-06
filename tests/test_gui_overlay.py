@@ -610,7 +610,9 @@ def test_f8_starts_or_stops_from_settings_and_stops_event_propagation() -> None:
     assert calls == ['start-stop']
     overlay, root = overlay_stub()
     overlay._start_stop = Mock()
-    assert overlay._start_stop_key(None) == 'break'
+    overlay.subtitle_view = FakeWidget()
+    overlay._bind_interactions_once()
+    assert root.bindings["<F8>"](None) == "break"
     overlay._start_stop.assert_called_once_with()
 
 
