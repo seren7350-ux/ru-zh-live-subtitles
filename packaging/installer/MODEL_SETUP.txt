@@ -1,36 +1,46 @@
-RUSSIAN-CHINESE LIVE SUBTITLES 0.3.0 - MODEL SETUP
-=================================================
+МОДЕЛИ ДЛЯ ВЕРСИИ 0.4.0 | 0.4.0 模型说明
+========================================
 
-The self-contained CPU offline installer contains all required pinned model
-weights and does not download models. Setup automatically installs the managed
-model layout. No Python, token, network connection, or manual copy is required.
+Русский
+-------
+Полный автономный установщик уже содержит все необходимые модели и размещает
+их в управляемом каталоге. Отдельная загрузка, токен Hugging Face, Python
+и ручное копирование файлов не требуются.
 
-Target model root:
-  %LOCALAPPDATA%\ru-zh-live-subtitles\models
+Каталог моделей: %LOCALAPPDATA%\ru-zh-live-subtitles\models
 
-Required assets:
-  Silero VAD 6.2.1
-  ai-sage/GigaAM-Multilingual
-    variant large_ctc
-    revision 3905cd51c3ed4e88c8edf33f3302969ba480a327
-  facebook/nllb-200-distilled-600M
-    revision f8d333a098d19b4fd9a8b18f94170487ad3f821d
-
-Optional developer-only legacy asset (not included by this installer):
-  istupakov/gigaam-v3-onnx
-    revision 322c3b29492673eb7d0b434bfa9dfb8653e34d02
-
-Run from the installed application directory:
+Проверка из папки установленного приложения:
   ru-zh-subtitles-console.exe model-doctor
 
-The expected result is "Offline readiness: READY". A missing legacy RNNT cache
-may appear as an optional warning and does not make readiness fail. Offline mode
-sets only process-local HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE values; it does
-not change system or user environment variables and never downloads assets.
+Ожидаемый результат: "Offline readiness: READY". Старый кэш RNNT не требуется;
+предупреждение об отсутствии этой необязательной модели не мешает работе.
+Автономный режим не меняет системные переменные окружения и не загружает модели.
 
-Large CTC and NLLB use significant memory: 8 GiB RAM is the minimum and 16 GiB
-is recommended. NLLB is CC-BY-NC-4.0 and restricted to non-commercial use.
+Требуется не менее 8 GiB оперативной памяти; рекомендуется 16 GiB.
+При удалении приложения удаляются также его модели, настройки, журналы и кэш.
+Для повторного использования установите полный пакет заново.
+NLLB распространяется по CC-BY-NC-4.0 и не предназначена для коммерческого использования.
 
-Uninstalling removes the application, all offline models, logs, caches, and
-other application-owned data. Reinstall the complete model assets before using
-the application again.
+中文
+----
+完整离线安装器已包含所有必需模型，并会自动放入应用管理的模型目录。
+无需单独下载、获取 Hugging Face Token、安装 Python 或手动复制文件。
+
+模型目录和检查命令见上方说明。检查结果应为 "Offline readiness: READY"。
+旧版 RNNT 模型不是运行必需项，缺失该可选模型的提示不会影响使用。
+离线模式不会修改系统环境变量，也不会下载模型。
+
+内存至少 8 GiB，建议 16 GiB。卸载会同时删除应用自有的模型、偏好、日志和缓存；
+如需再次使用，请重新安装完整软件包。NLLB 采用 CC-BY-NC-4.0 许可证，仅限非商业用途。
+
+Модели и фиксированные версии / 模型及固定版本
+----------------------------------------------
+Silero VAD 6.2.1
+ai-sage/GigaAM-Multilingual — large_ctc
+  revision: 3905cd51c3ed4e88c8edf33f3302969ba480a327
+facebook/nllb-200-distilled-600M
+  revision: f8d333a098d19b4fd9a8b18f94170487ad3f821d
+
+Необязательная модель для разработки, не входит в установщик / 开发用可选模型，安装包不包含：
+istupakov/gigaam-v3-onnx
+  revision: 322c3b29492673eb7d0b434bfa9dfb8653e34d02

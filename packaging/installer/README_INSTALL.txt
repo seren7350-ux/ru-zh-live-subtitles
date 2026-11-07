@@ -1,51 +1,60 @@
-RUSSIAN-CHINESE LIVE SUBTITLES 0.3.0 - OFFLINE INSTALLATION
-================================================================
+СУБТИТРЫ С РУССКОГО НА КИТАЙСКИЙ 0.4.0
+Установка и использование
+======================================
 
-This unsigned CPU-only course installer contains the application and the pinned
-Silero VAD 6.2.1, GigaAM Multilingual Large CTC, and NLLB model assets. It is
-for non-commercial course use.
+Сохраните эти три файла в одной папке, не меняя их имён:
+  ru-zh-live-subtitles-cpu-offline-0.4.0-setup.exe
+  ru-zh-live-subtitles-cpu-offline-0.4.0-setup-1.bin
+  ru-zh-live-subtitles-cpu-offline-0.4.0-setup-2.bin
 
-1. Copy or download setup.exe, SHA256SUMS.txt, and every numbered .bin file.
-2. Keep setup.exe and all numbered .bin files in the same directory. Missing
-   any slice makes setup fail; do not rename the files.
-3. Optionally verify every setup/.bin hash against SHA256SUMS.txt.
-4. Double-click ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe.
-5. No administrator privileges, Python, network connection, token, or manual
-   model copy is required.
-6. Setup requires at least 12 GiB of free space before installation.
+Запустите setup.exe. Файлы .bin установщик прочитает сам; объединять их не нужно.
+SHA256SUMS.txt содержит контрольные суммы всех трёх файлов.
+Пакет включает приложение, среду выполнения для CPU и модели Silero VAD,
+GigaAM Multilingual Large CTC и NLLB. Python, токен Hugging Face, подключение
+к интернету и ручное копирование моделей не требуются.
 
-Application location:
-  %LOCALAPPDATA%\Programs\RuZhLiveSubtitles
+Требования: Windows 10/11 x64, не менее 12 GiB свободного места перед установкой
+и 8 GiB оперативной памяти; рекомендуется 16 GiB. Установка выполняется для
+текущего пользователя без прав администратора. Установщик не подписан.
 
-Model location:
-  %LOCALAPPDATA%\ru-zh-live-subtitles\models
+Откройте приложение из меню «Пуск». В настройках выберите микрофон.
+F8 начинает или останавливает сеанс, Ctrl+Q закрывает приложение.
+Дождитесь загрузки моделей. Язык интерфейса выбирается в настройках;
+направление распознавания и перевода остаётся прежним: русский → китайский.
+Двойной щелчок по свободной области субтитров скрывает или возвращает панель.
+Если окно полностью прозрачно, повторный запуск возвращает доступ к настройкам.
 
-After installation, open Russian-Chinese Live Subtitles from the Start menu.
-Press F8 to start or stop. Settings > Diagnostics shows the application version
-and whether the offline models are ready.
+Приложение: %LOCALAPPDATA%\Programs\RuZhLiveSubtitles
+Модели: %LOCALAPPDATA%\ru-zh-live-subtitles\models
+Настройки и журналы: %LOCALAPPDATA%\ru-zh-live-subtitles
+SRT: %USERPROFILE%\ru-zh-live-subtitles\subtitles
 
-Preferences and logs:
-  %LOCALAPPDATA%\ru-zh-live-subtitles\preferences.json
-  %LOCALAPPDATA%\ru-zh-live-subtitles\logs
+При удалении приложения удаляются его модели, настройки, журналы и кэш.
+Папка с SRT хранится отдельно. При необходимости заранее сохраните журналы.
+Пакет рассчитан на учебное и некоммерческое использование. Модель NLLB
+распространяется по CC-BY-NC-4.0; лицензии приведены в MODEL_LICENSES.txt.
 
-Saved transcripts:
-  %USERPROFILE%\ru-zh-live-subtitles\subtitles
+俄中实时字幕 0.4.0
+安装与使用
+======================================
 
-The Start-menu shortcut launches:
-  live-overlay --translation-device cpu --offline --no-auto-start
+将上方列出的 setup.exe 和两个编号 .bin 文件放在同一文件夹，不要重命名。
+运行 setup.exe，安装程序会自动读取分卷，无需手动合并。
+SHA256SUMS.txt 提供三个安装文件的校验值。
+软件包包含应用、CPU 运行依赖，以及 Silero VAD、GigaAM Multilingual
+Large CTC 和 NLLB 模型，无需另装 Python、获取 Hugging Face Token、
+联网下载模型或手动复制模型文件。
 
-The default ASR is the pinned official ai-sage/GigaAM-Multilingual large_ctc
-model. The legacy RNNT backend is retained only for explicit developer
-comparison; its weights are not included in this 0.3.0 installer.
+系统要求：Windows 10/11 x64；安装前至少保留 12 GiB 可用空间；
+内存至少 8 GiB，建议 16 GiB。安装面向当前用户，无需管理员权限。
+安装程序尚未进行数字签名。
 
-Large CTC and NLLB require substantial memory. The minimum supported system RAM
-is 8 GiB and 16 GiB is recommended. Initial model preparation is slower than
-later sessions because both CPU models must be loaded from disk.
+从开始菜单打开应用，在设置中选择麦克风。F8 开始或停止会话，Ctrl+Q 退出。
+开始后请等待模型加载完成。界面语言可在设置中选择，识别与翻译始终为俄语→中文。
+双击字幕空白区域可隐藏或恢复工具栏；窗口完全透明时，再次启动可恢复设置入口。
 
-Uninstall removes the program, all offline models, logs, caches, shortcuts, and
-other application-owned data under:
-  %LOCALAPPDATA%\ru-zh-live-subtitles
-Reinstall the complete model assets before using the application again.
-
-NLLB-200 distilled 600M is licensed under CC-BY-NC-4.0 and is restricted to
-non-commercial use. See MODEL_LICENSES.txt after installation.
+程序、模型、设置、日志与 SRT 的位置见上方目录说明。
+卸载会删除应用自有的模型、偏好、日志和缓存；SRT 目录独立保留。
+如需保留诊断资料，请在卸载前备份日志。
+本项目仅供课程、学习和非商业用途。NLLB 采用 CC-BY-NC-4.0 许可证，
+详细许可见 MODEL_LICENSES.txt。

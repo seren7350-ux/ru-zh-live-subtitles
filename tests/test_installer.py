@@ -126,7 +126,7 @@ def test_version_is_read_from_single_python_source() -> None:
     version = metadata.read_application_version(
         PROJECT_ROOT / "src" / "live_subtitles" / "__init__.py"
     )
-    assert version == "0.3.0"
+    assert version == "0.4.0"
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert project["project"]["version"] == version
     source = ISS.read_text(encoding="utf-8")

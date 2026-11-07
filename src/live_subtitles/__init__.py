@@ -1,3 +1,3 @@
 """Russian speech-recognition prototype for live subtitles."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

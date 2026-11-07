@@ -1,138 +1,167 @@
-# 俄语–中文字幕（Russian–Chinese Live Subtitles）
+# Субтитры с русского на китайский | 俄中实时字幕
 
-一个面向 Windows 的本地离线俄语讲座字幕工具。程序从麦克风采集语音，使用
-Silero VAD 分段，通过 GigaAM Multilingual Large CTC 识别俄语，再用 NLLB
-翻译成中文，并在可置顶、可调整大小的字幕窗口中显示结果。
+[Русский](#русский) · [中文](#中文) · [Скачать / 下载](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/latest)
 
-当前版本为 **0.3.0**，正式发布了面向 Windows x64 的 **CPU-only 完全离线安装包**：
+## Русский
 
-- [下载 course-final-v0.3.0](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.3.0)
-- v0.3.0 Release 源码提交：`102dd9d97d3ac72d1d5c3936da0fc5bc490aef96`
-- 仓库状态：公开（PUBLIC）
-- 运行方式：CPU-only，不包含 CUDA/GPU 运行时
-- 使用范围：课程、学习和非商业用途
+Приложение для Windows, которое распознаёт русскую речь с микрофона и показывает
+субтитры на русском и китайском языках. Распознавание и перевод выполняются на
+компьютере. После установки полного пакета подключение к интернету не требуется.
 
-当前工作区源码正在按[老师反馈修复路线](docs/reliability-roadmap.md)更新，包含窗口唤回、
-单行双语字幕、溢出跑马灯及 SRT 保存；这些修改尚未包含在上面的 v0.3.0 安装包中。
+Версия исходного кода — **0.4.0**. В ней обновлены интерфейс и управление окнами;
+аудиообработка, распознавание, перевод и запись SRT не изменены.
 
-本地应用化验收构建采用四页设置、偏好保存、显示器工作区定位、分阶段启动反馈和线程诊断。
-变更与验收见[应用化目标](docs/application-improvement-goals.md)，操作说明见[设置与诊断](docs/application-settings.md)。
-本地验收安装包与上面的历史公开 Release 分开保存，尚未发布到 GitHub。
+### Скачать и установить
 
-## 快速安装
-
-在 Release 页面下载以下 5 个附件：
+Откройте [страницу последнего выпуска](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/latest).
+Для версии 0.4.0 нужны три файла:
 
 ```text
-ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe
-ru-zh-live-subtitles-cpu-offline-0.3.0-setup-1.bin
-ru-zh-live-subtitles-cpu-offline-0.3.0-setup-2.bin
-README_INSTALL.txt
-SHA256SUMS.txt
+ru-zh-live-subtitles-cpu-offline-0.4.0-setup.exe
+ru-zh-live-subtitles-cpu-offline-0.4.0-setup-1.bin
+ru-zh-live-subtitles-cpu-offline-0.4.0-setup-2.bin
 ```
 
-安装步骤：
+1. Сохраните все три файла в одной папке, не меняя их имён.
+2. При необходимости проверьте SHA-256 по файлу `SHA256SUMS.txt`.
+3. Запустите `setup.exe`. Файлы `.bin` установщик прочитает сам — объединять их не нужно.
+4. Откройте приложение из меню «Пуск», выберите микрофон в настройках и нажмите F8.
 
-1. 将 `setup.exe` 和两个编号 `.bin` 文件放在同一目录，不要重命名。
-2. 建议使用 `SHA256SUMS.txt` 校验三个安装载荷。
-3. 双击 `ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe`。
-4. Windows 可能因为安装器未签名而显示“未知发布者”提醒，请确认文件来源和
-   SHA-256 后再继续。
-5. 从开始菜单启动应用，选择麦克风并点击 Start。
+Полный пакет содержит приложение, среду выполнения для CPU и все необходимые
+модели. Отдельно устанавливать Python, копировать модели или получать токен
+Hugging Face не требуется. Установка выполняется для текущего пользователя без
+прав администратора. Установщик не подписан цифровой подписью.
 
-安装不需要管理员权限、Python、Hugging Face Token、联网下载模型或手动复制
-模型。安装前至少预留 12 GiB 磁盘空间；最低支持 8 GiB 内存，建议 16 GiB。
-GigaAM 和 NLLB 首次从磁盘加载会比后续会话慢。
+Требования: **Windows 10/11 x64**, не менее **12 GiB свободного места** перед
+установкой и **8 GiB оперативной памяти**; рекомендуется 16 GiB. При запуске сеанса
+модели загружаются в память, поэтому подготовка может занять некоторое время.
 
-PowerShell 校验示例：
+### Возможности
 
-```powershell
-Get-Content .\SHA256SUMS.txt
-Get-FileHash .\ru-zh-live-subtitles-cpu-offline-0.3.0-setup.exe -Algorithm SHA256
-Get-FileHash .\ru-zh-live-subtitles-cpu-offline-0.3.0-setup-1.bin -Algorithm SHA256
-Get-FileHash .\ru-zh-live-subtitles-cpu-offline-0.3.0-setup-2.bin -Algorithm SHA256
-```
+- Тёмный интерфейс на русском, китайском и английском; выбранный язык сохраняется.
+  Язык интерфейса не меняет направление перевода: русский → китайский.
+- Отображается последняя реплика: одна строка на русском и одна на китайском.
+  Горизонтальная прокрутка включается только для строки, которая не помещается по ширине.
+- Окно можно перемещать за свободную область и изменять его размер за края, в том числе
+  без рамки. Повторный запуск возвращает уже открытый экземпляр приложения.
+- Двойной щелчок по свободной области субтитров скрывает или возвращает панель управления.
+- Прозрачность фона и текста регулируется отдельно от 0 до 100%; доступна чёрная обводка.
+  Если окно стало невидимым, повторный запуск открывает доступ к настройкам.
+- Настройки и субтитры можно поочерёдно выводить на передний план. Закрытие настроек
+  не останавливает сеанс. Микрофон выбирается после полной остановки сеанса.
+- Полный текст на обоих языках автоматически записывается в SRT с временными метками.
+  Скрытие русской строки или очистка экрана не удаляет уже записанные субтитры.
+- В настройках доступны состояние моделей, сообщения об ошибках, журналы и диагностика.
+  Сброс действует только на текущую страницу и сохраняет язык интерфейса.
 
-默认安装位置：
+F8 — начать или остановить сеанс; Ctrl+Q — выйти. Эти сочетания работают в окнах
+приложения, а не как глобальные горячие клавиши Windows.
+
+### Работа и сохранение данных
 
 ```text
-程序：%LOCALAPPDATA%\Programs\RuZhLiveSubtitles
-模型：%LOCALAPPDATA%\ru-zh-live-subtitles\models
+Микрофон → Silero VAD → GigaAM Multilingual Large CTC → NLLB → русские и китайские субтитры
 ```
 
-卸载会删除程序、离线模型、日志、缓存、快捷方式及
-`%LOCALAPPDATA%\ru-zh-live-subtitles` 下的其他应用自有数据。需要保留诊断材料时，
-请在卸载前自行备份。
+Сначала детектор речи завершает фрагмент, затем приложение распознаёт и переводит его.
+Результат появляется после обработки фрагмента, а не пословно во время речи.
 
-## 当前功能
+SRT сохраняются в `%USERPROFILE%\ru-zh-live-subtitles\subtitles`; папку можно открыть
+из настроек. Модели, настройки и журналы находятся в `%LOCALAPPDATA%\ru-zh-live-subtitles`.
+При удалении приложения этот каталог удаляется вместе с моделями и журналами;
+папка с SRT остаётся отдельно.
 
-### 离线字幕流水线
+### Проверки, ограничения и лицензии
+
+Для предыдущей сборки с тем же интерфейсом выполнены 719 автоматических тестов
+(ещё один пропущен), проверены загрузка локальных моделей, остановка сеанса,
+освобождение микрофона и двуязычный SRT. Результаты проверки каждого выпуска
+приведены на его странице. Проверка старой версии не считается проверкой нового
+установщика на другом компьютере.
+
+Официальный пакет использует только CPU. Захват системного звука, плагины
+PowerPoint/Acrobat, автоматическое обновление и глобальные горячие клавиши не
+реализованы. Поддерживается масштабирование при запуске; динамическая адаптация
+при переносе между мониторами с разным DPI не подтверждена. Качество распознавания
+зависит от речи и записи; машинный перевод может содержать ошибки.
+
+Проект предназначен для учебного и некоммерческого использования. Silero VAD и
+GigaAM распространяются по MIT, а NLLB — по **CC-BY-NC-4.0**. Лицензии компонентов:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) и `MODEL_LICENSES.txt` в установленном пакете.
+
+Для разработки рекомендуется Python 3.11 и виртуальное окружение. Запуск из исходников
+требует [отдельной подготовки моделей](docs/model-assets-setup.md). Модели, записи,
+журналы и результаты сборки не должны попадать в Git. Технические материалы собраны
+в [указателе документации](docs/README.md).
+
+## 中文
+
+这是一个 Windows 字幕工具：从麦克风采集俄语语音，在本机识别并翻译成中文，
+同时显示俄文和中文字幕。安装完整软件包后，无需联网即可使用。
+
+当前源码版本为 **0.4.0**。本版更新界面和窗口交互，音频处理、识别、翻译与
+SRT 保存管线保持不变。
+
+### 下载与安装
+
+打开[最新版本页面](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/latest)。
+0.4.0 需要下载上方列出的 setup.exe 和两个编号 `.bin` 文件。
+
+1. 将三个文件放在同一文件夹，不要重命名。
+2. 如需校验文件，使用 `SHA256SUMS.txt` 中的 SHA-256。
+3. 运行 setup.exe。安装程序会自动读取两个分卷，无需手动合并。
+4. 从开始菜单打开应用，在设置中选择麦克风，按 F8 开始字幕。
+
+完整安装包已包含应用、CPU 运行依赖和全部必需模型，无需另装 Python、手动
+复制模型或获取 Hugging Face Token。安装面向当前用户，无需管理员权限。
+安装程序尚未进行数字签名。
+
+系统要求：**Windows 10/11 x64**，安装前至少保留 **12 GiB 可用磁盘空间**；
+内存至少 **8 GiB**，建议 16 GiB。开始会话时需要将模型加载到内存，请等待准备完成。
+
+### 功能
+
+- 深色界面支持俄语、中文和英语，界面语言会保存；识别和翻译始终为俄语→中文。
+- 只显示最新一条字幕，俄文和中文各占一行；仅超出窗口宽度的那一行横向滚动。
+- 可拖动空白区域移动窗口，拖动边缘调整大小，无边框模式也可操作；重复启动会唤回已有实例。
+- 双击字幕空白区域可隐藏或恢复底部工具栏。
+- 背景与文字透明度独立调节，范围均为 0–100%，可开启黑色描边；窗口不可见时可再次启动恢复设置入口。
+- 设置与字幕可以交替前置，关闭设置不会停止会话；完全停止后可更换麦克风。
+- 自动将完整双语文本及时间戳保存为 SRT；隐藏俄文或清空显示不会删除已经保存的字幕。
+- 设置中可查看模型状态、错误详情、日志与诊断；恢复默认只作用于当前页，并保留界面语言。
+
+F8 开始或停止会话，Ctrl+Q 退出。这些快捷键在应用窗口内生效，并非 Windows 全局快捷键。
+
+### 工作方式与数据保存
 
 ```text
-麦克风
-  → 有界音频队列
-  → Silero VAD 6.2.1
-  → 完整语音分段
-  → GigaAM Multilingual Large CTC（俄语识别）
-  → NLLB-200 distilled 600M（俄中翻译）
-  → 俄语/中文字幕窗口
+麦克风 → Silero VAD 语音分段 → GigaAM 俄语识别 → NLLB 中文翻译 → 双语字幕
 ```
 
-这是“VAD 完成分段后识别整段短音频”的近实时字幕，不是原生逐词流式 ASR。
-说话过程中会等待分段闭合，识别和翻译完成后一次显示该条最终结果。
+程序会先等待语音片段结束，再识别和翻译该片段；字幕在处理完成后显示，不是逐词输出。
 
-### v0.3.0 安装版字幕窗口
+SRT 默认保存在 `%USERPROFILE%\ru-zh-live-subtitles\subtitles`，可从设置打开。
+模型、偏好与日志位于 `%LOCALAPPDATA%\ru-zh-live-subtitles`。卸载会删除这个应用
+专用目录及其中的模型和日志；SRT 目录独立保留。
 
-- 主控制条始终保留 Start/Stop、Pinned/Unpinned、Settings 和 Exit；
-- 支持普通窗口原生缩放，以及 borderless 模式八方向缩放；
-- 支持 top、bottom 和 floating 位置预设；
-- 可调整透明度、俄语字号、中文字幕号和是否显示俄语；
-- 每条俄语/中文结果完整保留，不截断、不使用省略号；
-- 历史字幕可滚动查看，并保持用户设置的字号；
-- 空间不足时只有最新一条字幕会临时缩小；新字幕到来或窗口增高后，旧条目恢复
-  设置字号；
-- 超长最新字幕达到最小字号后仍可在内部滚动区域完整查看，不会自行撑大窗口；
-- 置顶只改变窗口层级，不持续抢占 PowerPoint 等应用的键盘焦点；
-- Settings 是可复用窗口，关闭它不会停止实时字幕会话。
+### 验证、限制与许可
 
-### 当前源码的字幕显示与保存
+采用同一界面的前一批构建通过了 719 项自动测试，另有 1 项跳过；已检查本地模型
+加载、会话停止、麦克风释放和双语 SRT。每个 Release 页面分别记录该批构建的验证
+范围；旧版结果不代表新版已在另一台电脑上通过安装测试。
 
-字幕区域只显示最新一条，俄文、中文各占一行；只有文字超出可用宽度的语言行
-横向移动，短句保持静止。没有纵向历史滚动，字体随可用高度适配，避免半行裁切。
+正式安装包仅提供 CPU 版本。系统音频采集、PowerPoint/Acrobat 插件、自动更新和
+全局快捷键尚未实现。已支持启动时的显示缩放，尚未确认不同 DPI 显示器之间的动态
+适配。识别效果取决于语音与录音条件，机器翻译也可能出现错误。
 
-字幕、空白处和状态文字均可拖动窗口，边缘优先用于缩放；按钮保持原有操作。
-双击字幕区或工具栏空白处可隐藏/恢复底部工具栏，也可使用 Ctrl+H 或 Settings
-中的工具栏开关。背景与文字不透明度可分别调整到 0–100%，并可开启黑色文字描边。
-Settings 始终不透明；窗口完全透明时，再次启动程序可唤回设置面板。
+本项目用于课程、学习和非商业用途。Silero VAD 与 GigaAM 采用 MIT 许可证，
+NLLB 采用 **CC-BY-NC-4.0**。组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+及安装目录中的 `MODEL_LICENSES.txt`。
 
-每次 Start 自动新建一个 UTF-8 双语 SRT，逐条写入。时间轴从本次音频采集的第一个
-采样点开始，包含开头静音和句间间隔，不使用翻译完成时间。Clear 只清空显示；
-Stop、重启及关闭不删除已写出的文件，隐藏俄文也不影响保存双语内容。
+建议使用 Python 3.11，在虚拟环境中安装依赖。源码运行需[单独准备模型](docs/model-assets-setup.md)。
+请勿将模型、录音、日志和构建产物提交到 Git。技术资料见[文档索引](docs/README.md)。
 
-默认保存在 `%USERPROFILE%\ru-zh-live-subtitles\subtitles`，可在 Settings 点击
-`Open subtitles folder` 打开实际目录。源码命令可用 `--srt-dir output/subtitles`
-指定项目内保存位置。写入失败时界面持续提示，字幕继续显示；解决目录或磁盘问题
-后 Stop/Start 会新建文件重试。演示模式也保存 SRT，使用模拟音频时间轴。
-
-### 麦克风选择
-
-Settings 可选择 `System default` 或明确的 PortAudio 输入设备编号。设备只能在
-会话完全停止后修改，新选择会在下一次 Start 时生效。当前不支持运行中热切换，
-也不跨应用重启保存设备选择。
-
-### 诊断和命令行工具
-
-项目同时保留录音、设备枚举、模型检查、单文件识别、VAD、终端字幕和翻译基准
-等开发者命令。安装版开始菜单默认使用：
-
-```text
-live-overlay --translation-device cpu --offline --no-auto-start
-```
-
-## 从源码运行
-
-支持 Python 3.10–3.14，推荐 Python 3.11。依赖必须安装在项目虚拟环境中，不要
-全局安装。
+### Команды для разработки / 开发命令
 
 ```powershell
 git clone https://github.com/seren7350-ux/ru-zh-live-subtitles.git
@@ -140,147 +169,16 @@ cd ru-zh-live-subtitles
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -m pip install -e ".[asr-multilingual,dev,translation]"
-```
-
-> 上述 PowerShell 路径应为 `.\.venv\Scripts\python.exe`。如果激活脚本被执行策略
-> 阻止，直接使用该解释器即可，无需修改全局 PowerShell 策略。
-
-源码运行不会自动获得完整的 GigaAM 和 NLLB 缓存。模型身份、固定 revision、
-目录结构和离线检查方法见[模型资源设置](docs/model-assets-setup.md)。正式 0.3.0
-安装包已经包含所有必需模型。
-
-## 常用命令
-
-下面的命令均在项目根目录执行：
-
-```powershell
-# 总帮助、运行环境和音频设备
+.\.venv\Scripts\python.exe -m pip install -e ".[asr-multilingual,dev,translation,packaging]"
 .\.venv\Scripts\python.exe -m live_subtitles --help
-.\.venv\Scripts\python.exe -m live_subtitles doctor
-.\.venv\Scripts\python.exe -m live_subtitles devices
 .\.venv\Scripts\python.exe -m live_subtitles model-doctor
-.\.venv\Scripts\python.exe -m live_subtitles translation-doctor
-
-# 录制 8 秒 PCM16/16 kHz/单声道 WAV
-.\.venv\Scripts\python.exe -m live_subtitles record --seconds 8 --output data/sample.wav
-
-# 单文件俄语识别和俄中翻译
-.\.venv\Scripts\python.exe -m live_subtitles transcribe-file data/sample.wav
-.\.venv\Scripts\python.exe -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cpu --num-beams 1
-
-# VAD 和实时终端字幕
-.\.venv\Scripts\python.exe -m live_subtitles vad-prepare
-.\.venv\Scripts\python.exe -m live_subtitles vad-doctor
-.\.venv\Scripts\python.exe -m live_subtitles vad-file data/sample.wav
-.\.venv\Scripts\python.exe -m live_subtitles live-vad --device 1 --duration 60
-.\.venv\Scripts\python.exe -m live_subtitles live-terminal --device 1 --duration 60 --translation-engine nllb --translation-device cpu --num-beams 1
-
-# GUI：无模型演示和真实离线字幕
-.\.venv\Scripts\python.exe -m live_subtitles overlay-demo --duration 0
-.\.venv\Scripts\python.exe -m live_subtitles live-overlay --device 1 --duration 0 --translation-engine nllb --translation-device cpu --num-beams 1 --offline
+.\.venv\Scripts\python.exe -m live_subtitles overlay-demo --duration 30
+.\.venv\Scripts\python.exe -m live_subtitles live-overlay --offline --no-auto-start
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-`--device 1` 只是示例；请先运行 `devices`，根据本机输出选择设备。`duration 0`
-表示持续运行，直到通过 Stop、Exit 或 Ctrl+C 结束。
+### Предыдущие выпуски / 历史版本
 
-### 强制离线复测
-
-模型缓存完整后，可在当前 PowerShell 会话临时启用 Hugging Face 和 Transformers
-离线模式：
-
-```powershell
-$env:HF_HUB_OFFLINE = "1"
-$env:TRANSFORMERS_OFFLINE = "1"
-.\.venv\Scripts\python.exe -m live_subtitles model-doctor
-.\.venv\Scripts\python.exe -m live_subtitles translate-audio data/sample.wav --translation-engine nllb --device cpu --num-beams 1
-Remove-Item Env:HF_HUB_OFFLINE
-Remove-Item Env:TRANSFORMERS_OFFLINE
-```
-
-音频和识别文本留在本机进程内。项目的 `.venv`、`data`、模型缓存、WAV、日志、
-构建目录和生成制品均被 Git 忽略，不应强制提交。
-
-## 开发与测试
-
-```powershell
-.\.venv\Scripts\python.exe -m pip check
-.\.venv\Scripts\python.exe -m pytest -v
-.\.venv\Scripts\python.exe -m pytest --cov=live_subtitles --cov-report=term-missing
-.\.venv\Scripts\python.exe -m compileall -q src tests packaging
-git diff --check
-```
-
-最终 v0.3.0 修订的记录结果：
-
-- 源码环境：537 项测试通过；
-- CPU 打包环境：537 项测试通过；
-- 总覆盖率：80%，`gui/overlay.py` 为 75%；
-- 最终 CPU onedir：5,616 个文件、613,281,639 字节；
-- CPU onedir 中 CUDA DLL 和产品模型权重均为 0；
-- 最终安装器：1 个 setup 和 2 个分片，共 3,499,769,523 字节；
-- Inno Setup 7.0.2 编译警告为 0；
-- Defender 对最终 CPU onedir 和安装器扫描后新增检测为 0；
-- 最终安装版真实会话显示 2 条 RU/ZH 字幕、0 条失败，丢块/间隙/PortAudio
-  状态/backlog 均为 0；
-- 完全卸载验证通过，没有误删相邻 LOCALAPPDATA 数据。
-
-完整的时间线、失败记录和测量证据见[开发记录](docs/development.md)。
-
-## 打包与发布
-
-CPU onedir 使用 `.venv-packaging-cpu` 和
-`packaging/combined_cpu.spec` 构建，包含两个共享依赖的启动器，不包含模型权重。
-离线安装器在构建阶段将经过校验的 Silero、GigaAM Large CTC 和 NLLB 模型载荷
-与 onedir 合并，并用 Inno Setup 原生分片，保证每个 GitHub Release 附件小于
-2,000,000,000 字节。
-
-当前公开版本：
-
-- [v0.3.0：CPU 完全离线课程交付版](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.3.0)
-- [v0.2.0：GigaAM Large CTC 版本](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.2.0)
-- [v0.1.0：历史 RNNT 版本](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.1.0)
-
-详细构建边界见[打包说明](packaging/README.md)、
-[CPU-only 分发策略](docs/cpu-only-distribution.md)和
-[完整离线安装器](docs/self-contained-offline-installer.md)。
-
-## 已知限制
-
-- 识别在 VAD 分段结束后输出，不支持原生逐词增量显示；
-- 当前正式分发仅支持 CPU，不提供 GPU/CUDA 安装包；
-- NLLB 翻译质量不是人工同传或专业翻译质量保证；
-- NLLB-200 distilled 600M 采用 CC-BY-NC-4.0，不允许商业使用；
-- 不支持系统音频采集、PowerPoint/Acrobat 插件、点击穿透、全局快捷键、自动更新
-  或代码签名；
-- v0.3.0 安装版不保存字幕历史；当前源码会自动保存 SRT，但不会把旧文件重新载入字幕窗口；
-- 最终 v0.3.0 修订在开发机完成 onedir、安装、真实字幕和完全卸载验证，但没有
-  重新执行 VMware/Windows Sandbox 洁净机验证；
-- PowerPoint 幻灯片交互已进行过人工验证；本机没有 Acrobat，因此未声明
-  Acrobat 兼容性已验证；
-- 本项目不应被描述为 production ready、signed 或适用于所有 Windows 机器。
-
-## 模型、许可与第三方组件
-
-- Silero VAD 6.2.1：MIT；
-- `ai-sage/GigaAM-Multilingual` `large_ctc`：MIT；
-- `facebook/nllb-200-distilled-600M`：CC-BY-NC-4.0，仅限非商业使用；
-- 其他 Python 和本机运行时组件的许可见
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)及安装后的
-  `MODEL_LICENSES.txt`。
-
-在重新分发、商业使用或更换模型前，请自行复核所有上游许可证。本仓库没有把
-模型权重提交到 Git；权重只存在于本地缓存、忽略的 staging 或 Release 安装载荷中。
-
-## 文档导航
-
-- [文档总览](docs/README.md)
-- [系统架构](docs/architecture.md)
-- [仓库结构](docs/repository-layout.md)
-- [模型资源设置](docs/model-assets-setup.md)
-- [实时麦克风 VAD](docs/live-microphone-vad.md)
-- [终端实时字幕](docs/live-terminal-subtitles.md)
-- [置顶字幕窗口](docs/always-on-top-subtitle-overlay.md)
-- [CPU-only 安装器验证](docs/cpu-only-installer-validation.md)
-- [CPU 洁净机恢复验证](docs/cpu-clean-machine-recovery-validation.md)
-- [Windows Sandbox 验证工具](docs/windows-sandbox-clean-machine-validation.md)
+- [0.3.0 — автономный учебный выпуск / 离线课程版本](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.3.0)
+- [0.2.0 — переход на GigaAM Large CTC / 切换至 GigaAM Large CTC](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.2.0)
+- [0.1.0 — исходная версия с RNNT / 最初的 RNNT 版本](https://github.com/seren7350-ux/ru-zh-live-subtitles/releases/tag/course-final-v0.1.0)

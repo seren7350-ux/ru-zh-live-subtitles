@@ -1,45 +1,41 @@
-# Documentation map
+# Документация | 文档索引
 
-Use this page to find the active design, build instructions, validation evidence,
-and retained experiment history. Historical documents are intentionally kept
-because they explain packaging and model decisions; they are not parallel sources
-of current defaults.
+Здесь собраны описание архитектуры, инструкции по сборке и результаты проверок.
+Текущие возможности приложения описаны в [основном README](../README.md).
+Исторические записи относятся к указанным в них версиям.
 
-## Start here
+这里收录架构、构建说明与验证记录。当前功能以[仓库首页](../README.md)为准；
+历史记录只对应各自注明的版本。
 
-- [Repository layout](repository-layout.md): tracked source boundaries, ignored
-  local artifacts, retention rules, and the ASR migration seam.
-- [Architecture](architecture.md): current audio, ASR, translation, realtime, and
-  GUI process boundaries.
-- [Development notes](development.md): chronological implementation and validation
-  record.
-- [Model assets setup](model-assets-setup.md): pinned local model cache contract.
-- [Teacher feedback repair goals](reliability-roadmap.md): ordered repair scope,
-  diagnostics and lifecycle recovery behavior, and validation boundaries.
+## Приложение и разработка / 应用与开发
 
-## Runtime components
+- [Структура проекта / 项目结构](repository-layout.md)
+- [Архитектура / 系统架构](architecture.md)
+- [Настройки и диагностика / 设置与诊断](application-settings.md)
+- [Подготовка моделей / 模型准备](model-assets-setup.md)
+- [История разработки / 开发记录](development.md)
+- [План исправлений по замечаниям преподавателя / 教师反馈修复计划](reliability-roadmap.md)
+- [Дизайн интерфейса / 界面设计](ui-design-direction.md)
 
-- [Direct Silero ONNX VAD](direct-silero-onnx-vad.md)
-- [Live microphone VAD](live-microphone-vad.md)
-- [Offline audio-to-translation pipeline](offline-audio-translation-pipeline.md)
-- [Live terminal subtitles](live-terminal-subtitles.md)
-- [Always-on-top subtitle overlay](always-on-top-subtitle-overlay.md)
-- [Translation model selection](translation-model-selection.md)
+## Обработка речи и перевод / 语音处理与翻译
 
-## Distribution and current evidence
+- [Silero VAD через ONNX / Silero ONNX 语音检测](direct-silero-onnx-vad.md)
+- [Работа с микрофоном / 实时麦克风输入](live-microphone-vad.md)
+- [Распознавание и перевод аудиофайлов / 音频文件识别与翻译](offline-audio-translation-pipeline.md)
+- [Субтитры в терминале / 终端字幕](live-terminal-subtitles.md)
+- [Окно субтитров / 字幕窗口](always-on-top-subtitle-overlay.md)
+- [Выбор модели перевода / 翻译模型选择](translation-model-selection.md)
 
-- [CPU-only distribution policy](cpu-only-distribution.md)
-- [Self-contained CPU offline installer](self-contained-offline-installer.md)
-- [CPU-only installer validation](cpu-only-installer-validation.md)
-- [CPU clean-machine recovery validation](cpu-clean-machine-recovery-validation.md)
-- [Windows Sandbox validation kit](windows-sandbox-clean-machine-validation.md)
+## Сборка и проверка / 构建与验证
 
-## Retained experiment history
+- [Правила распространения CPU-версии / CPU 版本分发规则](cpu-only-distribution.md)
+- [Полный автономный установщик / 完整离线安装器](self-contained-offline-installer.md)
+- [Проверка установщика / 安装器验证记录](cpu-only-installer-validation.md)
+- [Проверка в чистой среде / 洁净环境验证记录](cpu-clean-machine-recovery-validation.md)
+- [Средства проверки в Windows Sandbox / Windows Sandbox 验证工具](windows-sandbox-clean-machine-validation.md)
 
-- [Translation model comparison](translation-model-comparison.md)
-- [Windows packaging feasibility spike](windows-packaging-spike.md)
-- [Windows onedir size optimization](windows-package-size-optimization.md)
+## Предыдущие исследования / 历史研究
 
-These history documents preserve measured baselines and rejected approaches.
-Current commands and support boundaries come from the repository root README,
-the packaging README files, and the current distribution documents above.
+- [Сравнение моделей перевода / 翻译模型比较](translation-model-comparison.md)
+- [Первоначальные опыты по сборке Windows-приложения / Windows 打包初步实验](windows-packaging-spike.md)
+- [Уменьшение размера пакета / 软件包体积优化](windows-package-size-optimization.md)

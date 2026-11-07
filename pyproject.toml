@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ru-zh-live-subtitles"
-version = "0.3.0"
-description = "Offline real-time Russian-to-Chinese lecture subtitles using Sber ASR"
+version = "0.4.0"
+description = "Автономные субтитры с русского на китайский для Windows | Windows 离线俄中字幕工具"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
 dependencies = [
