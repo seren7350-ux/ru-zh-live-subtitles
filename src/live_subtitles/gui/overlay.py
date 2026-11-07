@@ -227,7 +227,7 @@ class SubtitleOverlay:
         self.microphone_callbacks = microphone
         self.model_callbacks = models
         self.on_open_subtitles = on_open_subtitles
-        self.on_restore_defaults: Callable[[], None] | None = None
+        self.on_restore_defaults: Callable[[str], None] | None = None
         self.on_open_logs: Callable[[], None] | None = None
         self.on_dump_threads: Callable[[], None] | None = None
         self.running = False
@@ -264,7 +264,7 @@ class SubtitleOverlay:
             padx=6,
             pady=3,
             highlightthickness=1,
-            highlightbackground="#547aa5" if state.topmost else "#404550",
+            highlightbackground="#343a46",
         )
         self.control_bar.pack(fill="x", side="bottom")
         self._toolbar_packed = True
@@ -284,7 +284,14 @@ class SubtitleOverlay:
         self.start_stop_button = self._control_button("Start", self._start_stop)
         self.pin_button = self._control_button("Pinned", self.toggle_topmost)
         self.settings_button = self._control_button("Settings", self.toggle_settings_panel)
-        self.exit_button = self._control_button("Exit", self.on_exit, danger=True)
+        self.more_button = self._control_button("More", self._show_more)
+        self.more_menu = tk.Menu(root, tearoff=False, background="#24272e",
+                                 foreground="#edf0f5", activebackground="#303e58",
+                                 activeforeground="#edf0f5", borderwidth=0)
+        self.more_menu.add_command(label="Clear display", command=self.on_clear)
+        self.more_menu.add_separator()
+        self.more_menu.add_command(label="Exit application", accelerator="Ctrl+Q",
+                                   command=self.on_exit)
 
         self.content = tk.Frame(
             root,
@@ -292,7 +299,7 @@ class SubtitleOverlay:
             padx=24,
             pady=12,
             highlightthickness=1,
-            highlightbackground="#547aa5" if state.topmost else "#111318",
+            highlightbackground="#292e38",
         )
         self.content.pack(fill="both", expand=True)
         self.error = tk.Label(
@@ -327,6 +334,19 @@ class SubtitleOverlay:
         self._bind_interactions_once()
         self._sync_toolbar()
         self.render()
+
+    def _show_more(self) -> None:
+        from .i18n import translate
+        # Tk rebuilds/redraws the native Windows menu on entryconfigure, even
+        # when the label is unchanged. Configure it once before posting;
+        # the live render timer must never mutate a posted menu.
+        self.more_menu.entryconfigure(0, label=translate("Clear display", self.state.ui_language))
+        self.more_menu.entryconfigure(2, label=translate("Exit application", self.state.ui_language))
+        try:
+            self.more_menu.tk_popup(self.more_button.winfo_rootx(),
+                                    self.more_button.winfo_rooty())
+        finally:
+            self.more_menu.grab_release()
 
     def _control_button(
         self, text: str, command: Callable[[], None], *, danger: bool = False
@@ -516,6 +536,7 @@ class SubtitleOverlay:
         self._resize_session = None
         if self.closing or self._pointer_on_control(event):
             return
+        self.windows.activate_from_pointer()
         self._begin_resize(event)
         if self._resize_session is None:
             self._begin_drag(event)
@@ -621,12 +642,17 @@ class SubtitleOverlay:
 
     def render(self) -> None:
         self.renderer.render(self.state)
-        pinned_color = "#547aa5" if self.state.topmost else "#404550"
+        from .i18n import translate
+        tr = lambda text: translate(text, self.state.ui_language)
+        pinned_color = "#343a46"
         self.control_bar.config(highlightbackground=pinned_color)
         self.content.config(
-            highlightbackground="#547aa5" if self.state.topmost else "#111318"
+            highlightbackground="#292e38"
         )
-        self.pin_button.config(text="Pinned" if self.state.topmost else "Unpinned")
+        self.pin_button.config(text=tr("Pinned" if self.state.topmost else "Unpinned"))
+        self.settings_button.config(text=tr("Settings"))
+        self.more_button.config(text=tr("More"))
+        self.status.configure(text=tr(self.status.cget("text")))
         if self.state.stopping or self.closing:
             primary_text = "Stopping"
         elif self.state.preparing:
@@ -634,10 +660,10 @@ class SubtitleOverlay:
         else:
             primary_text = "Stop" if self.running else "Start"
         self.start_stop_button.config(
-            text=primary_text,
+            text=tr(primary_text),
             state="disabled" if self.state.stopping or self.closing else "normal",
-            background="#b63838" if self.running else "#2166a5",
-            activebackground="#d14949" if self.running else "#2d7fc4",
+            background="#303e58" if self.running else "#2365b9",
+            activebackground="#3c5174",
         )
         panel = self._existing_settings_panel()
         if panel is not None:

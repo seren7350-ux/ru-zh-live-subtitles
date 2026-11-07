@@ -29,6 +29,22 @@ from live_subtitles.gui.microphone_selector import (
 
 
 class FakeWidget:
+    def option_add(self, *args):
+        pass
+    def winfo_children(self):
+        return [child for child in self.children if isinstance(child, FakeWidget)]
+
+    def entryconfigure(self, *args, **kwargs):
+        pass
+    def add_command(self, **kwargs):
+        self.children.append(kwargs)
+
+    def add_separator(self):
+        pass
+
+    def winfo_fpixels(self, value):
+        return 96
+
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.options: dict[str, object] = dict(kwargs)
         self.packed = False
@@ -114,6 +130,15 @@ class FakeWidget:
     def create_window(self, *args, **kwargs):
         return 1
 
+    def delete(self, *args):
+        pass
+
+    def create_rectangle(self, *args, **kwargs):
+        return 1
+
+    def create_text(self, *args, **kwargs):
+        return 1
+
     def itemconfigure(self, *args, **kwargs):
         pass
 
@@ -184,6 +209,13 @@ class FakeToplevel(FakeWidget):
 
 
 class FakeTk:
+    class PhotoImage:
+        def __init__(self, **kwargs):
+            pass
+
+        def put(self, *args, **kwargs):
+            pass
+
     TclError = RuntimeError
 
     def __init__(self) -> None:
@@ -198,6 +230,8 @@ class FakeTk:
     Button = FakeWidget
     Label = FakeWidget
     Scale = FakeWidget
+    Spinbox = FakeWidget
+    Menu = FakeWidget
     Canvas = FakeWidget
     Checkbutton = FakeWidget
 
@@ -211,14 +245,40 @@ class FakeTk:
         def get(self):
             return self.value
 
+    StringVar = BooleanVar
+
 
 class FakeTtk:
+    class Style:
+        def __init__(self, *args):
+            pass
+
+        def theme_use(self, *args):
+            pass
+
+        def configure(self, *args, **kwargs):
+            pass
+
+        def map(self, *args, **kwargs):
+            pass
+
+        def element_create(self, *args, **kwargs):
+            pass
+
+        def layout(self, *args, **kwargs):
+            pass
+
+    Scale = FakeWidget
+    Checkbutton = FakeWidget
     Combobox = FakeWidget
     Notebook = FakeWidget
     Scrollbar = FakeWidget
 
 
 class FakeRoot(FakeWidget):
+    def lift(self) -> None:
+        self.options["lift_calls"] = self.options.get("lift_calls", 0) + 1
+
     def __init__(self) -> None:
         super().__init__()
         self.attribute_calls: list[tuple[str, object]] = []
@@ -476,7 +536,7 @@ def test_settings_exposes_srt_destination_and_keeps_save_failure() -> None:
     state.srt_error = "Cannot write subtitles."
     panel.sync()
     assert panel.subtitles_status.options["text"] == state.srt_error
-    assert panel.subtitles_status.options["foreground"] == "#ff8a80"
+    assert panel.subtitles_status.options["foreground"] == "#ff9c95"
 
 
 def test_drag_uses_initial_pointer_offset() -> None:
@@ -587,6 +647,77 @@ def test_settings_panel_is_persistent_and_close_withdraws() -> None:
     assert panel.window.lift_calls == 2
 
 
+def test_settings_is_modeless_without_permanent_native_owner() -> None:
+    panel, _root, _tk, _calls = build_panel()
+    assert panel.window.transient_owner is None
+
+
+def test_input_page_shows_failure_detail_and_clears_it_on_retry():
+    panel, _root, _tk, _calls = build_panel()
+    panel.state_model.ui_language = "zh"
+    panel.state_model.latest_error = "Unable to start with the selected microphone: Error -9999"
+    panel.sync()
+    assert panel.input_error.packed
+    assert panel.input_error.cget("text") == "无法使用所选麦克风启动：Error -9999"
+    panel.state_model.latest_error = ""
+    panel.sync()
+    assert not panel.input_error.packed
+
+
+def test_settings_language_switch_round_trip_preserves_subtitle_options():
+    panel, _root, _tk, _calls = build_panel()
+    for index, language, start in ((1, "zh", "开始"), (2, "ru", "Начать"), (0, "en", "Start")):
+        panel.language_selector.current(index)
+        panel._change_language()
+        assert panel.state_model.ui_language == language
+        assert panel.start_stop_button.cget("text") == start
+        assert panel.state_model.show_russian
+        assert panel.state_model.chinese_font_size == 34
+
+
+@pytest.mark.parametrize("value", ["", "bad", "nan", "inf", "-1", "101"])
+def test_opacity_numeric_input_rejects_invalid_value(value) -> None:
+    panel, _root, _tk, _calls = build_panel()
+    control = panel.opacity_scale
+    previous = control.value
+    control.variable.set(value)
+    control.commit()
+    assert control.value == previous
+    assert control.variable.get() == str(previous)
+
+
+def test_opacity_numeric_input_accepts_both_endpoints() -> None:
+    panel, _root, _tk, _calls = build_panel()
+    control = panel.opacity_scale
+    for value in (0, 100):
+        control.variable.set(str(value))
+        control.commit()
+        assert control.value == value
+        assert control.scale.value == value
+
+
+def test_numeric_scale_keyboard_moves_and_clamps():
+    panel, _root, _tk, _calls = build_panel()
+    control = panel.opacity_scale
+    control.jump(0)
+    assert control.step(-1) == "break"
+    assert control.value == 0
+    control.step(1)
+    assert control.value == 1
+    control.jump(100)
+    control.step(1)
+    assert control.value == 100
+
+
+def test_click_subtitle_activates_once_without_opening_settings() -> None:
+    overlay, root = overlay_stub()
+    overlay._begin_pointer_action(pointer(300, 700))
+    assert root.options["lift_calls"] == 1
+    assert overlay.settings_panel is None
+    overlay._pointer_drag(pointer(320, 720))
+    assert root.options["lift_calls"] == 1
+
+
 def test_settings_rechecks_position_after_async_saved_geometry(monkeypatch) -> None:
     from live_subtitles.gui import workarea
     monkeypatch.setattr(workarea, "work_area", lambda *_args: (0, 0, 1920, 1040))
@@ -654,6 +785,8 @@ def test_live_settings_shows_model_assets_without_polling(tmp_path: Path) -> Non
     panel, _root, _tk, _calls = build_panel(models=callbacks)
     assert panel.model_status is not None
     assert "Model setup required" in str(panel.model_status.options["text"])
+    assert "need attention" in panel.input_model_status.options["text"]
+    assert panel.input_model_help.packed
     panel.sync()
     assert calls == []
     assert panel.model_recheck_button is not None
@@ -663,10 +796,19 @@ def test_live_settings_shows_model_assets_without_polling(tmp_path: Path) -> Non
     assert calls == ["recheck"]
 
 
+def test_ready_models_keep_input_help_out_of_normal_layout(tmp_path: Path) -> None:
+    callbacks, calls = model_callbacks(tmp_path, ready=True)
+    panel, _root, _tk, _calls = build_panel(models=callbacks)
+    assert panel.input_model_status.options["text"] == "Models ready for offline use."
+    assert not panel.input_model_help.packed
+    assert calls == []
+
+
 def test_demo_settings_omits_model_assets(tmp_path: Path) -> None:
     panel, _root, _tk, _calls = build_panel(models=None)
     assert panel.model_status is None
     assert panel.model_recheck_button is None
+    assert "Demo mode" in panel.input_model_status.options["text"]
 
 
 def test_microphone_combobox_maps_position_to_index_without_parsing_label() -> None:
@@ -792,14 +934,38 @@ def test_render_and_session_status_changes_do_not_touch_taskbar() -> None:
     overlay.control_bar = FakeWidget()
     overlay.content = FakeWidget()
     overlay.pin_button = FakeWidget()
+    overlay.settings_button = FakeWidget()
+    overlay.more_button = FakeWidget()
+    overlay.more_menu = Mock()
+    overlay.status = FakeWidget(text="Ready")
     overlay.start_stop_button = FakeWidget()
     overlay.windows.taskbar = Mock()
     overlay.set_running(True)
     overlay.state.add_subtitle(SubtitleEntry(1, "Привет", "你好", 0.0, 0.1, 0.2))
     overlay.render()
     overlay.set_running(False)
+    overlay.more_menu.entryconfigure.assert_not_called()
     assert overlay.windows.taskbar.method_calls == []
     assert not (root.attribute_calls or root.override_calls or root.geometry_calls)
+
+
+@pytest.mark.parametrize("language,clear_label,exit_label", [
+    ("en", "Clear display", "Exit application"),
+    ("zh", "清除显示", "退出应用"),
+    ("ru", "Очистить экран", "Выйти"),
+])
+def test_more_menu_is_localized_before_posting_and_grab_is_released(language, clear_label, exit_label):
+    overlay, _root = overlay_stub()
+    overlay.state.ui_language = language
+    overlay.more_menu = Mock()
+    overlay.more_button = FakeWidget(x=200, y=400)
+    overlay._show_more()
+    assert overlay.more_menu.method_calls == [
+        ("entryconfigure", (0,), {"label": clear_label}),
+        ("entryconfigure", (2,), {"label": exit_label}),
+        ("tk_popup", (200, 400), {}),
+        ("grab_release", (), {}),
+    ]
 
 
 def test_borderless_resize_does_not_trigger_drag_and_sets_floating() -> None:
@@ -1029,7 +1195,7 @@ def test_source_has_fixed_settings_label_no_layout_modes_or_focus_grab() -> None
     assert "control_mode" not in state_source
     assert "focus_force" not in source
     assert "grab_set" not in source
-    assert "tk.Menu" not in source
+    assert 'label="Exit application"' in source
     assert "threading" not in source
 
 
@@ -1138,10 +1304,10 @@ def test_independent_alpha_controls_cover_zero_and_outline_render() -> None:
 
 def test_settings_opacity_sliders_use_full_percent_range_and_toolbar_label() -> None:
     panel, _, _, _ = build_panel(state=SubtitleViewState(opacity=0, text_opacity=0))
-    assert panel.opacity_scale.options["from_"] == 0
-    assert panel.opacity_scale.options["to"] == 100
-    assert panel.text_opacity_scale.options["from_"] == 0
-    assert panel.text_opacity_scale.options["to"] == 100
+    assert panel.opacity_scale.scale.options["from_"] == 0
+    assert panel.opacity_scale.scale.options["to"] == 100
+    assert panel.text_opacity_scale.scale.options["from_"] == 0
+    assert panel.text_opacity_scale.scale.options["to"] == 100
     assert panel.opacity_scale.value == panel.text_opacity_scale.value == 0
     assert panel._checks['toolbar_visible'].get() is True
     panel.state_model.toolbar_visible = False

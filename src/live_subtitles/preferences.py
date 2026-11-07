@@ -27,6 +27,8 @@ def validated(values: Any) -> dict[str, Any]:
             and all(abs(n) <= 100000 for n in rect) and rect[2] >= 520 and rect[3] >= 180):
         result["window_rect"] = rect
     device = values.get("microphone_name")
+    if values.get("ui_language") in ("en", "zh", "ru"):
+        result["ui_language"] = values["ui_language"]
     if isinstance(device, str) and len(device) <= 1000:
         result["microphone_name"] = device
     return result

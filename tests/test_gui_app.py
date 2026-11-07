@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from unittest.mock import Mock
 
 from live_subtitles.audio.recording import AudioDevice, AudioDeviceError
 from live_subtitles import diagnostic_logging
@@ -132,6 +133,50 @@ def test_gui_module_import_does_not_create_tk_root() -> None:
     )
     assert "tk.Tk()" not in sources
     assert "import tkinter" not in sources
+
+
+@pytest.mark.parametrize("page", ["Appearance", "General", "More"])
+def test_reset_page_preserves_other_pages_and_language(runtime, page):
+    gui, root, controller = runtime
+    gui.state.opacity = 0.2
+    gui.state.text_opacity = 0.3
+    gui.state.chinese_font_size = 50
+    gui.state.show_russian = False
+    gui.state.toolbar_visible = False
+    gui.state.ui_language = "ru"
+    gui.preferences = Mock()
+    gui.overlay = Mock(settings_panel=None)
+    gui.select_microphone = Mock()
+    gui.microphone_selector = Mock()
+    gui.save_preferences = Mock()
+    root.after_idle = lambda callback: callback()
+    root.winfo_x = lambda: 20
+    root.winfo_y = lambda: 30
+    gui.restore_defaults(page)
+    assert gui.state.ui_language == "ru"
+    if page == "Appearance":
+        assert gui.state.opacity == SubtitleViewState().opacity
+        assert gui.state.text_opacity == 1
+        assert gui.state.chinese_font_size == 34
+        assert gui.state.show_russian
+        assert not gui.state.toolbar_visible
+    else:
+        assert gui.state.opacity == 0.2
+        assert gui.state.text_opacity == 0.3
+        assert gui.state.chinese_font_size == 50
+        assert not gui.state.show_russian
+        assert gui.state.toolbar_visible == (page == "More")
+    assert gui.select_microphone.call_count == (1 if page == "General" else 0)
+    assert gui.overlay.restore_geometry.call_count == (1 if page == "More" else 0)
+    gui.save_preferences.assert_called_once()
+
+
+def test_reset_input_does_not_change_active_session(runtime):
+    gui, root, controller = runtime
+    controller.running = True
+    gui.select_microphone = Mock()
+    gui.restore_defaults("General")
+    gui.select_microphone.assert_not_called()
 
 
 @pytest.mark.parametrize("command", ["overlay-demo", "live-overlay"])

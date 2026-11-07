@@ -315,6 +315,7 @@ class GuiRuntime:
         if self.preferences is None or self._destroyed:
             return
         values = {key: getattr(self.state, key) for key in (*BOOL_FIELDS, *NUM_FIELDS)}
+        values["ui_language"] = self.state.ui_language
         values["window_rect"] = list(self.overlay.window_rectangle())
         if self.microphone_selector is not None:
             values["microphone_name"] = self.microphone_selector.preference_name()
@@ -327,27 +328,34 @@ class GuiRuntime:
         else:
             self._preference_snapshot = values
 
-    def restore_defaults(self) -> None:
+    def restore_defaults(self, page: str) -> None:
+        if page not in {"Appearance", "General", "More"}:
+            raise ValueError(f"Unknown settings page: {page}")
+        if page == "General" and not self.can_change_microphone():
+            return
         if self.preferences is None:
             self.preferences = Preferences()
         defaults = SubtitleViewState()
         overlay = self.overlay
-        for key, toggle in (("borderless", overlay.toggle_borderless),
-                            ("topmost", overlay.toggle_topmost)):
-            if getattr(self.state, key) != getattr(defaults, key):
-                toggle()
-        for key in (*BOOL_FIELDS, *NUM_FIELDS):
-            setattr(self.state, key, getattr(defaults, key))
-        overlay.set_opacity(defaults.opacity)
-        overlay._sync_toolbar()
-        def reset_geometry() -> None:
-            overlay.restore_geometry((self.root.winfo_x(), self.root.winfo_y(), 900, 280))
-            overlay.set_position("bottom")
-        self.root.after_idle(reset_geometry)
-        if self.can_change_microphone() and self.microphone_selector is not None:
+        if page == "Appearance":
+            for key in ("show_russian", "text_outline", *NUM_FIELDS):
+                setattr(self.state, key, getattr(defaults, key))
+            overlay.set_opacity(defaults.opacity)
+        elif page == "More":
+            for key, toggle in (("borderless", overlay.toggle_borderless),
+                                ("topmost", overlay.toggle_topmost)):
+                if getattr(self.state, key) != getattr(defaults, key):
+                    toggle()
+            self.state.toolbar_visible = defaults.toolbar_visible
+            overlay._sync_toolbar()
+            def reset_geometry() -> None:
+                overlay.restore_geometry((self.root.winfo_x(), self.root.winfo_y(), 900, 280))
+                overlay.set_position("bottom")
+            self.root.after_idle(reset_geometry)
+        elif self.microphone_selector is not None:
             self.select_microphone(None)
         panel = overlay.settings_panel
-        if panel is not None:
+        if panel is not None and page == "Appearance":
             for scale, value in ((panel.opacity_scale, defaults.opacity * 100),
                                  (panel.text_opacity_scale, defaults.text_opacity * 100),
                                  (panel.chinese_scale, defaults.chinese_font_size),
@@ -795,6 +803,8 @@ def _run_tk(
 ) -> int:
     import tkinter as tk
 
+    from .dpi import configure_dpi
+    configure_dpi()
     root = tk.Tk()
     runtime = GuiRuntime(
         root,
@@ -837,6 +847,7 @@ def _live_overlay(args: argparse.Namespace) -> int:
             setattr(args, key, saved[key])
     state = _state_from_args(args)
     state.toolbar_visible = getattr(args, "toolbar_visible", True)
+    state.ui_language = saved.get("ui_language", "en")
     selector = MicrophoneSelectorModel(args.device)
     if "device" not in explicit and saved.get("microphone_name"):
         if not selector.restore_name(saved["microphone_name"]):

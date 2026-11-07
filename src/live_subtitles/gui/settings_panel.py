@@ -10,6 +10,8 @@ from .microphone_selector import MicrophoneSelectorSnapshot
 from .workarea import window_placement
 from .commands import bind_start_stop
 from .state import SubtitleViewState
+from . import settings_theme as theme
+from .settings_controls import NumericScale
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,7 @@ class SettingsPanel:
         on_toggle_outline: Callable[[], None] | None = None,
         on_toggle_toolbar: Callable[[], None] | None = None,
         on_hide: Callable[[], None] | None = None,
-        on_restore_defaults: Callable[[], None] | None = None,
+        on_restore_defaults: Callable[[str], None] | None = None,
         on_open_logs: Callable[[], None] | None = None,
         on_dump_threads: Callable[[], None] | None = None,
         tk_module: Any | None = None,
@@ -78,24 +80,23 @@ class SettingsPanel:
         self.last_geometry: str | None = None
         self.window = tk_module.Toplevel(root)
         self.window.title("Subtitle settings")
-        self.window.transient(root)
-        self.window.configure(background="#20242c", padx=12, pady=10)
+        # An owned Windows dialog must stay above its owner even when the
+        # owner is activated. Settings is modeless: keep the Tk lifetime parent,
+        # but do not establish a native transient owner. Both windows share the
+        # selected topmost band and otherwise follow normal activation order.
+        self.window.configure(background=theme.SURFACE, padx=0, pady=0)
         self.window.attributes("-topmost", bool(state.topmost))
         self.window.attributes("-alpha", 1.0)
         self.window.protocol("WM_DELETE_WINDOW", self.hide)
         self.window.bind("<Escape>", lambda _event: self.hide())
+        self.window.bind("<Control-q>", lambda _event: on_exit())
         bind_start_stop(self.window, self.on_start_stop)
 
         if ttk_module is None:
             from tkinter import ttk as ttk_module
+        self.ttk = ttk_module
+        theme.install(ttk_module, root, tk_module)
         self._checks: dict[str, Any] = {}
-        self._body = tk_module.Frame(self.window, background="#20242c")
-        self._body.pack(side="bottom", fill="x", pady=(6, 0))
-        self.start_stop_button = self._button("Start", on_start_stop)
-        clear_button = self._button("Clear display", on_clear)
-        exit_button = self._button("Exit application", on_exit, danger=True)
-        for button in (self.start_stop_button, clear_button, exit_button):
-            button.pack(side="left", fill="none", padx=3, pady=2)
         from .settings_pages import create_settings_pages
         self.pages = create_settings_pages(self.window, root, tk_module, ttk_module)
         self._body = self.pages["General"]
@@ -108,11 +109,11 @@ class SettingsPanel:
                 from tkinter import ttk as ttk_module
 
             self._label("Microphone input")
-            microphone_row = tk_module.Frame(self._body, background="#20242c")
+            microphone_row = tk_module.Frame(self._body, background=theme.SURFACE)
             microphone_row.pack(fill="x", pady=(2, 2))
             self.microphone_combobox = ttk_module.Combobox(
                 microphone_row,
-                state="readonly",
+                state="readonly", style="Settings.TCombobox",
             )
             self.microphone_combobox.pack(side="left", fill="x", expand=True)
             self.microphone_combobox.bind(
@@ -131,13 +132,25 @@ class SettingsPanel:
                 anchor="w",
                 justify="left",
                 wraplength=360,
-                background="#20242c",
-                foreground="#c8ccd4",
+                background=theme.SURFACE,
+                foreground=theme.MUTED,
             )
             self.microphone_status.pack(fill="x", pady=(0, 7))
             # Enumeration is deliberately limited to first creation and the
             # explicit Refresh button. Rendering and showing do not poll.
             self._refresh_microphones(initial=True)
+
+        self._section("Session")
+        self.progress_status = self._label("Ready")
+        self.input_error = self._label("")
+        self.input_error.configure(foreground=theme.ERROR)
+        self.input_error.pack_forget()
+        self.input_model_status = self._label("")
+        self.input_model_help = None
+        if models is not None:
+            self.input_model_help = self._button("Model setup help", models.open_instructions)
+        self.start_stop_button = self._button("Start", on_start_stop)
+        self._label("F8 to start or stop. Audio is processed on this computer.")
 
         self._body = self.pages["Diagnostics"]
         self._label(f"Russian–Chinese Live Subtitles {__version__}")
@@ -151,8 +164,8 @@ class SettingsPanel:
                 anchor="w",
                 justify="left",
                 wraplength=360,
-                background="#20242c",
-                foreground="#c8ccd4",
+                background=theme.SURFACE,
+                foreground=theme.MUTED,
             )
             self.model_status.pack(fill="x", pady=(1, 3))
             self.model_recheck_button = self._button(
@@ -161,28 +174,44 @@ class SettingsPanel:
             self._button("Open model folder", models.open_folder)
             self._button("Open model setup instructions", models.open_instructions)
 
-        self._body = self.pages["General"]
-        self.progress_status = self._label("Ready")
+        self._body = self.pages["Appearance"]
+        self.visibility_note = self._label("")
+        self._appearance_heading = self._section("Language & size")
         self.russian_button = self._check("Show Russian", "show_russian", on_toggle_russian)
+        self.chinese_scale = self._scale(
+            16, 72, 1, state.chinese_font_size,
+            lambda value: on_chinese_font(int(float(value))), label="Chinese size (pt)")
+        self.russian_scale = self._scale(
+            10, 48, 1, state.russian_font_size,
+            lambda value: on_russian_font(int(float(value))), label="Russian size (pt)")
+        self._body = self.pages["More"]
+        self._section("Interface language")
+        from .i18n import LANGUAGE_NAMES, LANGUAGES
+        self.language_selector = ttk_module.Combobox(
+            self._body, state="readonly", values=LANGUAGE_NAMES,
+            style="Settings.TCombobox", width=16)
+        self.language_selector.current(LANGUAGES.index(state.ui_language))
+        self.language_selector.pack(anchor="w", pady=(0, 8))
+        self.language_selector.bind("<<ComboboxSelected>>", self._change_language)
+        self._section("Window behavior")
         self.pin_button = self._check("Always on top", "topmost", on_toggle_topmost)
         self._body = self.pages["More"]
         self.border_button = self._check("Borderless window", "borderless", on_toggle_borderless)
         self.toolbar_button = self._check("Show toolbar", "toolbar_visible", on_toggle_toolbar or (lambda: None))
-        self._body = self.pages["Appearance"]
-        self.outline_button = self._check("Black text outline", "text_outline", on_toggle_outline or (lambda: None))
         self._body = self.pages["More"]
+        self._section("Subtitle files")
         self.subtitles_button: Any | None = None
         self.subtitles_status: Any | None = None
         if on_open_subtitles is not None:
             self.subtitles_button = self._button("Open subtitles folder", on_open_subtitles)
             self.subtitles_status = tk_module.Label(
                 self._body, anchor="w", justify="left", wraplength=360,
-                background="#20242c", foreground="#c8ccd4",
+                background=theme.SURFACE, foreground=theme.MUTED,
             )
             self.subtitles_status.pack(fill="x", pady=(1, 3))
 
         self._label("Position")
-        position_row = tk_module.Frame(self._body, background="#20242c")
+        position_row = tk_module.Frame(self._body, background=theme.SURFACE)
         position_row.pack(fill="x", pady=(0, 6))
         for preset in ("top", "bottom"):
             tk_module.Button(
@@ -193,41 +222,67 @@ class SettingsPanel:
             ).pack(side="left", padx=2)
 
         self._body = self.pages["Appearance"]
-        self._label("Background opacity (%)")
+        self._section("Background & text")
         self.opacity_scale = self._scale(
-            0, 100, 1, state.opacity * 100, lambda value: on_opacity(float(value) / 100)
+            0, 100, 1, state.opacity * 100, lambda value: on_opacity(float(value) / 100), label="Background opacity (%)"
         )
-        self._label("Text opacity (%)")
         self.text_opacity_scale = self._scale(
             0, 100, 1, state.text_opacity * 100,
             lambda value: on_text_opacity(float(value) / 100) if on_text_opacity else None,
+            label="Text opacity (%)",
         )
-        self._label("Chinese font size")
-        self.chinese_scale = self._scale(
-            16,
-            72,
-            1,
-            state.chinese_font_size,
-            lambda value: on_chinese_font(int(float(value))),
-        )
-        self._label("Russian font size")
-        self.russian_scale = self._scale(
-            10,
-            48,
-            1,
-            state.russian_font_size,
-            lambda value: on_russian_font(int(float(value))),
-        )
+        self.outline_button = self._check("Black text outline", "text_outline", on_toggle_outline or (lambda: None))
         self._body = self.pages["More"]
-        if on_restore_defaults is not None:
-            self._button("Restore defaults", on_restore_defaults)
-        self._label("Double-click subtitles: show / hide toolbar\nRight-click subtitles: settings\nF8: start / stop   Ctrl+Q: exit")
+        self._shortcuts_expanded = False
+        self.shortcuts_button = self._button("Show shortcuts", self._toggle_shortcuts)
+        self.shortcuts_note = self._label("Double-click subtitles: show / hide toolbar\nRight-click subtitles: settings\nF8: start / stop   Ctrl+Q: exit")
+        self.shortcuts_note.pack_forget()
         self._body = self.pages["Diagnostics"]
+        self._button("Clear display", on_clear)
+        self._button("Exit application", on_exit)
         if on_open_logs is not None:
             self._button("Open logs folder", on_open_logs)
         if on_dump_threads is not None:
             self._button("Save thread diagnostics", on_dump_threads)
+        self.input_reset_button = None
+        if on_restore_defaults is not None:
+            for page in ("Appearance", "General", "More"):
+                self._body = self.pages[page]
+                button = self._button(
+                    "Reset this page", lambda name=page: self._confirm_reset(name, on_restore_defaults))
+                if page == "General":
+                    self.input_reset_button = button
         self.sync()
+
+    def _confirm_reset(self, page: str, callback: Callable[[str], None]) -> None:
+        from tkinter import messagebox
+        from .i18n import translate
+        if page == "General" and not self._can_change_microphone():
+            return
+        language = self.state_model.ui_language
+        if messagebox.askyesno(
+            translate("Reset this page", language),
+            translate("Reset only this page? Interface language and other pages are kept.", language),
+            parent=self.window, default="no",
+        ):
+            callback(page)
+
+    def _toggle_shortcuts(self) -> None:
+        self._shortcuts_expanded = not self._shortcuts_expanded
+        self.shortcuts_button.configure(
+            text="Hide shortcuts" if self._shortcuts_expanded else "Show shortcuts")
+        if self._shortcuts_expanded:
+            self.shortcuts_note.pack(fill="x", pady=(7, 0), after=self.shortcuts_button)
+        else:
+            self.shortcuts_note.pack_forget()
+        self.sync()
+
+    def _change_language(self, _event=None) -> None:
+        from .i18n import LANGUAGES
+        index = self.language_selector.current()
+        if 0 <= index < len(LANGUAGES):
+            self.state_model.ui_language = LANGUAGES[index]
+            self.sync()
 
     def _refresh_microphones(self, *, initial: bool = False) -> None:
         if self.microphone is None:
@@ -273,10 +328,13 @@ class SettingsPanel:
         ):
             return
         snapshot = self.microphone.snapshot()
+        from .i18n import translate
         self._microphone_snapshot = snapshot
         can_change = self._can_change_microphone()
         self.microphone_combobox.config(
-            values=tuple(choice.label for choice in snapshot.choices),
+            values=tuple(translate(choice.label, self.state_model.ui_language)
+                         if choice.device_index is None else choice.label
+                         for choice in snapshot.choices),
             state="readonly" if can_change else "disabled",
         )
         self.microphone_combobox.current(snapshot.selected_position)
@@ -298,6 +356,8 @@ class SettingsPanel:
 
     def _sync_model_controls(self) -> None:
         if self.models is None or self.model_status is None:
+            self.input_model_status.configure(text="Demo mode · no microphone or models required.",
+                                              foreground=theme.MUTED)
             return
         report = self.models.snapshot()
         if report.ready:
@@ -309,14 +369,22 @@ class SettingsPanel:
                 f"{display_path(report.model_root)}"
             )
         self.model_status.config(text=status)
+        self.input_model_status.configure(
+            text="Models ready for offline use." if report.ready else "Model files need attention before starting.",
+            foreground=theme.MUTED if report.ready else theme.ERROR)
+        if self.input_model_help is not None:
+            if report.ready:
+                self.input_model_help.pack_forget()
+            else:
+                self.input_model_help.pack(anchor="w", pady=6, before=self.start_stop_button)
 
     @staticmethod
     def _button_style() -> dict[str, Any]:
         return {
-            "background": "#3a3f4b",
-            "foreground": "#ffffff",
-            "activebackground": "#505766",
-            "activeforeground": "#ffffff",
+            "background": theme.CONTROL,
+            "foreground": theme.TEXT,
+            "activebackground": theme.SELECTED,
+            "activeforeground": theme.ACCENT,
             "relief": "flat",
             "padx": 8,
         }
@@ -328,18 +396,25 @@ class SettingsPanel:
         if danger:
             style["background"] = "#a83232"
         button = self.tk.Button(self._body, text=text, command=command, **style)
-        button.pack(fill="x", pady=2)
+        button.pack(anchor="w", pady=5, ipady=3)
         return button
+
+    def _section(self, text: str) -> Any:
+        heading = self.tk.Label(self._body, text=text, anchor="w", background=theme.SURFACE,
+                                foreground=theme.MUTED, font=("Segoe UI", 9, "bold"))
+        heading.pack(fill="x", pady=(12, 4))
+        return heading
 
     def _check(self, text: str, name: str, command: Callable[[], None]) -> Any:
         variable = self.tk.BooleanVar(self.window, value=bool(getattr(self.state_model, name)))
         self._checks[name] = variable
-        check = self.tk.Checkbutton(
-            self._body, text=text, variable=variable, command=command,
-            background="#20242c", foreground="#ffffff", selectcolor="#303744",
-            activebackground="#20242c", activeforeground="#ffffff", anchor="w",
-        )
-        check.pack(fill="x", pady=6)
+        row = self.tk.Frame(self._body, background=theme.SURFACE)
+        row.pack(fill="x", pady=7)
+        self.tk.Label(row, text=text, anchor="w", background=theme.SURFACE,
+                      foreground=theme.TEXT).pack(side="left")
+        check = self.ttk.Checkbutton(row, text=text, variable=variable, command=command,
+                                     style="Settings.TCheckbutton", takefocus=True)
+        check.pack(side="right")
         return check
 
     def _label(self, text: str) -> Any:
@@ -347,8 +422,8 @@ class SettingsPanel:
             self._body,
             text=text,
             anchor="w",
-            background="#20242c",
-            foreground="#d8dbe2",
+            background=theme.SURFACE,
+            foreground=theme.TEXT,
             justify="left", wraplength=300,
         )
         label.pack(fill="x", pady=(7, 0))
@@ -361,21 +436,21 @@ class SettingsPanel:
         resolution: float,
         value: float,
         command: Callable[[str], None],
+        *, label: str,
     ) -> Any:
-        scale = self.tk.Scale(
-            self._body,
-            from_=minimum,
-            to=maximum,
-            resolution=resolution,
-            orient="horizontal",
-            command=command,
-            background="#20242c",
-            foreground="#ffffff",
-            highlightthickness=0,
-        )
-        scale.set(value)
-        scale.pack(fill="x")
-        return scale
+        def changed(value: str) -> None:
+            command(value)
+            self._sync_visibility_note()
+        return NumericScale(self._body, tk=self.tk, ttk=self.ttk, label=label,
+                            minimum=minimum, maximum=maximum, value=value, command=changed)
+
+    def _sync_visibility_note(self) -> None:
+        hidden = self.state_model.opacity == 0 or self.state_model.text_opacity == 0
+        self.visibility_note.configure(text="Hidden at 0%. Settings remain available." if hidden else "")
+        if hidden:
+            self.visibility_note.pack(fill="x", pady=(0, 5), before=self._appearance_heading)
+        else:
+            self.visibility_note.pack_forget()
 
     def exists(self) -> bool:
         try:
@@ -394,7 +469,13 @@ class SettingsPanel:
     def sync(self) -> None:
         if not self.exists():
             return
+        self._sync_visibility_note()
         self.progress_status.configure(text=self.state_model.status)
+        self.input_error.configure(text=self.state_model.latest_error)
+        if self.state_model.latest_error:
+            self.input_error.pack(fill="x", pady=(7, 0), after=self.progress_status)
+        else:
+            self.input_error.pack_forget()
         running = self.is_running()
         stopping = self.state_model.stopping
         if stopping:
@@ -406,19 +487,25 @@ class SettingsPanel:
         self.start_stop_button.config(
             text=primary_text,
             state="disabled" if stopping else "normal",
-            background="#b63838" if running else "#2166a5",
+            background="#2365d9", foreground=theme.TEXT,
         )
         for name, variable in self._checks.items():
             variable.set(bool(getattr(self.state_model, name)))
         self._sync_microphone_controls()
         self._sync_model_controls()
+        if self.input_reset_button is not None:
+            self.input_reset_button.configure(
+                state="normal" if self._can_change_microphone() else "disabled")
         if self.subtitles_status is not None:
             path = self.state_model.srt_path
             error = self.state_model.srt_error
             text = error or ("Subtitles are saved automatically (SRT)." if path else "SRT recording starts with the next session.")
             self.subtitles_status.config(
-                text=text, foreground="#ff8a80" if error else "#c8ccd4",
+                text=text, foreground=theme.ERROR if error else theme.MUTED,
             )
+        from .i18n import translate, translate_widgets
+        self.window.title(translate("Subtitle settings", self.state_model.ui_language))
+        translate_widgets(self.window, self.state_model.ui_language)
 
     def show(self) -> None:
         if not self.exists():

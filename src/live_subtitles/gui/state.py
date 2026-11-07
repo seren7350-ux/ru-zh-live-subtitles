@@ -63,6 +63,7 @@ class SubtitleViewState:
         if position not in POSITION_PRESETS:
             raise ValueError(f"Position must be one of: {', '.join(POSITION_PRESETS)}.")
         self.history_lines = history_lines
+        self.ui_language = "en"
         self.display_lines = display_lines
         self.opacity = opacity
         self.text_opacity = text_opacity

@@ -52,6 +52,24 @@ class WindowCoordinator:
         # Native restoration may finish mapping the owner after this call.
         self.root.after_idle(self.sync_caption)
 
+    def activate_from_pointer(self) -> None:
+        """Bring the subtitle pair forward after an explicit text-layer click.
+
+        The caption's NOACTIVATE style prevents passive rendering from stealing
+        focus. A deliberate click is different; route it to the real window.
+        Do not open settings or change alpha while starting a drag.
+        """
+        if self.closing() or self.transition_pending:
+            return
+        if self.taskbar is not None:
+            try:
+                self.taskbar.activate(self.root)
+            except OSError:
+                diagnostic_logger().exception("Could not activate clicked subtitles")
+        else:
+            self.root.lift()
+        self.sync_caption()
+
     def apply_topmost(self) -> None:
         self.root.attributes("-topmost", bool(self.state.topmost))
         self.sync_caption()

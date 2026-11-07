@@ -30,6 +30,14 @@ def test_invalid_preferences_never_execute_or_accept_nonfinite_values(tmp_path):
     assert json.loads(store.path.read_text())["version"] == 2
 
 
+def test_ui_language_is_validated_and_persisted(tmp_path):
+    store = Preferences(tmp_path / "preferences.json")
+    for language in ("en", "zh", "ru"):
+        store.save({"ui_language": language})
+        assert store.load() == {"ui_language": language}
+    assert validated({"ui_language": "unexpected"}) == {}
+
+
 def test_position_presets_use_negative_monitor_workarea():
     area = (-1920, 0, 1920, 1040)
     assert positioned((-1800, 300, 900, 280), area, "top") == (-1410, 20, 900, 280)
