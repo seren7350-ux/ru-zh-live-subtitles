@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* One dark palette shared by the page and its shadcn/ui components. */
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  --background: #141416;
+  --foreground: #ededf0;
+  --card: #202023;
+  --card-foreground: var(--foreground);
+  --muted-foreground: #a1a1aa;
+  --secondary: #252529;
+  --primary: #a9bbff;
+  --border: #343439;
+  --ready: #8bc9ac;
+  --radius: 1rem;
+}
+
+@theme inline {
+  --spacing: 0.25rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary: var(--primary);
+  --color-border: var(--border);
+  --color-ready: var(--ready);
+  --font-sans: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --radius-xl: calc(var(--radius) - 0.25rem);
+  --radius-2xl: var(--radius);
+  --shadow-overlay: 0 12px 36px rgb(0 0 0 / 18%);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+}
