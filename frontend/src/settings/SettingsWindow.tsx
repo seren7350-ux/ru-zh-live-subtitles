@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge"
 import type { SubtitleStatus } from "@/components/SubtitleCard"
 import { InputPage } from "./InputPage"
 import { SubtitlesPage } from "./SubtitlesPage"
+import { WindowPage, defaultWindowSettings } from "./WindowPage"
 import type { SubtitleAppearance } from "./subtitleAppearance"
 import "./settings.css"
 
 const pages = [
   { id: "input", title: "Input", description: "选择音频来源，查看模型状态并控制字幕会话。" },
   { id: "subtitles", title: "Subtitles", description: "字幕显示与可读性。" },
-  { id: "window", title: "Window", description: "窗口行为与快捷键。" },
+  { id: "window", title: "Window", description: "窗口参数、快捷键与字幕保存的模拟配置。" },
   { id: "diagnostics", title: "Diagnostics", description: "运行信息与诊断。" },
 ] as const
 
@@ -37,6 +38,7 @@ export function SettingsWindow({ status, onToggleSession, subtitleAppearance, on
   const [pageId, setPageId] = useState<typeof pages[number]["id"]>("input")
   const [microphone, setMicrophone] = useState("default")
   const [deviceFeedback, setDeviceFeedback] = useState("")
+  const [windowSettings, setWindowSettings] = useState(defaultWindowSettings)
   const reducedMotion = useReducedMotionConfig()
   const page = pages.find((item) => item.id === pageId)!
 
@@ -67,6 +69,8 @@ export function SettingsWindow({ status, onToggleSession, subtitleAppearance, on
               <InputPage status={status} onToggleSession={onToggleSession} microphone={microphone} onMicrophoneChange={(value) => { setMicrophone(value); setDeviceFeedback("已切换模拟输入设备") }} deviceFeedback={deviceFeedback} onRefresh={() => setDeviceFeedback("已刷新：3 个模拟设备")} />
             ) : pageId === "subtitles" ? (
               <SubtitlesPage appearance={subtitleAppearance} onChange={onSubtitleAppearanceChange} />
+            ) : pageId === "window" ? (
+              <WindowPage settings={windowSettings} onChange={setWindowSettings} />
             ) : (
               <div className="settings-placeholder">
                 <NavigationIcon page={pageId} />

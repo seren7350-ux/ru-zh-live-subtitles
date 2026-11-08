@@ -85,6 +85,17 @@
 .settings-subtitle-toggle { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #d8d8da; cursor: pointer; }
 .settings-subtitles input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .settings-subtitles .settings-group[aria-label="可读性"] .settings-subtitle-row { border-top: 0; margin-top: 0; padding-top: 0; }
+.settings-window-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.settings-window-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--settings-line); font-size: 13px; }
+.settings-window-option input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #d8d8da; cursor: pointer; }
+.settings-window-feedback { margin: 12px 0 0; color: #a4a4a4; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.settings-window-geometry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 14px; }
+.settings-window-geometry label { display: grid; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted-foreground); }
+.settings-window-geometry input, .settings-window-shortcut select { min-width: 0; width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--secondary); color: var(--foreground); font-size: 13px; }
+.settings-window-options input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.settings-window-shortcut { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--settings-line); font-size: 13px; }
+.settings-window-shortcut select { width: 210px; max-width: 100%; }
+.settings-window-path { display: block; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--settings-line); border-radius: 8px; background: rgb(0 0 0 / 12%); font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .settings-root { padding: 12px; }
   .settings-body { grid-template-columns: 148px minmax(0, 1fr); }
