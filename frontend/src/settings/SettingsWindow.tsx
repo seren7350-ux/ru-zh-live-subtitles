@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { motion, useReducedMotionConfig } from "motion/react"
 import { Badge } from "@/components/ui/badge"
 import type { SubtitleStatus } from "@/components/SubtitleCard"
@@ -6,14 +6,17 @@ import { InputPage } from "./InputPage"
 import { SubtitlesPage } from "./SubtitlesPage"
 import { WindowPage, defaultWindowSettings } from "./WindowPage"
 import { DiagnosticsPage } from "./DiagnosticsPage"
+import { ResetDialog } from "./ResetDialog"
+import { messages, format, type Language } from "./messages"
+import { defaultSubtitleAppearance } from "./subtitleAppearance"
 import type { SubtitleAppearance } from "./subtitleAppearance"
 import "./settings.css"
 
 const pages = [
-  { id: "input", title: "Input", description: "选择音频来源，查看模型状态并控制字幕会话。" },
-  { id: "subtitles", title: "Subtitles", description: "字幕显示与可读性。" },
-  { id: "window", title: "Window", description: "窗口参数、快捷键与字幕保存的模拟配置。" },
-  { id: "diagnostics", title: "Diagnostics", description: "运行信息与诊断。" },
+  { id: "input", title: "input", description: "inputDesc" },
+  { id: "subtitles", title: "subtitles", description: "subtitlesDesc" },
+  { id: "window", title: "window", description: "windowDesc" },
+  { id: "diagnostics", title: "diagnostics", description: "diagDesc" },
 ] as const
 
 function NavigationIcon({ page }: { page: typeof pages[number]["id"] }) {
@@ -38,46 +41,64 @@ export interface SettingsWindowProps {
 export function SettingsWindow({ status, onToggleSession, subtitleAppearance, onSubtitleAppearanceChange }: SettingsWindowProps) {
   const [pageId, setPageId] = useState<typeof pages[number]["id"]>("input")
   const [microphone, setMicrophone] = useState("default")
-  const [deviceFeedback, setDeviceFeedback] = useState("")
+  const [deviceFeedback, setDeviceFeedback] = useState<"" | "deviceChanged" | "devicesRefreshed">("")
   const [windowSettings, setWindowSettings] = useState(defaultWindowSettings)
+  const [language, setLanguage] = useState<Language>("zh")
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [resetPage, setResetPage] = useState<typeof pageId | null>(null)
+  const [diagnosticReset, setDiagnosticReset] = useState(0)
+  const resetButton = useRef<HTMLButtonElement>(null)
+  const t = messages[language]
+  function closeReset() { setConfirmReset(false); resetButton.current?.focus() }
+  function restoreDefaults() {
+    if (pageId === "input") { setMicrophone("default"); setDeviceFeedback("") }
+    if (pageId === "subtitles") onSubtitleAppearanceChange({ ...defaultSubtitleAppearance })
+    if (pageId === "window") setWindowSettings({ ...defaultWindowSettings })
+    if (pageId === "diagnostics") setDiagnosticReset((value) => value + 1)
+    setResetPage(pageId)
+    closeReset()
+  }
   const reducedMotion = useReducedMotionConfig()
   const page = pages.find((item) => item.id === pageId)!
 
   return (
-    <section className="settings-window" aria-label="字幕设置" data-session-status={status}>
+    <section className="settings-window" aria-label={t.settings} lang={language} data-session-status={status}>
       <header className="settings-titlebar">
         <span className="settings-appmark" aria-hidden="true">字</span>
-        <strong>实时字幕</strong><span className="settings-title-divider" /><span>设置</span>
-        <Badge className="settings-mode-badge">模拟</Badge>
+        <strong>{t.app}</strong><span className="settings-title-divider" /><span>{t.settings}</span>
+        <Badge className="settings-mode-badge">{t.sim}</Badge>
+        <select className="settings-language" aria-label={t.language} value={language} onChange={(event) => setLanguage(event.target.value as Language)}><option value="zh">简体中文</option><option value="en">English</option><option value="ru">Русский</option></select>
       </header>
       <div className="settings-body">
         <aside className="settings-sidebar">
-          <nav aria-label="设置导航">
+          <nav aria-label={t.navigation}>
             {pages.map((item) => (
               <button type="button" key={item.id} aria-current={pageId === item.id ? "page" : undefined} onClick={() => setPageId(item.id)}>
-                <NavigationIcon page={item.id} /><span>{item.title}</span>
+                <NavigationIcon page={item.id} /><span>{t[item.title]}</span>
               </button>
             ))}
           </nav>
-          <p className="settings-sidebar-note">本地演示<span>麦克风未启用</span></p>
+          <p className="settings-sidebar-note">{t.localDemo}<span>{t.micOff}</span></p>
         </aside>
         <div className="settings-content">
           <motion.div key={pageId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: reducedMotion ? 0 : 0.12 }}>
             <header className="settings-page-heading">
-              <h1>{page.title}</h1><p>{page.description}</p>
+              <h1>{t[page.title]}</h1><p>{t[page.description]}</p>
             </header>
             {pageId === "input" ? (
-              <InputPage status={status} onToggleSession={onToggleSession} microphone={microphone} onMicrophoneChange={(value) => { setMicrophone(value); setDeviceFeedback("已切换模拟输入设备") }} deviceFeedback={deviceFeedback} onRefresh={() => setDeviceFeedback("已刷新：3 个模拟设备")} />
+              <InputPage messages={t} status={status} onToggleSession={onToggleSession} microphone={microphone} onMicrophoneChange={(value) => { setMicrophone(value); setDeviceFeedback("deviceChanged") }} deviceFeedback={deviceFeedback} onRefresh={() => setDeviceFeedback("devicesRefreshed")} />
             ) : pageId === "subtitles" ? (
-              <SubtitlesPage appearance={subtitleAppearance} onChange={onSubtitleAppearanceChange} />
+              <SubtitlesPage messages={t} appearance={subtitleAppearance} onChange={onSubtitleAppearanceChange} />
             ) : pageId === "window" ? (
-              <WindowPage settings={windowSettings} onChange={setWindowSettings} />
+              <WindowPage messages={t} settings={windowSettings} onChange={setWindowSettings} />
             ) : (
-              <DiagnosticsPage status={status} />
+              <DiagnosticsPage key={`${status}-${diagnosticReset}`} messages={t} status={status} />
             )}
+            <div className="settings-reset"><button className="settings-button" type="button" ref={resetButton} onClick={() => setConfirmReset(true)}>{t.reset}</button><p role="status">{resetPage === pageId ? (pageId === "diagnostics" ? t.diagResetDone : t.resetDone) : ""}</p></div>
           </motion.div>
         </div>
       </div>
+      {confirmReset && <ResetDialog title={t.resetTitle} description={pageId === "diagnostics" ? t.resetDiagDesc : format(t.resetDesc, { page: t[page.title] })} cancelLabel={t.cancel} confirmLabel={t.confirmReset} onCancel={closeReset} onConfirm={restoreDefaults} />}
     </section>
   )
 }

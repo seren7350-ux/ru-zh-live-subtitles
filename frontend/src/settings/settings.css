@@ -84,7 +84,7 @@
 .settings-subtitle-number input { width: 64px; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--secondary); color: var(--foreground); font-size: 13px; }
 .settings-subtitle-toggle { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #d8d8da; cursor: pointer; }
 .settings-subtitles input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
-.settings-subtitles .settings-group[aria-label="可读性"] .settings-subtitle-row { border-top: 0; margin-top: 0; padding-top: 0; }
+.settings-subtitles .settings-readability .settings-subtitle-row { border-top: 0; margin-top: 0; padding-top: 0; }
 .settings-window-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .settings-window-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--settings-line); font-size: 13px; }
 .settings-window-option input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #d8d8da; cursor: pointer; }
@@ -106,6 +106,7 @@
 .settings-diagnostic-error[data-error="true"] { color: #ff9292; }
 .settings-diagnostic-records { margin: 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.8; color: var(--muted-foreground); overflow-wrap: anywhere; }
 .settings-diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.settings-diagnostic-actions .settings-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .settings-diagnostic-feedback { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--muted-foreground); overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .settings-root { padding: 12px; }
@@ -130,3 +131,18 @@
 @media (prefers-reduced-motion: reduce) {
   .settings-window button { transition: none; }
 }
+
+.settings-language { max-width: 125px; min-width: 0; padding: 5px 7px; background: var(--secondary); border: 1px solid var(--border); border-radius: 7px; color: var(--foreground); font-size: 12px; }
+.settings-reset { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--settings-line); }
+.settings-reset p { min-height: 18px; margin: 8px 0 0; font-size: 12px; color: var(--muted-foreground); }
+.settings-reset-dialog { width: 400px; max-width: calc(100vw - 32px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--settings-surface); color: var(--foreground); box-sizing: border-box; }
+.settings-reset-dialog::backdrop { background: rgb(0 0 0 / 60%); }
+.settings-reset-dialog h2 { margin: 0; font-size: 18px; }
+.settings-reset-dialog p { line-height: 1.7; color: var(--muted-foreground); font-size: 13px; }
+.settings-reset-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.settings-window { overflow-wrap: anywhere; }
+.settings-sidebar button span { min-width: 0; }
+.settings-sidebar button svg { flex-shrink: 0; }
+.settings-session-state, .settings-model-state { white-space: normal; }
+.settings-subtitle-row { flex-wrap: wrap; }
+@media (max-width: 480px) { .settings-titlebar { gap: 6px; padding: 0 10px; font-size: 11px; } .settings-language { max-width: 96px; font-size: 11px; } .settings-appmark { width: 22px; height: 22px; flex-shrink: 0; } .settings-title-divider { display: none; } .settings-mode-badge { margin-left: auto; } }

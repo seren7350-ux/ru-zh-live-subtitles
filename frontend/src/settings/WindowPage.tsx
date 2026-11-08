@@ -1,3 +1,4 @@
+import { format, type Messages } from "./messages"
 export interface MockWindowSettings {
   topmost: boolean
   borderless: boolean
@@ -22,25 +23,26 @@ export const defaultWindowSettings: MockWindowSettings = {
 }
 
 const shortcuts = [
-  { field: "startStopShortcut", label: "开始 / 停止识别", key: "S" },
-  { field: "showHideShortcut", label: "显示 / 隐藏字幕", key: "H" },
-  { field: "settingsShortcut", label: "打开设置", key: "Comma" },
-  { field: "pinShortcut", label: "切换置顶", key: "P" },
+  { field: "startStopShortcut", label: "startStop", key: "S" },
+  { field: "showHideShortcut", label: "showHide", key: "H" },
+  { field: "settingsShortcut", label: "openSettings", key: "Comma" },
+  { field: "pinShortcut", label: "togglePin", key: "P" },
 ] as const
 const geometry = [
-  { field: "x", label: "X 坐标", min: -10000, max: 10000 },
-  { field: "y", label: "Y 坐标", min: -10000, max: 10000 },
-  { field: "width", label: "窗口宽度", min: 420, max: 1920 },
-  { field: "height", label: "窗口高度", min: 108, max: 1080 },
+  { field: "x", label: "x", min: -10000, max: 10000 },
+  { field: "y", label: "y", min: -10000, max: 10000 },
+  { field: "width", label: "width", min: 420, max: 1920 },
+  { field: "height", label: "height", min: 108, max: 1080 },
 ] as const
 
 interface WindowPageProps {
+  messages: Messages
   settings: MockWindowSettings
   onChange: (settings: MockWindowSettings) => void
 }
 
 /** Values only: no window APIs, shortcut registration, or filesystem access. */
-export function WindowPage({ settings, onChange }: WindowPageProps) {
+export function WindowPage({ messages, settings, onChange }: WindowPageProps) {
   function setGeometry(field: typeof geometry[number], value: string) {
     const number = Number(value)
     if (!value.trim() || !Number.isFinite(number)) return
@@ -49,42 +51,42 @@ export function WindowPage({ settings, onChange }: WindowPageProps) {
 
   return (
     <div className="settings-window-options">
-      <section className="settings-group" aria-label="窗口行为（模拟）">
-        <div className="settings-group-heading"><h2>窗口行为</h2><span className="settings-caption">模拟</span></div>
-        <label className="settings-window-option"><span>窗口置顶</span><input aria-label="窗口置顶（模拟）" type="checkbox" checked={settings.topmost} onChange={(event) => onChange({ ...settings, topmost: event.target.checked })} /></label>
-        <label className="settings-window-option"><span>无边框模式</span><input aria-label="无边框模式（模拟）" type="checkbox" checked={settings.borderless} onChange={(event) => onChange({ ...settings, borderless: event.target.checked })} /></label>
-        <label className="settings-window-option"><span>工具栏显示许可</span><input aria-label="工具栏显示许可（模拟）" type="checkbox" checked={settings.toolbarAllowed} onChange={(event) => onChange({ ...settings, toolbarAllowed: event.target.checked })} /></label>
-        <p className="settings-window-feedback" role="status">置顶{settings.topmost ? "开" : "关"} · 无边框{settings.borderless ? "开" : "关"} · 工具栏许可{settings.toolbarAllowed ? "开" : "关"}。仅记录模拟值，不改变窗口或当前字幕工具栏。</p>
+      <section className="settings-group" aria-label={format(messages.simLabel, { label: messages.windowBehavior })}>
+        <div className="settings-group-heading"><h2>{messages.windowBehavior}</h2><span className="settings-caption">{messages.sim}</span></div>
+        <label className="settings-window-option"><span>{messages.topmost}</span><input aria-label={format(messages.simLabel, { label: messages.topmost })} type="checkbox" checked={settings.topmost} onChange={(event) => onChange({ ...settings, topmost: event.target.checked })} /></label>
+        <label className="settings-window-option"><span>{messages.borderless}</span><input aria-label={format(messages.simLabel, { label: messages.borderless })} type="checkbox" checked={settings.borderless} onChange={(event) => onChange({ ...settings, borderless: event.target.checked })} /></label>
+        <label className="settings-window-option"><span>{messages.toolbarAllowed}</span><input aria-label={format(messages.simLabel, { label: messages.toolbarAllowed })} type="checkbox" checked={settings.toolbarAllowed} onChange={(event) => onChange({ ...settings, toolbarAllowed: event.target.checked })} /></label>
+        <p className="settings-window-feedback" role="status">{format(messages.behaviorFeedback, { topmost: settings.topmost ? messages.on : messages.off, borderless: settings.borderless ? messages.on : messages.off, toolbar: settings.toolbarAllowed ? messages.on : messages.off })}</p>
       </section>
 
-      <section className="settings-group" aria-label="位置与尺寸（模拟）">
-        <div className="settings-group-heading"><h2>位置与尺寸</h2><span className="settings-caption">模拟 · DIP</span></div>
+      <section className="settings-group" aria-label={format(messages.simLabel, { label: messages.geometry })}>
+        <div className="settings-group-heading"><h2>{messages.geometry}</h2><span className="settings-caption">{messages.sim} · DIP</span></div>
         <div className="settings-window-geometry">
-          {geometry.map((field) => <label key={field.field}><span>{field.label}</span><input aria-label={`${field.label}（模拟）`} type="number" step="1" min={field.min} max={field.max} value={settings[field.field]} onChange={(event) => setGeometry(field, event.target.value)} /></label>)}
+          {geometry.map((field) => <label key={field.field}><span>{messages[field.label]}</span><input aria-label={format(messages.simLabel, { label: messages[field.label] })} type="number" step="1" min={field.min} max={field.max} value={settings[field.field]} onChange={(event) => setGeometry(field, event.target.value)} /></label>)}
         </div>
-        <p className="settings-window-feedback" role="status">位置 ({settings.x}, {settings.y})，尺寸 {settings.width} × {settings.height} DIP。仅保留设置值，不移动或缩放窗口。</p>
+        <p className="settings-window-feedback" role="status">{format(messages.geometryFeedback, { x: settings.x, y: settings.y, width: settings.width, height: settings.height })}</p>
       </section>
 
-      <section className="settings-group" aria-label="全局快捷键（模拟）">
-        <div className="settings-group-heading"><h2>全局快捷键</h2><span className="settings-caption">模拟</span></div>
-        <p className="settings-description">选择候选组合或关闭此项，不注册系统快捷键。</p>
+      <section className="settings-group" aria-label={format(messages.simLabel, { label: messages.shortcuts })}>
+        <div className="settings-group-heading"><h2>{messages.shortcuts}</h2><span className="settings-caption">{messages.sim}</span></div>
+        <p className="settings-description">{messages.shortcutsHint}</p>
         {shortcuts.map((action) => (
           <label className="settings-window-shortcut" key={action.field}>
-            <span>{action.label}</span>
-            <select aria-label={`${action.label}快捷键（模拟）`} value={settings[action.field]} onChange={(event) => onChange({ ...settings, [action.field]: event.target.value })}>
-              <option value="">未设置</option><option>{`Ctrl + Alt + ${action.key}`}</option><option>{`Ctrl + Shift + ${action.key}`}</option>
+            <span>{messages[action.label]}</span>
+            <select aria-label={format(messages.shortcutLabel, { action: messages[action.label] })} value={settings[action.field]} onChange={(event) => onChange({ ...settings, [action.field]: event.target.value })}>
+              <option value="">{messages.unassigned}</option><option>{`Ctrl + Alt + ${action.key}`}</option><option>{`Ctrl + Shift + ${action.key}`}</option>
             </select>
           </label>
         ))}
-        <p className="settings-window-feedback" role="status">已配置 {shortcuts.filter((action) => settings[action.field]).length} 项模拟快捷键，未检查系统占用，未注册。</p>
+        <p className="settings-window-feedback" role="status">{format(messages.shortcutsFeedback, { count: shortcuts.filter((action) => settings[action.field]).length })}</p>
       </section>
 
-      <section className="settings-group" aria-label="SRT 保存（模拟）">
-        <div className="settings-group-heading"><h2>SRT 字幕保存</h2><span className="settings-caption">模拟</span></div>
-        <label className="settings-window-option"><span>保存 SRT</span><input aria-label="保存 SRT（模拟）" type="checkbox" checked={settings.saveSrt} onChange={(event) => onChange({ ...settings, saveSrt: event.target.checked })} /></label>
-        <p className="settings-description">模拟输出目录</p>
+      <section className="settings-group" aria-label={format(messages.simLabel, { label: messages.srtGroup })}>
+        <div className="settings-group-heading"><h2>{messages.srtGroup}</h2><span className="settings-caption">{messages.sim}</span></div>
+        <label className="settings-window-option"><span>{messages.saveSrt}</span><input aria-label={format(messages.simLabel, { label: messages.saveSrt })} type="checkbox" checked={settings.saveSrt} onChange={(event) => onChange({ ...settings, saveSrt: event.target.checked })} /></label>
+        <p className="settings-description">{messages.outputDir}</p>
         <code className="settings-window-path">C:\Demo\Subtitles</code>
-        <p className="settings-window-feedback" role="status">SRT 保存已{settings.saveSrt ? "开启" : "关闭"}（模拟）。固定示例路径，不读取目录或写入文件。</p>
+        <p className="settings-window-feedback" role="status">{format(messages.srtFeedback, { enabled: settings.saveSrt ? messages.on : messages.off })}</p>
       </section>
     </div>
   )

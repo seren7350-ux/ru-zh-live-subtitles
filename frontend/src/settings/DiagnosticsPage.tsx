@@ -1,55 +1,56 @@
+import { format, type Messages } from "./messages"
 import { useState } from "react"
 import type { SubtitleStatus } from "@/components/SubtitleCard"
 
 const models = [
-  { name: "Silero VAD", purpose: "语音活动检测" },
-  { name: "GigaAM", purpose: "俄语识别" },
-  { name: "NLLB", purpose: "中文翻译" },
-]
+  { name: "Silero VAD", purpose: "vad" },
+  { name: "GigaAM", purpose: "asr" },
+  { name: "NLLB", purpose: "translation" },
+] as const
 const records = [
-  "[模拟 00:00] 已打开 UI 演示，未连接模型服务。",
-  "[模拟 00:01] 已准备固定诊断示例，未读取日志文件。",
-]
+  "record0",
+  "record1",
+] as const
 
 /** Fixed demo data only; session status comes from the existing caller. */
-export function DiagnosticsPage({ status }: { status: SubtitleStatus }) {
-  const [feedback, setFeedback] = useState<{ status: SubtitleStatus; text: string }>()
+export function DiagnosticsPage({ status, messages }: { status: SubtitleStatus; messages: Messages }) {
+  const [feedback, setFeedback] = useState<{ status: SubtitleStatus; text: keyof Messages }>()
   const error = status === "Error"
-  const errorDetail = "DEMO_SERVICE_UNAVAILABLE（模拟）：示例模型服务不可用。此错误为固定演示数据，未连接真实服务。"
-  function announce(text: string) { setFeedback({ status, text }) }
+  const errorDetail = "errorDetail" as const
+  function announce(text: keyof Messages) { setFeedback({ status, text }) }
 
   return (
     <div className="settings-diagnostics">
-      <section className="settings-group" aria-label="应用信息">
-        <div className="settings-group-heading"><h2>应用信息</h2><span className="settings-caption">固定模拟数据</span></div>
+      <section className="settings-group" aria-label={messages.appInfo}>
+        <div className="settings-group-heading"><h2>{messages.appInfo}</h2><span className="settings-caption">{messages.fixedDemo}</span></div>
         <dl className="settings-diagnostic-info">
-          <div><dt>应用名称</dt><dd>俄中实时字幕</dd></div>
-          <div><dt>UI 演示</dt><dd>独立 React UI · 模拟模式</dd></div>
-          <div><dt>版本信息</dt><dd>UI demo · 未发布，无新版发行号</dd></div>
-          <div><dt>当前会话</dt><dd className="diagnostic-session" role="status">{status} · 模拟</dd></div>
+          <div><dt>{messages.appName}</dt><dd>{messages.appFull}</dd></div>
+          <div><dt>{messages.uiDemo}</dt><dd>{messages.uiDemoValue}</dd></div>
+          <div><dt>{messages.version}</dt><dd>{messages.versionValue}</dd></div>
+          <div><dt>{messages.currentSession}</dt><dd className="diagnostic-session" role="status">{messages[status]} · {messages.sim}</dd></div>
         </dl>
       </section>
-      <section className="settings-group" aria-label="模型信息">
-        <div className="settings-group-heading"><h2>模型信息</h2><span className="settings-caption">模拟 · 未连接服务</span></div>
+      <section className="settings-group" aria-label={messages.modelInfo}>
+        <div className="settings-group-heading"><h2>{messages.modelInfo}</h2><span className="settings-caption">{messages.noService}</span></div>
         <ul className="settings-model-list">
-          {models.map((model) => <li key={model.name}><span><strong>{model.name}</strong><small>{model.purpose}</small></span><span className="settings-caption">未加载（模拟）</span></li>)}
+          {models.map((model) => <li key={model.name}><span><strong>{model.name}</strong><small>{messages[model.purpose]}</small></span><span className="settings-caption">{messages.notLoaded}</span></li>)}
         </ul>
       </section>
-      <section className="settings-group" aria-label="日志与错误">
-        <div className="settings-group-heading"><h2>日志与错误</h2><span className="settings-caption">模拟</span></div>
-        <p className="settings-description">模拟日志目录</p>
+      <section className="settings-group" aria-label={messages.logsErrors}>
+        <div className="settings-group-heading"><h2>{messages.logsErrors}</h2><span className="settings-caption">{messages.sim}</span></div>
+        <p className="settings-description">{messages.logDirectory}</p>
         <code className="settings-diagnostic-path">C:\Demo\Logs</code>
-        <p className="settings-diagnostic-error" role="status" data-error={error}>{error ? "最近错误：DEMO_SERVICE_UNAVAILABLE（模拟）" : "最近错误：无错误（模拟）"}</p>
-        <ul className="settings-diagnostic-records">{records.map((record) => <li key={record}>{record}</li>)}{error && <li>[模拟 00:02] 示例服务不可用；未执行真实错误恢复。</li>}</ul>
+        <p className="settings-diagnostic-error" role="status" data-error={error}>{error ? messages.recentError : messages.noError}</p>
+        <ul className="settings-diagnostic-records">{records.map((record) => <li key={record}>{messages[record]}</li>)}{error && <li>{messages.record2}</li>}</ul>
       </section>
-      <section className="settings-group" aria-label="诊断操作（模拟）">
-        <h2>诊断操作</h2>
+      <section className="settings-group" aria-label={format(messages.simLabel, { label: messages.operations })}>
+        <h2>{messages.operations}</h2>
         <div className="settings-diagnostic-actions">
-          <button className="settings-button" type="button" onClick={() => announce("模拟：日志目录为 C:\\Demo\\Logs，未打开系统目录。")}>查看日志目录</button>
-          <button className="settings-button" type="button" onClick={() => announce("模拟：诊断信息导出入口已响应，未创建或下载任何文件。")}>导出诊断信息</button>
-          <button className="settings-button" type="button" onClick={() => announce(error ? errorDetail : "模拟：当前无错误，没有可查看的错误详情。")}>查看错误详情</button>
+          <button className="settings-button" type="button" onClick={() => announce("feedbackLog")}>{messages.viewLogs}</button>
+          <button className="settings-button" type="button" onClick={() => announce("feedbackExport")}>{messages.export}</button>
+          <button className="settings-button" type="button" onClick={() => announce(error ? errorDetail : "feedbackNoError")}>{messages.viewError}</button>
         </div>
-        <p className="settings-diagnostic-feedback" role="status">{feedback?.status === status ? feedback.text : "所有操作仅显示模拟反馈，不访问目录、文件或外部程序。"}</p>
+        <p className="settings-diagnostic-feedback" role="status">{feedback?.status === status ? messages[feedback.text] : messages.feedbackDefault}</p>
       </section>
     </div>
   )
