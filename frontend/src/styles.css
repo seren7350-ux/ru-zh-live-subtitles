@@ -64,6 +64,7 @@ html:has(.subtitle-root) {
 
 .subtitle-card {
   container-type: inline-size;
+  isolation: isolate;
   position: relative;
   box-sizing: border-box;
   width: 680px;
@@ -76,14 +77,37 @@ html:has(.subtitle-root) {
   justify-content: center;
   gap: 6px;
   padding: 26px 24px 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--card);
   color: var(--foreground);
+}
+
+.subtitle-material {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid var(--border);
+  border-radius: inherit;
+  background: rgb(18 18 18 / var(--subtitle-background-opacity, 0.45));
   /* This only blurs content in the same browser page, never the Windows desktop. */
   backdrop-filter: blur(24px);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%), 0 12px 30px rgb(0 0 0 / 25%);
+}
+
+.subtitle-card[data-background-hidden="true"] .subtitle-material {
+  display: none;
+}
+
+.subtitle-appearance {
+  min-width: 0;
+  flex-shrink: 0;
+  opacity: var(--subtitle-text-opacity, 1);
+}
+
+.subtitle-card[data-text-outline="true"] .subtitle-text {
+  -webkit-text-stroke: 1.5px #000;
+  paint-order: stroke fill;
 }
 
 .subtitle-dot {

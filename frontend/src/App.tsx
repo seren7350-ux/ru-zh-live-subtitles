@@ -14,6 +14,10 @@ export default function App() {
   const [compact, setCompact] = useState(false)
   const [backdrop, setBackdrop] = useState("blue")
   const [reduceMotion, setReduceMotion] = useState(false)
+  const [backgroundOpacity, setBackgroundOpacity] = useState(45)
+  const [textOpacity, setTextOpacity] = useState(100)
+  const [showRussian, setShowRussian] = useState(true)
+  const [textOutline, setTextOutline] = useState(false)
   const session = useMockSession()
   const pendingUpdates = useRef<ReturnType<typeof setTimeout>[]>([])
   useEffect(() => () => pendingUpdates.current.forEach(clearTimeout), [])
@@ -69,14 +73,21 @@ export default function App() {
           <label><input type="checkbox" checked={reduceMotion} onChange={(event) => setReduceMotion(event.target.checked)} />减少动画（验证）</label>
         </div>
 
+        <div className="preview-appearance">
+          <label>背景不透明度<input aria-label="背景不透明度" type="number" min="0" max="100" value={backgroundOpacity} onChange={(event) => setBackgroundOpacity(Math.max(0, Math.min(100, Number(event.target.value))))} /><span>%</span></label>
+          <label>字幕文字不透明度<input aria-label="字幕文字不透明度" type="number" min="0" max="100" value={textOpacity} onChange={(event) => setTextOpacity(Math.max(0, Math.min(100, Number(event.target.value))))} /><span>%</span></label>
+          <label><input type="checkbox" checked={showRussian} onChange={(event) => setShowRussian(event.target.checked)} />显示俄文</label>
+          <label><input type="checkbox" checked={textOutline} onChange={(event) => setTextOutline(event.target.checked)} />黑色描边</label>
+        </div>
+
         <div className="preview-viewport" style={{ width, height }}>
           <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
-            <SubtitleCard {...sample} status={session.status} onToggleSession={session.toggleSession} style={{ width: "100%", height: "100%" }} />
+            <SubtitleCard {...sample} status={session.status} onToggleSession={session.toggleSession} backgroundOpacity={backgroundOpacity} textOpacity={textOpacity} showRussian={showRussian} textOutline={textOutline} style={{ width: "100%", height: "100%" }} />
           </MotionConfig>
         </div>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          背景与示例选择仅用于开发预览。<a className="underline underline-offset-4" href={`/subtitle.html?sample=${sample.id}`}>打开纯字幕界面</a>
+          背景、示例与展示参数仅用于开发预览。<a className="underline underline-offset-4" href={`/subtitle.html?sample=${sample.id}`}>打开纯字幕界面（默认展示参数）</a>
           <br />玻璃效果仅作用于当前网页背景；Windows 桌面透明合成尚未接入。
           <br />悬停或聚焦显示工具栏；双击空白 / F2 切换显示许可，Escape 收起。
         </p>

@@ -26,11 +26,15 @@ export interface SubtitleCardProps {
   russianText: string
   status: SubtitleStatus
   onToggleSession: () => void
+  backgroundOpacity?: number
+  textOpacity?: number
+  showRussian?: boolean
+  textOutline?: boolean
   style?: CSSProperties
 }
 
 /** UI only: session state/actions are supplied by the caller (currently a mock). */
-export function SubtitleCard({ chineseText, russianText, status, onToggleSession, style }: SubtitleCardProps) {
+export function SubtitleCard({ chineseText, russianText, status, onToggleSession, backgroundOpacity = 45, textOpacity = 100, showRussian = true, textOutline = false, style }: SubtitleCardProps) {
   const [hovered, setHovered] = useState(false)
   const [keyboardFocus, setKeyboardFocus] = useState(false)
   const [toolbarEnabled, setToolbarEnabled] = useState(true)
@@ -43,6 +47,8 @@ export function SubtitleCard({ chineseText, russianText, status, onToggleSession
   const toolbarVisible = toolbarEnabled && (hovered || keyboardFocus)
   const active = status === "Listening" || status === "Loading"
   const actionLabel = status === "Stopping" ? "停止中" : status === "Loading" ? "取消" : active ? "停止" : "开始"
+  const backgroundAlpha = Math.max(0, Math.min(100, backgroundOpacity)) / 100
+  const textAlpha = Math.max(0, Math.min(100, textOpacity)) / 100
 
   useEffect(() => () => {
     clearTimeout(leaveTimer.current)
@@ -62,8 +68,10 @@ export function SubtitleCard({ chineseText, russianText, status, onToggleSession
       aria-describedby={descriptionId}
       aria-keyshortcuts="F2 Escape"
       tabIndex={0}
-      style={style}
+      style={{ ...style, "--subtitle-background-opacity": backgroundAlpha, "--subtitle-text-opacity": textAlpha } as CSSProperties}
       data-status={status}
+      data-background-hidden={backgroundAlpha === 0}
+      data-text-outline={textOutline}
       data-toolbar-enabled={toolbarEnabled}
       data-reduced-motion={reducedMotion}
       onPointerEnter={() => { clearTimeout(leaveTimer.current); setHovered(true) }}
@@ -91,6 +99,7 @@ export function SubtitleCard({ chineseText, russianText, status, onToggleSession
         }
       }}
     >
+      <div className="subtitle-material" aria-hidden="true" />
       <div className="subtitle-chrome" aria-hidden="true" />
       <div className="subtitle-status" role="status" aria-live={status === "Error" ? "assertive" : "polite"}>
         <span className="subtitle-dot" aria-hidden="true" />
@@ -111,7 +120,10 @@ export function SubtitleCard({ chineseText, russianText, status, onToggleSession
           <ControlIcon name="more" />
         </button>
       </div>
-      <SubtitleText chineseText={chineseText} russianText={russianText} />
+      {/* Appearance opacity and Motion's fade opacity intentionally use different elements. */}
+      <div className="subtitle-appearance">
+        <SubtitleText chineseText={chineseText} russianText={russianText} showRussian={showRussian} />
+      </div>
       <p id={descriptionId} className="sr-only">悬停或聚焦可显示工具栏。双击卡片空白区域或按 F2 切换显示许可，Escape 收起。所有按钮均为模拟操作。</p>
     </section>
   )

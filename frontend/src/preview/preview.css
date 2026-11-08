@@ -81,7 +81,27 @@
 }
 
 .preview-actions button:focus-visible,
-.preview-actions input:focus-visible {
+.preview-actions input:focus-visible,
+.preview-appearance input:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 3px;
+}
+
+.preview-appearance,
+.preview-appearance label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.preview-appearance { gap: 16px; }
+.preview-appearance input[type="number"] {
+  width: 64px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgb(20 20 20 / 55%);
+  color: var(--foreground);
 }

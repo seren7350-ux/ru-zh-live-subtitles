@@ -5,10 +5,11 @@ import { MarqueeLine } from "./MarqueeLine"
 interface SubtitleTextProps {
   chineseText: string
   russianText: string
+  showRussian?: boolean
 }
 
 /** One DOM pair, replaced after fade-out; superseded updates never commit. */
-export function SubtitleText({ chineseText, russianText }: SubtitleTextProps) {
+export function SubtitleText({ chineseText, russianText, showRussian = true }: SubtitleTextProps) {
   const [displayed, setDisplayed] = useState({ chineseText, russianText })
   const displayedRef = useRef(displayed)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -42,7 +43,7 @@ export function SubtitleText({ chineseText, russianText }: SubtitleTextProps) {
   return (
     <div ref={containerRef} className="subtitle-content">
       <MarqueeLine text={displayed.chineseText} language="zh-CN" className="subtitle-chinese" />
-      <MarqueeLine text={displayed.russianText} language="ru" className="subtitle-russian" />
+      {showRussian && <MarqueeLine text={displayed.russianText} language="ru" className="subtitle-russian" />}
     </div>
   )
 }
