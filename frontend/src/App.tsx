@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { SubtitleCard, subtitleStatuses, type SubtitleStatus } from "@/components/SubtitleCard"
 import { getSubtitleSample, subtitleSamples } from "@/preview/subtitleSamples"
 import { useMockSession } from "@/preview/useMockSession"
+import { SettingsPreview } from "@/preview/SettingsPreview"
 import "./preview/preview.css"
 
 // Development canvas only. subtitle.html mounts SubtitleCard without this page.
@@ -23,6 +24,10 @@ export default function App() {
   useEffect(() => () => pendingUpdates.current.forEach(clearTimeout), [])
   const width = compact ? 420 : 680
   const height = compact ? 108 : 140
+
+  if (new URLSearchParams(window.location.search).get("view") === "settings") {
+    return <SettingsPreview status={session.status} onToggleSession={session.toggleSession} onStatusChange={session.setStatus} />
+  }
 
   return (
     <main className="preview-page font-sans text-foreground" data-backdrop={backdrop}>
@@ -90,6 +95,7 @@ export default function App() {
           背景、示例与展示参数仅用于开发预览。<a className="underline underline-offset-4" href={`/subtitle.html?sample=${sample.id}`}>打开纯字幕界面（默认展示参数）</a>
           <br />玻璃效果仅作用于当前网页背景；Windows 桌面透明合成尚未接入。
           <br />悬停或聚焦显示工具栏；双击空白 / F2 切换显示许可，Escape 收起。
+          <br /><a className="underline underline-offset-4" href="/?view=settings">打开设置联动预览</a>
         </p>
       </div>
     </main>

@@ -8,6 +8,7 @@ export default defineConfig({
   input: {
     preview: fileURLToPath(new URL("./index.html", import.meta.url)),
     subtitle: fileURLToPath(new URL("./subtitle.html", import.meta.url)),
+    settings: fileURLToPath(new URL("./settings.html", import.meta.url)),
   },
   plugins: [react(), tailwindcss()],
   resolve: {

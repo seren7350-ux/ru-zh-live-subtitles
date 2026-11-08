@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：Phase 0、Phase 1 切片 1–4（含中性玻璃材质）已获用户验收；切片 5 浏览器模拟验收完成，Phase 1 已完成、待用户最终验收。Phase 2–6 未授权，已停止。**
+> **状态：Phase 0、Phase 1 已获用户最终验收；Phase 2 本轮仅授权切片 1，设置基础布局与 Input 模拟页面已完成，停止等待验收。Phase 2 切片 2–6 未实施，Phase 3–6 未授权。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -181,8 +181,8 @@ tests/                       # 既有；按风险补最少的定向测试
 | Phase | 内容 | 状态 | 主要交付/停止点 |
 | --- | --- | --- | --- |
 | **0** | 只读审计、隔离分支、旧版基线 | **已验收** | 用户于 2026-11-08 验收通过；既有基线缺口保留 |
-| **1** | React 字幕悬浮窗 + 最小设计系统 | **5/5 完成，待用户最终验收** | 独立 React 字幕 UI 演示及最终浏览器模拟检查完成；不代表 Windows 原生宿主/引擎验收 |
-| **2** | React 四页设置 + 三语 + 状态联动 | 未授权 | React 独立完整 UI；停止 |
+| **1** | React 字幕悬浮窗 + 最小设计系统 | **已验收** | 用户最终验收通过（`96fc85f`）；不代表 Windows 原生宿主/引擎验收 |
+| **2** | React 四页设置 + 三语 + 状态联动 | **切片 1/6 完成，待验收** | 独立设置入口、四页导航及 Input 模拟联动完成；其他页面仅占位，不继续下一切片 |
 | **3** | WPF + WebView2 双窗宿主 | 未授权 | 原生窗口交互、透明合成实测；停止 |
 | **4** | Named Pipes + JSON 合同 | 未授权 | C# ↔ 模拟 Python 服务可靠通信；停止 |
 | **5** | 常驻 Python 引擎 + 业务迁移 | 未授权 | Start/Stop 模型复用 + SRT + 异常恢复；停止 |
@@ -220,7 +220,7 @@ tests/                       # 既有；按风险补最少的定向测试
 - **最小回归与打包：** 后续按改动选择现有 `test_session_view` / `test_shutdown` / `test_gui_process_controller`（尾部、取消、进程异常），`test_offline_pipeline` / `test_live_terminal` / `test_live_vad` / `test_vad_model`（模型与会话），`test_subtitles` / `test_preferences` / `test_model_assets` / `test_diagnostic_logging`（数据及离线），发行阶段才用 packaging / installer / clean_machine 集合。参照 CI，22 个 Python/spec 文件内存编译、2 个 hook 导入、5 个 PowerShell 脚本语法检查通过；默认 Python 的 hook 导入先因缺 onnx_asr 失败，改用已有 `.venv` 后通过，见 `packaging-source-checks.log`。**真实旧 GUI 桌面交互、模型推理/麦克风、安装卸载、跨屏 DPI、新 UI 均未在本阶段验证**，历史文档中的结果不冒充本次结果。
 - **临时文件保留：** 自动安全审查在执行前以 `blocked by policy` 拒绝本轮测试目录的递归清理命令；未完成清理，真实路径 `C:\Users\seren\.codex\cache\agent-temp\ru-zh-phase0-20261108-7f2c` 已核对且保留，见同证据目录 `cleanup.log`。未改用其他方式删除；诊断记录继续保留在项目中。
 
-#### Phase 1 连续任务切片（5/5 完成；本轮仅切片 5，等待最终验收）
+#### Phase 1 连续任务切片（5/5 已获最终验收）
 
 | 切片 / 目标 | 允许改动模块 / 依赖 | 可观察完成标准 | 最小验证 |
 | --- | --- | --- | --- |
@@ -228,7 +228,7 @@ tests/                       # 既有；按风险补最少的定向测试
 | [x] 2. 双语单行字幕与溢出 | `frontend/` 的独立字幕根组件/样式/固定 mock 与双 HTML 入口；依赖切片 1；材质以中性玻璃纠正为准 | 中性半透明卡片随环境呈色，中文在上俄文在下，字号固定；短句静止，仅超宽行横向跑马灯，保留全文；680×140 默认与 420×108 缩小可读；开发背景/说明不进入纯字幕界面 | 功能及材质最终验收通过（`3e386e5` / `6170b5c`） |
 | [x] 3. 状态、切换与工具栏 | 同一视图和少量 mock 状态；依赖切片 2 | Ready/Loading/Listening/Stopping/Error 可复现，单层字幕淡入淡出，hover 工具栏、双击许可及键盘操作不冲突；保留中性材质与正文布局 | 构建/类型检查及浏览器验证通过；用户已验收（`d3054b6`） |
 | [x] 4. 透明度与描边展示 | 同一视图及固定场景数据；依赖切片 3；不建四页设置 | 背景/文字独立 0–100%、隐藏俄文、可选黑描边均可演示，双重 0% 可用开发场景切回；不把 CSS 背景称为桌面毛玻璃 | 构建/类型检查及浏览器验证通过；用户已验收（`037922d`） |
-| [x] 5. 浏览器模拟验收 | 仅完善上述页面与必要启动说明；依赖切片 1–4 | 固定场景可重复启动；完成 Phase 1 全部模拟状态的实际浏览器检查并在本文记录结果后停止 | 一次最终构建/类型检查、关键交互链路及五类截图通过；Phase 1 待最终验收，未验证 WPF/原生合成/IPC/Python |
+| [x] 5. 浏览器模拟验收 | 仅完善上述页面与必要启动说明；依赖切片 1–4 | 固定场景可重复启动；完成 Phase 1 全部模拟状态的实际浏览器检查并在本文记录结果后停止 | 最终构建/类型检查及浏览器检查通过；用户最终验收通过（`96fc85f`），未验证 WPF/原生合成/IPC/Python |
 
 切片 1 交付（2026-11-08）：
 
@@ -273,7 +273,7 @@ tests/                       # 既有；按风险补最少的定向测试
 - **证据与复现：** `output/verification/phase1-slice5-20261108/` 保存 `build.log`、`http.log`、`browser-checks.json`，及 `default.jpg`、`long.jpg`、`hover-toolbar.jpg`、`error.jpg`、`compact.jpg` 五类代表截图，另有 `standalone-long.jpg`；切片 1–4 原证据继续保留。启动沿用切片 1：在 `frontend/` 首次执行 `npm ci`，运行 `npm run dev`；`http://127.0.0.1:5173/` 为开发场景，`http://127.0.0.1:5173/subtitle.html` 为独立字幕，可加 `?sample=long`。生产演示使用 `npm run build` 后 `npm run preview`，端口 4173；本轮预览服务验证后已停止。
 - **未验证与停止：** 以上仅是 React 浏览器模拟。Windows 11 桌面透明/真实背景模糊、WPF/WebView2 合成、原生拖动缩放/DPI、实际置顶、任务栏/托盘唤回、全局快捷键及系统透明恢复须原生宿主阶段实测；Named Pipes、真实模型/麦克风/SRT 和发行行为未接入或验证。未运行 Python 测试，Phase 0 已知两项失败保留。Phase 1 标记完成但待用户最终验收；提交并推送同名分支后立即停止，不进入 Phase 2。
 
-### Phase 1 — React 字幕窗口（已完成，待用户最终验收）
+### Phase 1 — React 字幕窗口（已获用户最终验收）
 
 **范围：** 构建 `frontend/` 的 React/TS/Tailwind/shadcn/ui/Motion 最小工程；一个能独立运行的字幕悬浮窗页面和同一套设计 tokens（不要建立庞大组件库）。
 
@@ -283,13 +283,33 @@ tests/                       # 既有；按风险补最少的定向测试
 
 **禁止：** 建 WPF 宿主、真正的 Named Pipes 或 Python 模型接入；无边界扩展设置页。
 
-### Phase 2 — React 设置窗口（仅模拟，未授权）
+### Phase 2 — React 设置窗口（仅模拟，本轮仅切片 1）
 
 **范围：** Input、Subtitles、Window、Diagnostics 四页；复用 Phase 1 的视觉 tokens 和 UI 组件，做即时状态联动与中/英/俄翻译字典。
 
 **验收：** 状态改变能在真实渲染的模拟字幕窗看到；三语切换后导航、按钮、状态、错误、动态字段不漏翻；键盘焦点与小尺寸滚动可用；无需设置内重复预览；重置仅影响当前页。模拟持久化/跨进程能力不得宣称已完成。
 
 **禁止：** 提前重做 Python 偏好、引擎或系统级快捷键。
+
+#### Phase 2 连续任务切片
+
+以下为执行顺序，**仅切片 1 已授权；未来计划不构成实施许可，每个切片完成均提交、检查并推送同名分支后停止等待验收。**
+
+| 切片 / 目标 | 允许改动模块 / 依赖 | 可观察完成标准 / 最小验证 |
+| --- | --- | --- |
+| [x] 1. 设置基础布局与 Input | `frontend/` 设置入口、基础导航、Input 与开发联动场景；依赖 Phase 1 已验收 | 四页导航、三页占位；麦克风/模型/开始停止模拟与同一 SubtitleCard 共享会话；构建/类型检查、浏览器操作/宽度/console 与截图通过，待验收 |
+| [ ] 2. Subtitles 页面 | 设置视图与开发联动参数；依赖切片 1 验收及新授权 | 复用字幕 props/CSS variables，实现既定俄文、字号、独立透明度及描边控制；构建与实际字幕联动、边界恢复检查 |
+| [ ] 3. Window 页面 | 同一设置视图及必要 mock；依赖前序验收及新授权 | 仅模拟既定窗口/快捷键/SRT 选项及可见反馈，不调用系统或持久化；构建与对应浏览器操作 |
+| [ ] 4. Diagnostics 页面 | 同一设置视图及固定诊断数据；依赖前序验收及新授权 | 模拟版本/模型信息、错误与诊断入口，明确模拟反馈；不读取真实日志/用户目录；构建与浏览器操作 |
+| [ ] 5. 三语与分页面重置 | 四页已实现字段与少量翻译字典；依赖前序验收及新授权 | 中/英/俄即时切换不漏动态字段，每页重置确认默认否且只影响当前页；构建、三语/键盘/重置联动检查 |
+| [ ] 6. 设置浏览器模拟验收 | 仅必要修复与启动说明；依赖前序验收及新授权 | 两入口与全部既定场景可重复演示，复用既有证据完成关键链路、宽度/键盘/三语检查后停止；不宣称原生/跨进程/持久化已完成 |
+
+切片 1 交付（2026-11-08）：
+
+- **入口与视觉：** `settings.html` / `src/settings.tsx` 独立挂载 `settings/SettingsWindow.tsx`，默认 Input；左侧固定四项导航，右侧可滚动内容，其他三页仅明确占位。沿用现有字体、颜色/圆角 tokens、shadcn Badge 与 Motion，局部样式仅扩展中性 `#1b1b1c` 表面和低对比度分隔，选中项为克制的中性强调；120ms 淡入尊重减少动画偏好。未硬编码蓝色壁纸、复制字幕实现或新增依赖/路由/状态框架。
+- **Input 与共享会话：** `InputPage.tsx` 提供三个固定模拟麦克风、刷新反馈、三项模型状态、开始/取消/停止/重试；运行期间锁定设备选择，切页保留当前选择与会话。`/?view=settings` 为开发联动场景，沿用 App 中唯一的 `useMockSession` 实例，将同一 status/callback 同时传给 SettingsWindow 与窗口外的原 SubtitleCard，双向控制可见；独立设置入口复用同一 hook，无第二套会话逻辑。独立窗口内没有字幕预览，其他浏览器标签页间未建立同步或持久化。
+- **实际验证与修复：** 初次 `npm run build`（含类型检查）通过；浏览器发现独立入口外层 Grid 最小轨道导致窄窗横向溢出，仅修正为 `minmax(0, 1fr)`，进行一次必要的重建/类型检查与定向复测，均通过。浏览器验证四项导航及占位、麦克风选择/刷新、切页保留、开始/停止/取消/错误重试、设备锁定、设置与字幕五态一致、字幕反向停止；独立入口 360/1100px、联动预览 420/760/1100px 无横向溢出，窄屏内容纵向可读，console warn/error 为空。原字幕预览仍为 680×140、中文 28px/600、俄文 20px/400、中性 45% 材质；字幕组件/动画/样式、mock hook、锁文件和业务代码未改。四个入口/场景均 HTTP 200。
+- **复现与边界：** 沿用 `frontend/` 的 `npm run dev`；`/settings.html` 是独立设置界面，`/?view=settings` 是开发联动场景，生产预览端口仍为 4173。证据 `output/verification/phase2-slice1-20261108/`：`build.log`、`build-after-layout-fix.log`、`http.log`、`browser-checks.json`、`settings-default.jpg`、`input.jpg`、`input-subtitle-listening.jpg`、`settings-narrow.jpg`。已停止预览服务；没有真实麦克风/模型/Python/IPC/WPF 接入或配置持久化，未运行 Python 测试，旧 Tk 与 Phase 0 两项基线失败保留。更新本文、检查提交后提交并推送重构分支，停止等待切片 1 验收，不实施切片 2。
 
 ### Phase 3 — WPF + WebView2 Windows 11 宿主（未授权）
 
@@ -398,15 +418,15 @@ event:   {type:"event",   version:1, event:"...", session_id:"...", payload:{...
 plan_version: 1
 baseline_commit: a5feb50d97581f8d13f1596255ff9f93a6b03d24
 branch: feature/raycast-ui-rewrite
-current_phase: 1
-phase_status: awaiting_approval  # Phase 1 的 5 个切片已完成，等待用户最终验收
-approved_scope: phase_1_slice_5_only
-active_task: "React 字幕窗口最终浏览器模拟验收完成；已停止，等待 Phase 1 最终验收"
-next_task: "等待用户最终验收及新的明确授权；不自动进入 Phase 2"
-verified: ["切片 1–4 已验收，Phase 0 已知失败保留", "一次最终构建/类型检查通过，开发预览与独立入口 HTTP 200、可重复运行", "浏览器五态/模拟按钮/选择双击/键盘/短长字幕/快速更新/独立滚动复位/双零恢复/俄文描边/两种尺寸/中性环境色/减少动画通过，console warn/error 为空", "五类代表截图及指标已保存，源码未改、未发现必要修复或确定无用代码", "无新增依赖、真实宿主/引擎或 Python 测试；Phase 2–6 未授权"]
+current_phase: 2
+phase_status: awaiting_approval  # 仅 Phase 2 切片 1 完成，等待验收
+approved_scope: phase_2_slice_1_only
+active_task: "独立设置基础布局、四页导航与 Input 模拟联动已完成；停止等待验收"
+next_task: "等待切片 1 验收及新的明确授权；随后才执行切片 2：Subtitles 页面"
+verified: ["Phase 1 已最终验收，旧 Tk 与 Phase 0 已知失败保留", "构建/类型检查通过，窄窗 Grid 修复后必要重建及定向复测通过，四入口/场景 HTTP 200", "浏览器导航/占位/模拟设备/会话控制/字幕双向联动/360–1100px 无横向溢出，console warn/error 为空", "原字幕组件/样式/动画与 mock 会话逻辑未改，复用现有 tokens/Badge/Motion，无新增依赖", "仅浏览器模拟，无真实设备/模型/IPC/宿主/持久化或 Python 测试；切片 2–6 未实施"]
 blockers: [] # Phase 0 的环境/测试隔离缺口仍见上述原记录，不阻碍本切片
 delivery_policy: "按用户持续授权：更新本文、提交、检查敏感信息及产物后 push 同名分支；不合并 main；每切片结束立即停止"
-last_commit: 037922d6f6fab1f6a140eb5f80537f302780e7f0 # 本轮记录写入前提交；本轮交付提交由 git log -1 -- frontend REFACTOR.md 查询
+last_commit: 96fc85ff7870c8f3cec369d1f3a8266c6cef0438 # 本轮记录写入前提交；本轮交付提交由 git log -1 -- frontend REFACTOR.md 查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -417,10 +437,11 @@ last_commit: 037922d6f6fab1f6a140eb5f80537f302780e7f0 # 本轮记录写入前提
 | --- | --- | --- | --- |
 | 2026-11-08 | 规划 | 按 `main@a5feb50d...` 核对仓库结构及关键源码，生成执行文件；未在仓库实施重构、未运行测试 | **仅规划完成，Phase 0 未开始** |
 | 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
-| 2026-11-08 | Phase 1 | 切片 1–4（含中性材质）已验收，历史证据保留。本轮切片 5 完成一次最终构建/类型检查及关键浏览器链路、两入口重复运行与五类截图，证据 `output/verification/phase1-slice5-20261108/`。源码未改，无必要修复/确定无用代码，无新增依赖或 Python 测试；Windows 原生宿主/真实引擎仍未验证，Phase 0 已知失败未改 | **Phase 1 已完成，待用户最终验收；Phase 2–6 未授权** |
+| 2026-11-08 | Phase 1 | 五个切片及最终浏览器模拟检查完成，用户已最终验收（`96fc85f`）；证据 `output/verification/phase1-slice5-20261108/` 及前序切片目录保留。Windows 原生宿主/真实引擎仍未验证，Phase 0 已知失败未改 | **Phase 1 已验收** |
+| 2026-11-08 | Phase 2 | 切片 1 完成独立中性设置布局、四页导航及 Input 模拟，与原字幕共用既有会话实例；构建/类型检查与浏览器操作、窄窗布局修复复测通过，证据 `output/verification/phase2-slice1-20261108/`。其他页仅占位，无新增依赖或真实接入，旧业务未改 | **仅切片 1 完成，待验收；切片 2–6 未实施，Phase 3–6 未授权** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
 ## I. 下一次发给 Codex 的唯一启动指令
 
-> 当前 Phase 1 五个切片均已完成，已停止等待用户最终验收；不得自行继续开发。仅在用户明确授权后，阅读根目录 `AGENTS.md` 与 `REFACTOR.md`、检查分支和未提交改动，执行新授权范围内的一个任务切片。保持现有 React 字幕 UI、既定技术路线和已验收行为，保护旧业务及 Phase 0 基线问题；按范围验证、更新本文、提交并检查敏感信息/产物后 push 同名分支，再次停止。**Phase 2–6 当前均未授权；不合并或推送 main。**
+> 当前 Phase 1 已最终验收，Phase 2 仅切片 1 已完成，停止等待用户验收。新的明确授权到来前不得继续；续接时阅读根目录 `AGENTS.md` 与 `REFACTOR.md`、检查分支和未提交改动，仅执行第一个获新授权的切片（下一候选为 Subtitles 页面）。保持现有字幕行为、中性设计及同一会话来源，保护旧业务和 Phase 0 基线问题；按范围验证、更新本文、提交并检查敏感信息/产物后 push 同名分支，再停止。**不自动执行切片 2，不提前进入 Phase 3–6，不合并或推送 main。**

@@ -1,0 +1,15 @@
+.settings-preview { min-height: 100svh; padding: 28px 24px; background: #111112; color: var(--foreground); }
+.settings-preview-header, .settings-preview > .settings-window, .settings-linked-caption { width: 980px; max-width: 100%; margin: 0 auto; }
+.settings-preview-header { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.settings-preview-header h1 { margin: 0 0 5px; font-size: 16px; font-weight: 600; }
+.settings-preview-header p, .settings-linked-caption > p { margin: 0; color: #a4a4a4; font-size: 12px; }
+.settings-preview-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted-foreground); }
+.settings-preview-controls label { display: flex; align-items: center; gap: 8px; }
+.settings-preview-controls select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--secondary); color: var(--foreground); }
+.settings-preview-controls a { text-decoration: underline; text-underline-offset: 3px; }
+.settings-preview-controls :is(a, select):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.settings-preview > .settings-window { height: 720px; }
+.settings-linked-caption { margin-top: 24px; }
+.settings-linked-caption > p { margin-bottom: 12px; }
+.settings-linked-caption .subtitle-card { width: 680px; }
+@media (max-width: 480px) { .settings-preview { padding: 20px 12px; } }
