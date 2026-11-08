@@ -40,3 +40,7 @@ Thumbs.db
 # Local deliverables, model staging, diagnostics and document scratch files.
 /output/
 /tmp/
+
+# WPF host build outputs and experiment-local WebView2 profile.
+desktop/**/bin/
+desktop/**/obj/

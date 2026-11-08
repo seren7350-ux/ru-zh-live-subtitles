@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：Phase 0、Phase 1 及 Phase 2 切片 1–5 已获用户验收；本轮仅授权切片 6，最终浏览器模拟验收已完成。Phase 2 实施完成，等待用户最终验收；Phase 3–6 未授权。**
+> **状态：Phase 0–2 已获用户最终验收；本轮仅授权 Phase 3 切片 1。最小 WPF 宿主已运行，持续失活磨砂未达标，原生验收部分完成；停止等待用户决定。Phase 3 后续切片及 Phase 4–6 未授权。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -182,8 +182,8 @@ tests/                       # 既有；按风险补最少的定向测试
 | --- | --- | --- | --- |
 | **0** | 只读审计、隔离分支、旧版基线 | **已验收** | 用户于 2026-11-08 验收通过；既有基线缺口保留 |
 | **1** | React 字幕悬浮窗 + 最小设计系统 | **已验收** | 用户最终验收通过（`96fc85f`）；不代表 Windows 原生宿主/引擎验收 |
-| **2** | React 四页设置 + 三语 + 状态联动 | **6/6 实施完成，等待用户最终验收** | 四页、三语、共享会话及独立重置浏览器模拟验收完成；停止，不进入 Phase 3 |
-| **3** | WPF + WebView2 双窗宿主 | 未授权 | 原生窗口交互、透明合成实测；停止 |
+| **2** | React 四页设置 + 三语 + 状态联动 | **已验收** | 六切片及最终浏览器模拟验收获用户通过（`e8487f7`） |
+| **3** | WPF + WebView2 双窗宿主 | **仅切片 1 已授权；实验部分完成，待决策** | 激活态环境采样可见、失活态实色回退；剩余原生验证未完成，不进入后续切片 |
 | **4** | Named Pipes + JSON 合同 | 未授权 | C# ↔ 模拟 Python 服务可靠通信；停止 |
 | **5** | 常驻 Python 引擎 + 业务迁移 | 未授权 | Start/Stop 模型复用 + SRT + 异常恢复；停止 |
 | **6** | 端到端集成、用户验收、离线安装 | 未授权 | 在干净 Windows 离线运行的正式可交付包；停止 |
@@ -283,7 +283,7 @@ tests/                       # 既有；按风险补最少的定向测试
 
 **禁止：** 建 WPF 宿主、真正的 Named Pipes 或 Python 模型接入；无边界扩展设置页。
 
-### Phase 2 — React 设置窗口（实施完成，等待用户最终验收）
+### Phase 2 — React 设置窗口（用户已最终验收）
 
 **范围：** Input、Subtitles、Window、Diagnostics 四页；复用 Phase 1 的视觉 tokens 和 UI 组件，做即时状态联动与中/英/俄翻译字典。
 
@@ -344,7 +344,7 @@ tests/                       # 既有；按风险补最少的定向测试
 - **复用证据与边界：** 三语四页/五态动态文案、各页取消与重置隔离、完整宽度矩阵引用切片 5；跑马灯、减少动画与玻璃材质引用已验收的 Phase 1，未重复建立测试。新增构建/HTTP/浏览器记录保留于 `output/verification/phase2-slice6-20261108/`；已有 `docs/screenshots/phase2-slice2-20261108/` 至 `phase2-slice5-20261108/` 覆盖代表场景，本轮无缺失截图，不重复提交。仅为浏览器模拟；真实 Windows 透明合成、置顶/无边框、拖动缩放/DPI、任务栏/托盘/全局快捷键须 Phase 3 原生实测，真实引擎、IPC、日志/SRT 文件操作、配置持久化及跨入口同步均未实现。Phase 0 两项已知失败及旧/新字号迁移待办原样保留。
 - **重复运行与停止：** 在 `frontend/` 执行 `npm run dev` 后访问 `http://127.0.0.1:5173/settings.html`（独立设置窗口）；`/?view=settings` 为设置与字幕开发联动画布，`/subtitle.html` 为纯字幕入口，`/` 为字幕开发画布。已构建资源可用 `npm run preview` 在 4173 端口复现；本轮验证服务已停止。Phase 2 六个切片实施完成，等待用户最终验收；检查后提交推送同名重构分支，不开始 Phase 3。
 
-### Phase 3 — WPF + WebView2 Windows 11 宿主（未授权）
+### Phase 3 — WPF + WebView2 Windows 11 宿主（仅切片 1 已授权）
 
 **范围：** `SubtitleWindow` + `SettingsWindow`；WebView2 挂载 Phase 1–2 React 资源；单实例唤回、托盘、任务栏、显示/隐藏、窗口位置/缩放/置顶、快捷键。进程可先由模拟状态驱动。
 
@@ -358,6 +358,14 @@ tests/                       # 既有；按风险补最少的定向测试
 **验收：** 真实 Win11 桌面录像或截图加可复现的操作说明；可从任务栏/托盘唤回；透明合成真实有效（无法实现时记录实测限制，停止报告用户决定，不能换技术栈）；主机关闭和隐藏语义正确。
 
 **禁止：** 在未证实透明合成的情况下堆叠多个神秘 Win32 hack；用 CSS 截图替代原生验证。
+
+#### 切片 1：原生透明合成可行性实验（2026-11-08，部分完成，停止待决策）
+
+- **最小实现：** `desktop/RuZh.Subtitles.Host/` 保留一个 WPF 工程，目标 `net10.0-windows10.0.19041.0`，唯一直接包为官方 `Microsoft.Web.WebView2 1.0.4314.35`（锁文件提交）。使用官方 CompositionControl，便于实验 WPF 拖动 grip/浮层位于 WebView 上方，不另建普通 WebView2 实现。普通非 layered HWND（AllowsTransparency=false）、透明 CompositionTarget、公开 DwmExtendFrameIntoClientArea 与 SYSTEMBACKDROP_TYPE=3；Mica/None 仅为可选对照。680×140 DIP、无边框、6 DIP 原生缩放边，Topmost=true。独立实验控制窗提供显示/恢复、隐藏、双零并关闭 DWM、材质对照、WPF 浮层及退出；不是正式 SettingsWindow/托盘/快捷键系统。虚拟主机映射本地 `frontend/dist` 并只导航 `subtitle.html`，无服务器；只注入卡片跟随宿主尺寸的实验 CSS，React、字幕业务、旧 Tk/Python 均未改。
+- **环境及构建：** Windows 11 Home 25H2 / 26200.9711（注册表旧 ProductName 仍显示 Windows 10，不据此误判）；.NET SDK 10.0.400、运行时 10.0.11；WebView2 Runtime 157.0.4341.42。首次编译通过但启动缺 Microsoft.Windows.SDK.NET，改为带 Windows API 版本的 TFM 后真实启动成功；最终局部修正恢复/重建时实验选项与窗口值同步，最后一次 `dotnet build desktop/RuZh.Subtitles.Host -c Release --no-restore` 无警告/错误，该控件同步修正只验证编译，未重跑原生交互。构建与运行日志在 `output/verification/phase3-slice1-20261108/`，未运行 Python 测试。
+- **已实际观察：** 日志确认本地页面加载成功、680×140 / DPI 1.00、DWM 两 API HRESULT=0；这些返回值本身不代表材质达标。真实窗口中文/俄文及工具栏正常显示，实际点击开始进入 Loading→Listening。后方为另一个真实 Chrome 窗口的蓝色高对比图案（明确是受控测试背景，非壁纸），激活字幕后可见环境色透入；失活后目视退化为近实色灰底。激活态实际截图 `docs/screenshots/phase3-slice1-20261108/01-acrylic-active-blue.jpg` 保留，没有截图贴图模拟。A：现有页面 CSS blur 只影响页面内部，页面本身无开发画布；B：DWM Acrylic 作用于 WPF HWND；C：这里只观察到后方应用的静态环境采样，移动后方窗口的连续实时模糊尚未验证，不能把三者混称成功。原生外角与页面圆角/顶部色带也尚未通过最终视觉验收。
+- **中断与未验证：** 读取后方 Chrome 窗口时，computer-use 因无法可靠识别当前浏览器 URL 而停止本轮操作；没有换工具绕过。故蓝色壁纸、灰/暖背景对比、移动后方窗口、Mica/None、普通 WebView2 对照、WPF 浮层遮挡、键盘、拖动、边缘缩放、实际置顶切换、双零恢复/隐藏恢复和正常关闭均未完成实操验收。运行日志已保留，实验宿主仅按已核实 PID 强制结束清场，不将其说成正常关闭验证。Chrome 测试窗未再操作，仍引用 output 下的 backdrop-probe.html，故保留该临时诊断夹具。未录制视频；仅一张真实代表图，不以静态图证明动态模糊。清理旧失败目标 `desktop/RuZh.Subtitles.Host/bin/Release/net10.0-windows` 被自动安全审查以 blocked by policy 拒绝，未提供更具体原因；该被忽略的目录保留，未绕过或宣称清理成功，源码仍仅一套实现。
+- **结论、备选与复现：** 持续失活磨砂目标**未达到本轮验收条件**；不能由此断言整个 WPF + WebView2 栈不可行。最小备选是在同一栈中接受文档化 Acrylic 的“激活磨砂、失活中性回退”；不自行采用，等待用户决定。如持续失活模糊为硬要求，须另获授权再评估官方材质控制路径，本轮不叠加未文档化 Win32 手段。已有构建资源下运行 `dotnet run --project desktop/RuZh.Subtitles.Host -c Release --no-build`；干净检出先在 `frontend/` 执行 `npm ci`、`npm run build`，再 `dotnet build desktop/RuZh.Subtitles.Host -c Release`（还原开发包需要网络；应用页面运行不依赖服务器）。复现步骤：保持实验控制窗可见 → 将受控背景应用放在字幕后 → 点击字幕使之激活，再激活后方应用比较回退 → 后续待批准补测移动背景/拖动/缩放与双零恢复。官方依据：[DWM 材质枚举](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)、[Acrylic 失活回退](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic)、[WPF WebView2 airspace](https://learn.microsoft.com/en-us/microsoft-edge/webview2/platforms/wpf)。保留 Phase 0 失败与字号迁移待办；提交推送后停止，不进入切片 2。
 
 ### Phase 4 — Named Pipes 合同与模拟服务（未授权）
 
@@ -451,15 +459,15 @@ event:   {type:"event",   version:1, event:"...", session_id:"...", payload:{...
 plan_version: 1
 baseline_commit: a5feb50d97581f8d13f1596255ff9f93a6b03d24
 branch: feature/raycast-ui-rewrite
-current_phase: 2
-phase_status: awaiting_approval  # Phase 2 六个切片实施完成，等待用户最终验收
-approved_scope: phase_2_slice_6_only
-active_task: "Phase 2 最终浏览器模拟验收完成；停止等待用户最终验收"
-next_task: "等待 Phase 2 最终验收及新的明确授权；不得自行开始 Phase 3"
-verified: ["切片 1–5 已验收，六切片实施完成；Phase 0 已知失败及字号迁移待办保留", "一次构建含类型检查通过，四入口 HTTP 200、实际浏览器正常且 console warn/error 为空", "共享会话、错误重试、语言/切页保留、双零重置恢复、运行中 Input 重置隔离、键盘/焦点及俄语代表宽度补测通过", "完整三语/重置/布局与字幕行为复用前序证据，无功能修复或新增截图", "真实原生宿主/引擎/IPC/文件操作/持久化未实现，Phase 3–6 未授权"]
-blockers: [] # Phase 0 的环境/测试隔离缺口仍见上述原记录，不阻碍本切片
+current_phase: 3
+phase_status: awaiting_approval  # 切片 1 实验部分完成；持续失活磨砂未达标，等待用户决定
+approved_scope: phase_3_slice_1_only
+active_task: "最小 WPF 原生实验已运行；失活回退与工具中断已记录，停止待决策"
+next_task: "等待用户决定材质限制和未完成实验；不得自行进入 Phase 3 切片 2"
+verified: ["Phase 2 已最终验收（e8487f7），Phase 0 已知失败及字号迁移待办保留", "WPF CompositionControl 本地纯字幕页实际启动，DWM API 成功、680×140 DIP、文字/工具栏和鼠标模拟会话可用", "激活时环境色透入，失活后近实色回退；动态模糊及其余原生交互未完成验证", "最后控件选项同步修正仅编译通过；原生工具因浏览器 URL 识别限制停止，未绕过", "不接引擎/IPC/持久化，无 Python 测试；后续切片未授权"]
+blockers: ["持续失活磨砂未达到目标，等待用户决定", "computer-use 因 Chrome URL 识别限制停止本轮操作；剩余原生验证未完成"]
 delivery_policy: "按用户持续授权：更新本文、提交、检查敏感信息及产物后 push 同名分支；不合并 main；每切片结束立即停止"
-last_commit: 691ee1989e10f457d82b4850fd194d59065adb69 # 本轮记录写入前提交；本轮验收提交由 git log -1 -- REFACTOR.md 查询
+last_commit: e8487f71f923d1f4baa29f1c9d1df637c0f50b42 # 本轮写入前提交；实验交付 SHA 由 git log -1 查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -471,10 +479,11 @@ last_commit: 691ee1989e10f457d82b4850fd194d59065adb69 # 本轮记录写入前提
 | 2026-11-08 | 规划 | 按 `main@a5feb50d...` 核对仓库结构及关键源码，生成执行文件；未在仓库实施重构、未运行测试 | **仅规划完成，Phase 0 未开始** |
 | 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
 | 2026-11-08 | Phase 1 | 五个切片及最终浏览器模拟检查完成，用户已最终验收（`96fc85f`）；证据 `output/verification/phase1-slice5-20261108/` 及前序切片目录保留。Windows 原生宿主/真实引擎仍未验证，Phase 0 已知失败未改 | **Phase 1 已验收** |
-| 2026-11-08 | Phase 2 | 切片 1–5 用户已验收，切片 6 最终浏览器模拟验收完成；一次构建/类型检查、四入口与跨功能链路/键盘/俄语代表宽度通过，console 无警告或错误。无功能代码修复；证据 `output/verification/phase2-slice6-20261108/`，复用前序验证及已上传截图；原生及真实引擎未接入 | **六切片实施完成，等待用户最终验收；Phase 3–6 未授权** |
+| 2026-11-08 | Phase 2 | 六切片及最终浏览器模拟验收完成，用户已最终验收（`e8487f7`）；既有四入口、三语、重置、布局与交互证据保留 | **Phase 2 已验收** |
+| 2026-11-08 | Phase 3 | 仅切片 1：最小 WPF + CompositionControl 离线纯字幕实际运行；激活环境采样可见，失活近实色回退。工具因 Chrome URL 识别限制停止，剩余原生操作未验证；构建通过，一张实际截图与日志保留，未接引擎/IPC | **实验部分完成，持续失活磨砂未达标；停止待用户决定** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
 ## I. 下一次发给 Codex 的唯一启动指令
 
-> 当前 Phase 1 及 Phase 2 切片 1–5 已验收，Phase 2 六切片实施完成并已停止，等待用户最终验收。仅在用户最终验收并明确授权后，阅读规则、检查分支及工作区，执行下一获授权任务；保护既有字幕、四页设置、三语/重置及旧业务。**不得自行进入 Phase 3–6，不合并或推送 main。**
+> Phase 0–2 已验收，Phase 3 仅切片 1 获授权；原生实验部分完成，失活材质回退与工具中断已记录。等待用户决定并给出新的明确授权后，才补充实验或执行下一任务；不得自行采用备选材质、进入切片 2 或 Phase 4–6，不合并或推送 main。
