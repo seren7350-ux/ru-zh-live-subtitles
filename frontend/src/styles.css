@@ -1,22 +1,25 @@
 @import "tailwindcss";
 
-/* One dark palette shared by the page and its shadcn/ui components. */
+/* Shared cool-blue tokens. Preview canvas styles live in preview/preview.css. */
 :root {
   color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
 
-  --background: #141416;
-  --foreground: #ededf0;
-  --card: #202023;
+  --background: transparent;
+  --foreground: #f4f7ff;
+  --card: rgb(19 35 70 / 88%);
   --card-foreground: var(--foreground);
-  --muted-foreground: #a1a1aa;
-  --secondary: #252529;
-  --primary: #a9bbff;
-  --border: #343439;
-  --ready: #8bc9ac;
-  --radius: 1rem;
+  --muted-foreground: #bccae4;
+  --secondary: #1e3355;
+  --primary: #6ab9ff;
+  --border: rgb(163 193 240 / 28%);
+  --ready: #48bfff;
+  --radius: 1.25rem;
+  --subtitle-chinese-size: 28px;
+  --subtitle-russian-size: 20px;
 }
 
 @theme inline {
@@ -38,7 +41,7 @@
   --color-primary: var(--primary);
   --color-border: var(--border);
   --color-ready: var(--ready);
-  --font-sans: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-sans: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --radius-xl: calc(var(--radius) - 0.25rem);
   --radius-2xl: var(--radius);
   --shadow-overlay: 0 12px 36px rgb(0 0 0 / 18%);
@@ -46,5 +49,88 @@
 
 body {
   margin: 0;
-  min-width: 280px;
+  background: transparent;
+}
+
+.subtitle-root,
+.subtitle-root #root {
+  width: 100%;
+  height: 100%;
+}
+
+html:has(.subtitle-root) {
+  height: 100%;
+}
+
+.subtitle-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 680px;
+  max-width: 100%;
+  height: 140px;
+  max-height: 100%;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 26px 24px 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(120deg, rgb(39 66 111 / 85%), var(--card) 65%, rgb(23 39 72 / 91%));
+  color: var(--foreground);
+  /* This only blurs content in the same browser page, never the Windows desktop. */
+  backdrop-filter: blur(24px);
+  box-shadow: inset 0 1px 0 rgb(228 239 255 / 10%), 0 12px 30px rgb(2 10 29 / 22%);
+}
+
+.subtitle-dot {
+  position: absolute;
+  top: 16px;
+  left: 24px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ready);
+  box-shadow: 0 0 9px rgb(72 191 255 / 35%);
+}
+
+.subtitle-line {
+  min-width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.subtitle-text {
+  display: block;
+  width: max-content;
+}
+
+.subtitle-line[data-overflow="true"] .subtitle-text {
+  will-change: transform;
+}
+
+/* Preserve full text access without automatic movement for reduced-motion users. */
+.subtitle-line[data-reduced-motion="true"] {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.subtitle-line:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.subtitle-chinese {
+  font-size: var(--subtitle-chinese-size);
+  font-weight: 600;
+  line-height: 36px;
+}
+
+.subtitle-russian {
+  color: var(--muted-foreground);
+  font-size: var(--subtitle-russian-size);
+  line-height: 26px;
 }

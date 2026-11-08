@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：Phase 0 已获用户验收；Phase 1 切片 1 已完成，停止等待验收与续接。切片 2–5 未实施，Phase 2–6 未授权。**
+> **状态：Phase 0 与 Phase 1 切片 1 已获用户验收；切片 2 已完成，停止等待验收。切片 3–5 未实施，Phase 2–6 未授权。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -62,7 +62,7 @@ Russian–Chinese Live Subtitles
 | 属性 | 目标规格 / 行为 |
 | --- | --- |
 | 初始窗口 | 680 × 140 **WPF 逻辑单位（DIP）**；用户可拖动、自由缩放；小尺寸仍可操作 |
-| 主题 | Raycast 风格的克制深色视觉；不仿制 macOS 标题栏/交通灯 |
+| 主题 | 以用户提供的四张设计参考图为最终视觉目标，尤其两张字幕悬浮窗；深蓝、冷色、克制的半透明玻璃质感；不仿制 macOS 标题栏/交通灯 |
 | 圆角 | 目标 16–20 DIP，实际与 Windows 11 合成能力协同验证 |
 | 背景 | 深色半透明；优先原生窗口背景材质 + WebView2 透明合成；目标中高模糊，但真实性须经 Windows 实测 |
 | 语言布局 | **中文在上，俄文在下**；每种语言最多显示一行，俄文可在设置中隐藏 |
@@ -181,7 +181,7 @@ tests/                       # 既有；按风险补最少的定向测试
 | Phase | 内容 | 状态 | 主要交付/停止点 |
 | --- | --- | --- | --- |
 | **0** | 只读审计、隔离分支、旧版基线 | **已验收** | 用户于 2026-11-08 验收通过；既有基线缺口保留 |
-| **1** | React 字幕悬浮窗 + 最小设计系统 | **切片 1/5 完成，待验收** | 本轮仅授权并完成切片 1；切片 2–5 未实施，停止等用户续接 |
+| **1** | React 字幕悬浮窗 + 最小设计系统 | **切片 2/5 完成，待验收** | 切片 1 已验收；本轮仅授权并完成切片 2，切片 3–5 未实施 |
 | **2** | React 四页设置 + 三语 + 状态联动 | 未授权 | React 独立完整 UI；停止 |
 | **3** | WPF + WebView2 双窗宿主 | 未授权 | 原生窗口交互、透明合成实测；停止 |
 | **4** | Named Pipes + JSON 合同 | 未授权 | C# ↔ 模拟 Python 服务可靠通信；停止 |
@@ -220,12 +220,12 @@ tests/                       # 既有；按风险补最少的定向测试
 - **最小回归与打包：** 后续按改动选择现有 `test_session_view` / `test_shutdown` / `test_gui_process_controller`（尾部、取消、进程异常），`test_offline_pipeline` / `test_live_terminal` / `test_live_vad` / `test_vad_model`（模型与会话），`test_subtitles` / `test_preferences` / `test_model_assets` / `test_diagnostic_logging`（数据及离线），发行阶段才用 packaging / installer / clean_machine 集合。参照 CI，22 个 Python/spec 文件内存编译、2 个 hook 导入、5 个 PowerShell 脚本语法检查通过；默认 Python 的 hook 导入先因缺 onnx_asr 失败，改用已有 `.venv` 后通过，见 `packaging-source-checks.log`。**真实旧 GUI 桌面交互、模型推理/麦克风、安装卸载、跨屏 DPI、新 UI 均未在本阶段验证**，历史文档中的结果不冒充本次结果。
 - **临时文件保留：** 自动安全审查在执行前以 `blocked by policy` 拒绝本轮测试目录的递归清理命令；未完成清理，真实路径 `C:\Users\seren\.codex\cache\agent-temp\ru-zh-phase0-20261108-7f2c` 已核对且保留，见同证据目录 `cleanup.log`。未改用其他方式删除；诊断记录继续保留在项目中。
 
-#### Phase 1 连续任务切片（本轮仅切片 1；其余未实施）
+#### Phase 1 连续任务切片（本轮仅切片 2；切片 3–5 未实施）
 
 | 切片 / 目标 | 允许改动模块 / 依赖 | 可观察完成标准 | 最小验证 |
 | --- | --- | --- | --- |
-| [x] 1. 最小前端与视觉基础 | 仅 `frontend/`；依赖用户授权 Phase 1；使用已锁定 React/TS/Tailwind/shadcn/ui/Motion | 本地启动一个字幕页面，统一颜色/字号/间距 tokens，只引入页面实际需要的组件 | 构建、类型检查、浏览器实际打开 Ready 状态；本轮已完成 |
-| [ ] 2. 双语单行字幕与溢出 | `frontend/src/` 的字幕视图/样式/固定 mock；依赖切片 1 | 中文在上俄文在下，字号固定；短句静止，仅超宽行横向跑马灯，保留全文；680×140 起始预览和小尺寸可读 | 构建/类型检查；实际切换短/长/单语文本及页面尺寸，检查滚动复位 |
+| [x] 1. 最小前端与视觉基础 | 仅 `frontend/`；依赖用户授权 Phase 1；使用已锁定 React/TS/Tailwind/shadcn/ui/Motion | 本地启动一个字幕页面，统一颜色/字号/间距 tokens，只引入页面实际需要的组件 | 构建、类型检查、浏览器实际打开 Ready 状态；用户已验收（`2328255`） |
+| [x] 2. 双语单行字幕与溢出 | `frontend/` 的独立字幕根组件/样式/固定 mock 与双 HTML 入口；依赖切片 1；按用户四张参考纠正视觉 | 深蓝半透明卡片，中文在上俄文在下，字号固定；短句静止，仅超宽行横向跑马灯，保留全文；680×140 默认与 420×108 缩小可读；开发背景/说明不进入纯字幕界面 | 构建/类型检查；浏览器实际切换短/长/单语文本及尺寸、检查滚动复位；截图已保存，待验收 |
 | [ ] 3. 状态、切换与工具栏 | 同一视图和少量 mock 状态；依赖切片 2 | Ready/Loading/Listening/Stopping/Error 可复现，字幕淡入淡出，hover 工具栏及双击许可切换不与按钮冲突 | 构建/类型检查；浏览器操作状态、hover、双击与键盘焦点，快速换字幕无旧动画遮挡 |
 | [ ] 4. 透明度与描边展示 | 同一视图及固定场景数据；依赖切片 3；不建四页设置 | 背景/文字独立 0–100%、隐藏俄文、可选黑描边均可演示，双重 0% 可用开发场景切回；不把 CSS 背景称为桌面毛玻璃 | 构建/类型检查；目视 0/50/100% 与描边组合，短/长句及窗口尺寸组合 |
 | [ ] 5. 浏览器模拟验收 | 仅完善上述页面与必要启动说明；依赖切片 1–4 | 固定场景可重复启动；完成 Phase 1 全部模拟状态的实际浏览器检查并在本文记录结果后停止 | 一次最终构建/类型检查、逐项浏览器操作与实际截图；明确未验证 WPF/原生合成/IPC/Python |
@@ -237,7 +237,15 @@ tests/                       # 既有；按风险补最少的定向测试
 - 启动：在 `frontend/` 运行 `npm ci`（首次或锁文件变更后），再运行 `npm run dev`，访问 `http://127.0.0.1:5173/`；开发服务仅监听回环地址。验证命令 `npm run build` 包含 `tsc --noEmit`，通过；`npm ls --depth=0` 无缺失/冲突。浏览器实际目视 Ready 页面、中文占位、深色 tokens；HTTP 200，捕获的 console warn/error 为空。证据 `output/verification/phase1-slice1-20261108/`：`build.log`、`dependencies.log`、`preview.log`、`browser.log`、`ready.jpg`；未运行 Python 测试。
 - 验证后已停止本轮开发服务；保留 `node_modules/`、`dist/` 供本地继续开发，均被前端 `.gitignore` 排除。切片 2–5 及 Windows/真实引擎行为未验证；下一切片仍需用户续接，本轮停止。
 
-### Phase 1 — React 字幕窗口（已授权；本轮仅切片 1）
+切片 2 交付（2026-11-08）：
+
+- **视觉与边界：** 按本轮四张用户参考图（尤其两张字幕窗）将中性炭灰纠正为深蓝半透明、冷色细边、20px 圆角与静态蓝色小点。`components/SubtitleCard.tsx` 是唯一字幕根组件，只接受完整俄中文本及布局样式；默认 680×140，中文 28px/600 在上、俄文 20px/400 在下，字号不随文本或尺寸变化。没有复制或硬编码 Windows 壁纸，没有增加工具栏、状态机、设置或其他库。
+- **独立入口与复用：** `subtitle.html` / `src/subtitle.tsx` 直接渲染同一根组件；`App.tsx` 仅为开发画布，原生示例/尺寸选择及背景说明均留在 `preview/`，纯字幕构建不引用预览入口或画布 CSS。保留既有 React/TS/Tailwind/shadcn/ui/Motion、Badge 与锁文件，未新增依赖、布局框架或全局状态。两个入口仅用于独立渲染与开发预览，不是两套字幕实现；当前文本仍来自固定 mock，Phase 3/5 才接宿主与引擎。
+- **单行与滚动：** `components/MarqueeLine.tsx` 用 ResizeObserver 观察文字及可见宽度，每种语言独立测量；只对溢出行用现有 Motion 以 28px/s 往返，首尾各停 1.5 秒。短句无持续动画/轮询，不截短文本或改写 mock。换句/缩放重测并通过 Motion 同步清零缓存位移；浏览器曾发现长转短残留位移，已修正并回归通过。系统减少动态效果时改为可聚焦的原生横向读取，该系统偏好分支本轮未切换实测。
+- **实际验证：** `npm run build`（含 `tsc --noEmit`）通过；生产预览 `npm run preview` 的 `/` 与 `/subtitle.html` 均 HTTP 200。浏览器验证双语短句静止、超长两行位移变化、中文短/俄文长独立判断、长转短及放大复位、俄文空字符串，以及 420×108 时字号不变且两行不发生垂直裁切；纯字幕入口无预览标题和控件，捕获 console warn/error 为空。证据 `output/verification/phase1-slice2-20261108/`：`build.log`、`http.log`、`browser-checks.json`、`standalone-short.jpg` / `standalone-long.jpg`（均 680×140）、`short-680.jpg` / `long-680.jpg`、`compact-420.jpg`。
+- **未实施与停止：** CSS blur 仅是网页内合成，未验证 Windows 桌面透明合成；工具栏、复杂状态、透明度设置、字幕淡入淡出等留给后续切片。未改 Python/旧 GUI/用户文件，未运行无关 Python 测试，Phase 0 两项失败继续保留。验证后停止生产预览服务，保留被忽略的本地构建及诊断截图；提交并推送同名重构分支后停止，等待验收。
+
+### Phase 1 — React 字幕窗口（已授权；本轮仅切片 2）
 
 **范围：** 构建 `frontend/` 的 React/TS/Tailwind/shadcn/ui/Motion 最小工程；一个能独立运行的字幕悬浮窗页面和同一套设计 tokens（不要建立庞大组件库）。
 
@@ -363,13 +371,14 @@ plan_version: 1
 baseline_commit: a5feb50d97581f8d13f1596255ff9f93a6b03d24
 branch: feature/raycast-ui-rewrite
 current_phase: 1
-phase_status: awaiting_approval  # 当前仅切片 1 待验收，不代表整个 Phase 1 完成
-approved_scope: phase_1_slice_1_only
-active_task: "切片 1 最小前端与视觉基础已完成；停止等待用户验收与续接"
-next_task: "用户明确续接后，仅执行切片 2：双语单行字幕与溢出"
-verified: ["Phase 0 已获用户验收，既有两项失败保留", "React/TS/Tailwind/shadcn/ui/Motion 独立前端已建立", "npm run build（含类型检查）与依赖树检查通过", "本地 HTTP 200，浏览器目视 Ready，console warn/error 为空", "未改原有业务代码，未运行 Python 全量测试"]
+phase_status: awaiting_approval  # 当前仅切片 2 待验收，不代表整个 Phase 1 完成
+approved_scope: phase_1_slice_2_only
+active_task: "切片 2 独立深蓝字幕根组件、单行与溢出滚动已完成；停止等待验收"
+next_task: "用户明确续接后，仅执行切片 3：状态、切换与工具栏"
+verified: ["Phase 0 与切片 1 已验收，基线两项失败保留", "独立字幕根组件与开发画布分离，无新增依赖", "构建/类型检查、两个入口 HTTP 200", "浏览器短/长/逐行溢出/换句及缩放复位/空俄文/420×108 通过，console warn/error 为空", "已保存 680×140 短句及超长字幕截图，未改旧业务或运行 Python 测试"]
 blockers: [] # Phase 0 的环境/测试隔离缺口仍见上述原记录，不阻碍本切片
-last_commit: 0a146c2dc7a229d7a54d85830efc33c804c96bd2 # 本轮写入前提交；本切片交付提交由 git log -1 -- frontend REFACTOR.md 查询
+delivery_policy: "按用户持续授权：更新本文、提交、检查敏感信息及产物后 push 同名分支；不合并 main；每切片结束立即停止"
+last_commit: 23282556e3d3a7643646213719e6ac069b407dbe # 本轮记录写入前提交；本切片交付提交由 git log -1 -- frontend REFACTOR.md 查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -380,10 +389,10 @@ last_commit: 0a146c2dc7a229d7a54d85830efc33c804c96bd2 # 本轮写入前提交；
 | --- | --- | --- | --- |
 | 2026-11-08 | 规划 | 按 `main@a5feb50d...` 核对仓库结构及关键源码，生成执行文件；未在仓库实施重构、未运行测试 | **仅规划完成，Phase 0 未开始** |
 | 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
-| 2026-11-08 | Phase 1 | 用户验收 Phase 0 并授权本轮仅切片 1；建立独立前端、共享 tokens 和静态 Ready 页面。构建/类型检查、依赖树、本地 HTTP 与浏览器目视通过；证据 `output/verification/phase1-slice1-20261108/`。未改旧业务或基线失败，未运行 Python 测试 | **仅切片 1 完成，待验收与续接；切片 2–5、Phase 2–6 未实施** |
+| 2026-11-08 | Phase 1 | 切片 1（`2328255`，证据 `output/verification/phase1-slice1-20261108/`）已获用户验收并已推送；本轮切片 2 按四张参考纠正为独立深蓝字幕根组件，实现双语单行与逐行溢出滚动。构建/类型检查、生产浏览器短/长句、缩放与复位通过，截图及指标见 `output/verification/phase1-slice2-20261108/`；未新增依赖、未改旧业务/基线失败或运行 Python 测试 | **切片 2 完成，待验收；切片 3–5、Phase 2–6 未实施** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
 ## I. 下一次发给 Codex 的唯一启动指令
 
-> 当前已停止，等待用户验收 Phase 1 切片 1。用户明确续接后，阅读根目录 `AGENTS.md` 与 `REFACTOR.md`，先检查分支与未提交改动，仅执行第一个未完成切片（当前为切片 2：双语单行字幕与溢出）。保持独立前端及既定技术路线，保护原有业务和 Phase 0 基线问题，仅作相关验证；更新本文并提交一次后停止。**未经用户续接，不执行切片 2；不提前实施其他切片或 Phase 2–6。**
+> 当前已停止，等待用户验收 Phase 1 切片 2。用户明确续接后，阅读根目录 `AGENTS.md` 与 `REFACTOR.md`，先检查分支与未提交改动，仅执行第一个未完成切片（当前为切片 3：状态、切换与工具栏）。保持用户四张参考图的深蓝视觉目标、独立字幕根组件及既定技术路线，保护原有业务和 Phase 0 基线问题，仅作相关验证；更新本文，提交一次并在检查敏感信息/产物后 push 同名重构分支，然后停止。**未经用户续接，不执行切片 3；不提前实施其他切片或 Phase 2–6，不合并或推送 main。**
