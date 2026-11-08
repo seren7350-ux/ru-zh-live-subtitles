@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react"
-import { animate, useReducedMotion } from "motion/react"
+import { animate, useReducedMotionConfig } from "motion/react"
 
 interface MarqueeLineProps {
   text: string
@@ -14,7 +14,7 @@ export function MarqueeLine({ text, language, className }: MarqueeLineProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
   const [overflowing, setOverflowing] = useState(false)
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = useReducedMotionConfig()
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current

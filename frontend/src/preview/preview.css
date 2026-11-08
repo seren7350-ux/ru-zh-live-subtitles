@@ -62,3 +62,26 @@
 .preview-viewport {
   max-width: 100%;
 }
+
+.preview-actions,
+.preview-actions label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.preview-actions button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(20 20 20 / 55%);
+  cursor: pointer;
+}
+
+.preview-actions button:focus-visible,
+.preview-actions input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
