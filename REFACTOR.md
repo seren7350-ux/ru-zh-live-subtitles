@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：计划已确定，尚未开始执行 Phase 0。**
+> **状态：Phase 0 已完成审计，等待用户验收；Phase 1–6 未授权、未实施。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -12,7 +12,7 @@
 | 开发基线分支 | `main` |
 | 已核对源码提交 | `a5feb50d97581f8d13f1596255ff9f93a6b03d24` |
 | 已核对版本 | `v0.4.0`（`pyproject.toml`） |
-| 重构工作分支 | `feature/raycast-ui-rewrite`（**待创建；不得在 main 直接重构**） |
+| 重构工作分支 | `feature/raycast-ui-rewrite`（已从上述基线创建；main 未改动） |
 | 目标平台 | Windows 11 x64，单用户，完全离线 |
 | 模型管线 | Silero ONNX VAD → GigaAM → NLLB |
 | 现有 GUI | Tkinter；带有会话控制、事件消费、SRT 等业务职责 |
@@ -180,7 +180,7 @@ tests/                       # 既有；按风险补最少的定向测试
 
 | Phase | 内容 | 状态 | 主要交付/停止点 |
 | --- | --- | --- | --- |
-| **0** | 只读审计、隔离分支、旧版基线 | **未开始** | 源码映射、一次基线、后续切片计划；停止 |
+| **0** | 只读审计、隔离分支、旧版基线 | **待用户验收** | 审计与基线缺口已记录、后续切片已列出；已停止 |
 | **1** | React 字幕悬浮窗 + 最小设计系统 | 未授权 | 本地真正运行的字幕 UI，模拟状态验收；停止 |
 | **2** | React 四页设置 + 三语 + 状态联动 | 未授权 | React 独立完整 UI；停止 |
 | **3** | WPF + WebView2 双窗宿主 | 未授权 | 原生窗口交互、透明合成实测；停止 |
@@ -196,17 +196,39 @@ tests/                       # 既有；按风险补最少的定向测试
 
 待办清单（未完成的项一律保持 `[ ]`）：
 
-- [ ] 检查 `git status`、确认 main HEAD 与基线提交；如有用户工作区改动，先避让。
-- [ ] 从当前 HEAD 创建/切换 `feature/raycast-ui-rewrite`；在该分支工作，不触碰 main。
-- [ ] 只读检查 GUI 事件/业务边界：`app.py`、`state.py`、`session_view.py`、`events.py`、`process_controller.py`、`shutdown.py`。
-- [ ] 检查模型与会话复用点：`OfflineAudioTranslationPipeline`、`LiveTerminalSession`、`LiveVadSession`、`SegmentProcessor`。
-- [ ] 检查模型资源预检、偏好 v1、SRT 保存、日志和用户数据路径。
-- [ ] 检查现有 `.github/workflows/tests.yml`、`tests/` 与打包/安装脚本，确定真正有用的回归集合。
-- [ ] 记录 Python 环境、Windows 运行条件、可实际执行的命令；**基线完整测试最多一次**，如成本/环境不允许则说明，不能声称已通过。
-- [ ] 给 Phase 1 写出最多 3–6 个连续任务切片，每个含完成标准和最小验证；不得在本阶段实施。
-- [ ] 更新本文「执行记录」及「当前执行窗口」；完成 Phase 0 后停止。
+- [x] 检查 `git status`、确认 main HEAD 与基线提交；如有用户工作区改动，先避让。
+- [x] 从当前 HEAD 创建/切换 `feature/raycast-ui-rewrite`；在该分支工作，不触碰 main。
+- [x] 只读检查 GUI 事件/业务边界：`app.py`、`state.py`、`session_view.py`、`events.py`、`process_controller.py`、`shutdown.py`。
+- [x] 检查模型与会话复用点：`OfflineAudioTranslationPipeline`、`LiveTerminalSession`、`LiveVadSession`、`SegmentProcessor`。
+- [x] 检查模型资源预检、偏好 v1、SRT 保存、日志和用户数据路径。
+- [x] 检查现有 `.github/workflows/tests.yml`、`tests/` 与打包/安装脚本，确定真正有用的回归集合。
+- [x] 记录 Python 环境、Windows 运行条件、可实际执行的命令；**基线完整测试最多一次**，如成本/环境不允许则说明，不能声称已通过。
+- [x] 给 Phase 1 写出最多 3–6 个连续任务切片，每个含完成标准和最小验证；不得在本阶段实施。
+- [x] 更新本文「执行记录」及「当前执行窗口」；完成 Phase 0 后停止。
 
 **通过条件：** main 保持原样；旧 Tk 版入口及功能不被本阶段修改；证据与缺口分开陈述；下阶段执行范围明确；可从 Git 找到安全回滚点。
+
+#### Phase 0 实际审计与基线（2026-11-08）
+
+- **保护与范围：** 初始工作区干净，HEAD 与 main 均为 `a5feb50d97581f8d13f1596255ff9f93a6b03d24`。两个 Downloads 文件已原样剪切至根目录并核对 SHA-256；规则导入提交为 `72200dd6abc1fa7ca1067888c1adbed31fb44b4d`。本阶段仅新增规则/计划及更新本文，未改 `src/`、`tests/`、`packaging/`、旧入口或历史文档；未安装依赖、下载模型、重建发行包。
+- **GUI 边界：** `gui/app.py:502` 的 Start 先消费前一会话尾部，再创建新 SRT；`:646` / `:689` 负责事件、日志及写盘副作用。`state.py` 的有界历史与索引去重、`session_view.py` 的取消/晚到事件/错误保持、`events.py` 的全文与音频起止时间戳均可迁移复用；现有事件没有 `session_id`，不能直接作为新版 JSON 合同。`shutdown.py` 已封装 35 秒 terminate + 3 秒 kill，`app.py:603` 仍等 `shutdown_complete` 才销毁窗口；不能把发出停止请求当成资源释放。`single_instance.py`、`i18n.py` 的单实例唤回及三语语义保留，后续由宿主/前端接管。
+- **模型/会话：** `pipeline/offline_file.py:131` 的 prepare 幂等，缓存同一 recognizer/translator；`realtime/live_subtitles.py` 已接受 `pipeline` / `vad` 注入，每次构造新 processor 与 VAD session。`vad_model.py:103` 缓存 ONNX session，`reset()` 仅重置循环状态；`live_vad.py:170` 每轮重置 VAD 并冲刷分段，`:280` 关闭采集和等待 worker；`segment_processor.py:447` 消费完整尾段再结束。`gui/process_controller.py:324` / `:602` 每次 Start 新建 pipeline、VAD 和 spawn 进程，尚非模型常驻。当前真实默认为 **GigaAM Multilingual large_ctc + NLLB**（`config.py:17` / `:25`），旧 GigaAM ONNX 仅可选兼容项；不改模型。
+- **文件与数据：** `preferences.py:41` 读取 v1、校验字段，`:50` 使用临时文件及原子替换；旧 `window_rect` 校验最小 520×180，与新版 680×140 DIP 的设置映射需 Phase 5 明确。`subtitles.py:53` 保留音频时间轴、完整俄中内容、每 cue 关闭文件、去重及部分写入回滚。`runtime_paths.py:38` / `:53` / `:59` 的用户数据、日志、字幕路径已只读核对实际物理路径；未改用户偏好或字幕。复用 `diagnostic_logging.py:128` 的轮转/脱敏日志和 `model_assets.py:301` / `:369` 的本地预检/离线环境。`packaging/installer/cpu-only.iss:67` 确认仍整目录卸载删除，且模型由 `[Files]` 安装到该目录；Phase 6 要同时审查安装文件自身的卸载行为，保护缓存/偏好/日志并保留 AppId，本阶段不修。
+- **环境与可运行入口：** Windows x64，build 26200.9711 / 25H2；现有两个 Python 均为 3.11.9。默认 Python 有 pytest 9.1.1，但无 huggingface-hub/torch/sounddevice；`.venv` 有 Torch 2.10.0+cpu、Transformers 5.14.1、ONNX Runtime 1.28.0、sounddevice 0.5.5，但无 pytest。`.venv\Scripts\python.exe -m live_subtitles --help` 与 `model-doctor` 均退出 0，三个必需模型的本地结构预检 READY，旧可选 ONNX 模型缺失；**未加载模型、未打开麦克风，不代表真实推理通过**。
+- **一次完整基线：** 默认 Python，`PYTHONPATH=<仓库>\src`、`HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1`、`HF_DATASETS_OFFLINE=1`；命令 `python -m pytest -q -ra -p no:cacheprovider --basetemp <本任务临时目录>\pytest`。首次 **413 passed / 1 skipped / 306 errors，16.21 秒**：306 项均因执行命令漏建临时目录父级而 setup 失败。创建父级后，仅按 `retry-nodeids.txt` 补跑这 306 项，**304 passed / 2 failed，32.10 秒**；没有第二次运行全套。合计已通过 717 个不同用例，剩余 2 失败、1 跳过，**完整基线不宣称全绿**。
+- **基线缺口与证据：** `test_clean_machine.py::test_staged_cache_resolves_pinned_revision_without_network` 缺 huggingface_hub；`test_gui_app.py::test_live_overlay_passes_cli_device_to_selector` 直接调用 `_live_overlay`，绕过 `cli.main` 的 `explicit_options`，受真实 v1 `microphone_name` 影响而回退默认设备；torch 用例因默认 Python 无 torch 跳过。仅记录环境/隔离问题，不改测试、用户配置或实现。证据位于 `output/verification/phase0-20261108/` 的 `pytest.log`、`pytest-setup-retry.log`、`retry-nodeids.txt`、`environment.log`、`runtime-environment.log`、`cli-help.log`、`model-doctor.log`；该目录按既有规则忽略，不作为发行资产。
+- **最小回归与打包：** 后续按改动选择现有 `test_session_view` / `test_shutdown` / `test_gui_process_controller`（尾部、取消、进程异常），`test_offline_pipeline` / `test_live_terminal` / `test_live_vad` / `test_vad_model`（模型与会话），`test_subtitles` / `test_preferences` / `test_model_assets` / `test_diagnostic_logging`（数据及离线），发行阶段才用 packaging / installer / clean_machine 集合。参照 CI，22 个 Python/spec 文件内存编译、2 个 hook 导入、5 个 PowerShell 脚本语法检查通过；默认 Python 的 hook 导入先因缺 onnx_asr 失败，改用已有 `.venv` 后通过，见 `packaging-source-checks.log`。**真实旧 GUI 桌面交互、模型推理/麦克风、安装卸载、跨屏 DPI、新 UI 均未在本阶段验证**，历史文档中的结果不冒充本次结果。
+- **临时文件保留：** 自动安全审查在执行前以 `blocked by policy` 拒绝本轮测试目录的递归清理命令；未完成清理，真实路径 `C:\Users\seren\.codex\cache\agent-temp\ru-zh-phase0-20261108-7f2c` 已核对且保留，见同证据目录 `cleanup.log`。未改用其他方式删除；诊断记录继续保留在项目中。
+
+#### Phase 1 待授权的连续任务切片（仅计划，全部未实施）
+
+| 切片 / 目标 | 允许改动模块 / 依赖 | 可观察完成标准 | 最小验证 |
+| --- | --- | --- | --- |
+| 1. 最小前端与视觉基础 | 仅 `frontend/`；依赖用户授权 Phase 1；使用已锁定 React/TS/Tailwind/shadcn/ui/Motion | 本地启动一个字幕页面，统一颜色/字号/间距 tokens，只引入页面实际需要的组件 | 构建、类型检查、浏览器实际打开 Ready 状态 |
+| 2. 双语单行字幕与溢出 | `frontend/src/` 的字幕视图/样式/固定 mock；依赖切片 1 | 中文在上俄文在下，字号固定；短句静止，仅超宽行横向跑马灯，保留全文；680×140 起始预览和小尺寸可读 | 构建/类型检查；实际切换短/长/单语文本及页面尺寸，检查滚动复位 |
+| 3. 状态、切换与工具栏 | 同一视图和少量 mock 状态；依赖切片 2 | Ready/Loading/Listening/Stopping/Error 可复现，字幕淡入淡出，hover 工具栏及双击许可切换不与按钮冲突 | 构建/类型检查；浏览器操作状态、hover、双击与键盘焦点，快速换字幕无旧动画遮挡 |
+| 4. 透明度与描边展示 | 同一视图及固定场景数据；依赖切片 3；不建四页设置 | 背景/文字独立 0–100%、隐藏俄文、可选黑描边均可演示，双重 0% 可用开发场景切回；不把 CSS 背景称为桌面毛玻璃 | 构建/类型检查；目视 0/50/100% 与描边组合，短/长句及窗口尺寸组合 |
+| 5. 浏览器模拟验收 | 仅完善上述页面与必要启动说明；依赖切片 1–4 | 固定场景可重复启动；完成 Phase 1 全部模拟状态的实际浏览器检查并在本文记录结果后停止 | 一次最终构建/类型检查、逐项浏览器操作与实际截图；明确未验证 WPF/原生合成/IPC/Python |
 
 ### Phase 1 — React 字幕窗口（只模拟，未授权）
 
@@ -332,15 +354,15 @@ event:   {type:"event",   version:1, event:"...", session_id:"...", payload:{...
 ```yaml
 plan_version: 1
 baseline_commit: a5feb50d97581f8d13f1596255ff9f93a6b03d24
-branch: feature/raycast-ui-rewrite  # 待创建
+branch: feature/raycast-ui-rewrite
 current_phase: 0
-phase_status: not_started        # not_started | in_progress | blocked | awaiting_approval | accepted
+phase_status: awaiting_approval  # not_started | in_progress | blocked | awaiting_approval | accepted
 approved_scope: phase_0_only
-active_task: "确认工作区与分支；只读审计现有边界并记录一次可靠基线"
-next_task: "在 Phase 0 内，整理 Phase 1 的 3–6 个任务切片；随后停止"
-verified: []                    # 只填实际执行并有证据的结果
-blockers: []
-last_commit: null               # 仅填实际创建的本分支提交
+active_task: "Phase 0 审计与基线记录已完成；停止等待用户验收"
+next_task: "等待用户验收 Phase 0 并明确是否授权 Phase 1"
+verified: ["main 保持 a5feb50d，旧源码无改动", "文件已剪切入根目录，分支已创建", "一次全量及 setup 错误子集补跑：717 个不同用例通过，2 失败，1 跳过", "现有 .venv CLI/模型资源预检与打包源检查通过", "Phase 1 五个切片仅计划"]
+blockers: ["完整基线未全绿：默认 Python 缺 huggingface_hub/torch；一个 GUI 测试受用户偏好影响，详见 Phase 0 记录"]
+last_commit: 72200dd6abc1fa7ca1067888c1adbed31fb44b4d # 本次进度写入前的规则导入提交；Phase 0 记录提交由 git log -1 -- REFACTOR.md 查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -350,6 +372,7 @@ last_commit: null               # 仅填实际创建的本分支提交
 | 日期 | 阶段 | 事实/证据 | 结论 |
 | --- | --- | --- | --- |
 | 2026-11-08 | 规划 | 按 `main@a5feb50d...` 核对仓库结构及关键源码，生成执行文件；未在仓库实施重构、未运行测试 | **仅规划完成，Phase 0 未开始** |
+| 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
