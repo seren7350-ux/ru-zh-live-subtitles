@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：Phase 0–2 已获用户最终验收；本轮仅授权 Phase 3 切片 1。最小 WPF 宿主已运行，持续失活磨砂未达标，原生验收部分完成；停止等待用户决定。Phase 3 后续切片及 Phase 4–6 未授权。**
+> **状态：Phase 0–2 已获用户最终验收；本轮仅授权 Phase 3 切片 1。同一切片补充验证已完成：拖动/缩小/浮层/恢复/正常退出已实测；完全透明及持续失活磨砂仍未通过，原生验收部分完成；停止等待用户决定。Phase 3 后续切片及 Phase 4–6 未授权。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -367,6 +367,20 @@ tests/                       # 既有；按风险补最少的定向测试
 - **中断与未验证：** 读取后方 Chrome 窗口时，computer-use 因无法可靠识别当前浏览器 URL 而停止本轮操作；没有换工具绕过。故蓝色壁纸、灰/暖背景对比、移动后方窗口、Mica/None、普通 WebView2 对照、WPF 浮层遮挡、键盘、拖动、边缘缩放、实际置顶切换、双零恢复/隐藏恢复和正常关闭均未完成实操验收。运行日志已保留，实验宿主仅按已核实 PID 强制结束清场，不将其说成正常关闭验证。Chrome 测试窗未再操作，仍引用 output 下的 backdrop-probe.html，故保留该临时诊断夹具。未录制视频；仅一张真实代表图，不以静态图证明动态模糊。清理旧失败目标 `desktop/RuZh.Subtitles.Host/bin/Release/net10.0-windows` 被自动安全审查以 blocked by policy 拒绝，未提供更具体原因；该被忽略的目录保留，未绕过或宣称清理成功，源码仍仅一套实现。
 - **结论、备选与复现：** 持续失活磨砂目标**未达到本轮验收条件**；不能由此断言整个 WPF + WebView2 栈不可行。最小备选是在同一栈中接受文档化 Acrylic 的“激活磨砂、失活中性回退”；不自行采用，等待用户决定。如持续失活模糊为硬要求，须另获授权再评估官方材质控制路径，本轮不叠加未文档化 Win32 手段。已有构建资源下运行 `dotnet run --project desktop/RuZh.Subtitles.Host -c Release --no-build`；干净检出先在 `frontend/` 执行 `npm ci`、`npm run build`，再 `dotnet build desktop/RuZh.Subtitles.Host -c Release`（还原开发包需要网络；应用页面运行不依赖服务器）。复现步骤：保持实验控制窗可见 → 将受控背景应用放在字幕后 → 点击字幕使之激活，再激活后方应用比较回退 → 后续待批准补测移动背景/拖动/缩放与双零恢复。官方依据：[DWM 材质枚举](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)、[Acrylic 失活回退](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic)、[WPF WebView2 airspace](https://learn.microsoft.com/en-us/microsoft-edge/webview2/platforms/wpf)。保留 Phase 0 失败与字号迁移待办；提交推送后停止，不进入切片 2。
 
+#### 同切片有限补充验证（2026-11-08，未进入切片 2）
+
+- **A · 已完成原生实操：** 复用 `e2decec` 的工程和已有 Release 二进制，不改功能源码、不重复构建。仅操作宿主原生窗口，没有再操作 Chrome。实际拖动使位置 `(340,440)→(420,502)`；右下边缘缩小 `680×140→450×112→420×108`，继续向内拖动仍受最小尺寸约束；WPF 绿色浮层确实位于 WebView2 内容上方；隐藏后窗口列表仅留控制窗，Show/restore 后字幕实际重现。置顶开关实际执行 False→True 且日志一致，但跨应用遮挡/前后台顺序尚未完成目视验收。双零模式使页面内容消失，控制窗恢复后原字幕重现；**捕获仍显示深色原生底板，完全透明未通过，不能将恢复成功写成透明成功**。点击 Close experiment 正常退出，两个窗口消失，关闭前记录的宿主及 6 个 WebView2 子进程均不再存在，没有使用强制结束。
+- **B · Acrylic 结论：** 本轮再观察到激活蓝色带与失活近实色灰底；失活回退是官方 Background Acrylic 行为，不归因为 WebView2 故障。未循环重设 DWM 试图修复，未持续抢焦点。现有外角/顶部色带及完全透明仍属未通过的视觉项。
+- **C · 官方替代路径调查（未新增实验模式）：** [CreateHostBackdropBrush](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositor.createhostbackdropbrush) 在窗口绘制前采样后方，可用于桌面及后方应用的背景源；区别于只在视觉树内取样的普通 BackdropBrush。[DWMWA_USE_HOSTBACKDROPBRUSH](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute)（17）允许 Win11 22000+ 的非 UWP HWND 使用此源，和现有 SYSTEMBACKDROP_TYPE（38）不是同一属性。官方没有承诺该原始 brush 在失活时持续采样，也没有 BlurAmount 参数；不能由 API 名称推断成功。可控模糊的官方 [CompositionEffectBrush 示例](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositioneffectbrush) 使用 Win2D 效果描述；不用此依赖则需额外效果描述/D2D interop。[WPF Visual Layer 示例](https://learn.microsoft.com/en-us/windows/uwp/composition/using-the-visual-layer-with-wpf) 需要 DispatcherQueue、Compositor、DesktopWindowTarget、COM 桥接及尺寸/DPI/销毁处理，旧 Framework 示例还需适配当前 .NET 10；与现有 WebView2CompositionControl 的叠放、输入及透明共存也须实测。这是本轮的工程判断：整体已超出少量材质开关代码，不引入新的合成互操作层/Win2D 或多条替代实现，停止于调查，未声称路径不可行。透明受用户设置及电源策略控制，版本、硬件效果能力须核对；[效果适配说明](https://learn.microsoft.com/en-us/windows/apps/develop/composition/composition-tailoring) 要求尊重系统偏好，不能保证关透明/节能时仍有磨砂，本机未切换这些系统设置。
+- **D/E · 结果、证据与遗留：** 尚未找到**真实运行验证通过的失活持续磨砂方案**；HostBackdrop 仅为有官方依据的候选，未实际运行。双零深底捕获究竟涉及当前 HWND 合成还是捕获输出的透明处理，未独立证实根因；不据截图擅改 Win32。向外放大受工具拖动终点必须在窗口内的限制，跨应用遮挡、移动背景的动态采样、真实壁纸/多背景、系统透明/节能切换、多 DPI 均保留人工验证。原生工具本轮未再触发 Chrome URL 拒绝；缩小后的观测句柄曾需重新获取，后续截图与日志确认实际结果。证据在 `output/verification/phase3-slice1-followup-20261108/`（运行日志、关闭前后进程记录），五张实际截图在 `docs/screenshots/phase3-slice1-followup-20261108/`，分别为最小尺寸、浮层/失活、双零深底、恢复及控制窗实操日志，随本轮提交推送。Phase 0 已知失败、字号迁移待办和此前被拒绝清理的旧目录均保留，没有重试清理、Python 测试、引擎/IPC/设置持久化或切片 2 工作。
+
+**尚未通过项目的人工复现步骤（用户实操后提供截图/录屏，当前不勾选通过）：**
+
+1. 仓库根目录运行 `dotnet run --project desktop/RuZh.Subtitles.Host -c Release --no-build`，保留标题为 experiment controls 的独立控制窗。拖动 grip 在字幕左上 `(40–220, 0–14)` DIP；边缘约 6 DIP 可缩放，人工向外放大后再缩回，确认最小 420×108。
+2. 将记事本等真实应用移到字幕后，分别取消/勾选 Actual topmost，再点击并移动该应用，检查字幕覆盖关系；不要把窗口捕获中可见等同于屏幕上未被遮挡。用屏幕录制同时保留前后两个窗口和操作过程。
+3. 关闭 WPF overlay test，点击 Both zero + no DWM，观察真实屏幕是否仍有深底；点击 Inspect page 记录页面 opacity，再点 Show/restore 恢复。可用 Hide subtitle 做“原窗口彻底隐藏”的对照，区分真实底板与捕获透明问题；不调整系统安全/隐私设置。
+4. 在不同背景及其他应用后方，分别点击字幕和后方应用比较激活/失活，移动后方内容并录屏；CSS 页内 blur、DWM Acrylic 与桌面实时采样分开记录。完成后点 Close experiment 正常退出。本轮未修改或引入 HostBackdrop 对照，因此不得把这些步骤说成其运行验证。
+
 ### Phase 4 — Named Pipes 合同与模拟服务（未授权）
 
 **范围：** C# 宿主与 Python mock service 使用**本机 Windows Named Pipes** 双向通信；JSON 协议小而确定，不引入网络服务器。
@@ -462,12 +476,12 @@ branch: feature/raycast-ui-rewrite
 current_phase: 3
 phase_status: awaiting_approval  # 切片 1 实验部分完成；持续失活磨砂未达标，等待用户决定
 approved_scope: phase_3_slice_1_only
-active_task: "最小 WPF 原生实验已运行；失活回退与工具中断已记录，停止待决策"
-next_task: "等待用户决定材质限制和未完成实验；不得自行进入 Phase 3 切片 2"
-verified: ["Phase 2 已最终验收（e8487f7），Phase 0 已知失败及字号迁移待办保留", "WPF CompositionControl 本地纯字幕页实际启动，DWM API 成功、680×140 DIP、文字/工具栏和鼠标模拟会话可用", "激活时环境色透入，失活后近实色回退；动态模糊及其余原生交互未完成验证", "最后控件选项同步修正仅编译通过；原生工具因浏览器 URL 识别限制停止，未绕过", "不接引擎/IPC/持久化，无 Python 测试；后续切片未授权"]
-blockers: ["持续失活磨砂未达到目标，等待用户决定", "computer-use 因 Chrome URL 识别限制停止本轮操作；剩余原生验证未完成"]
+active_task: "同一切片补充交互实测与官方 HostBackdrop 调查完成；完全透明及持续失活磨砂未通过，停止待决策"
+next_task: "等待用户人工复核未通过项及决定是否另授权 Composition 互操作实验；不得自行进入切片 2"
+verified: ["Phase 0–2 已验收，旧业务、Phase 0 已知失败及字号迁移待办保留", "同切片实测拖动/缩小至420×108、WPF浮层、隐藏恢复、双零后恢复；置顶开关False→True有原生状态反馈，跨应用覆盖待人工", "双零捕获仍有深底，完全透明未通过；Acrylic失活回退按官方行为记录", "正常关闭后宿主及已记录WebView2子进程均无残留；本轮未重复构建或修改功能源码", "HostBackdrop官方候选经有限调查，COM/效果图与共存成本已记录，未实施或宣称持续失活模糊成功；切片2未授权"]
+blockers: ["持续失活磨砂尚无实测通过方案；HostBackdrop接入需额外合成互操作，等待技术决策", "双零捕获仍深底及跨应用覆盖/向外放大/动态背景等待人工复核，步骤见本切片补充记录"]
 delivery_policy: "按用户持续授权：更新本文、提交、检查敏感信息及产物后 push 同名分支；不合并 main；每切片结束立即停止"
-last_commit: e8487f71f923d1f4baa29f1c9d1df637c0f50b42 # 本轮写入前提交；实验交付 SHA 由 git log -1 查询
+last_commit: e2decec600bc5ae6262a8f7a6fb37aed9bfed235 # 本轮写入前提交；本轮验证提交由 git log -1 查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -480,10 +494,10 @@ last_commit: e8487f71f923d1f4baa29f1c9d1df637c0f50b42 # 本轮写入前提交；
 | 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
 | 2026-11-08 | Phase 1 | 五个切片及最终浏览器模拟检查完成，用户已最终验收（`96fc85f`）；证据 `output/verification/phase1-slice5-20261108/` 及前序切片目录保留。Windows 原生宿主/真实引擎仍未验证，Phase 0 已知失败未改 | **Phase 1 已验收** |
 | 2026-11-08 | Phase 2 | 六切片及最终浏览器模拟验收完成，用户已最终验收（`e8487f7`）；既有四入口、三语、重置、布局与交互证据保留 | **Phase 2 已验收** |
-| 2026-11-08 | Phase 3 | 仅切片 1：最小 WPF + CompositionControl 离线纯字幕实际运行；激活环境采样可见，失活近实色回退。工具因 Chrome URL 识别限制停止，剩余原生操作未验证；构建通过，一张实际截图与日志保留，未接引擎/IPC | **实验部分完成，持续失活磨砂未达标；停止待用户决定** |
+| 2026-11-08 | Phase 3 | 仅切片1及有限补充：同一WPF宿主实测拖动/最小尺寸/浮层/隐藏恢复/双零恢复/正常退出无残留；置顶开关值变化实测，跨应用覆盖待人工。双零捕获仍深底，Acrylic失活回退；官方HostBackdrop经调查未实施，成本及人工步骤已记录，源码未改 | **部分完成；完全透明与持续失活磨砂未通过，待用户复核/技术决策** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
 ## I. 下一次发给 Codex 的唯一启动指令
 
-> Phase 0–2 已验收，Phase 3 仅切片 1 获授权；原生实验部分完成，失活材质回退与工具中断已记录。等待用户决定并给出新的明确授权后，才补充实验或执行下一任务；不得自行采用备选材质、进入切片 2 或 Phase 4–6，不合并或推送 main。
+> Phase 0–2 已验收，Phase 3 同一切片 1 的有限补充已完成并停止。等待用户按上述步骤复核未通过项，并决定是否明确授权额外 Composition 互操作实验；不得自行实施替代路径、进入切片 2 或 Phase 4–6，不合并或推送 main。
