@@ -1,6 +1,6 @@
 # REFACTOR.md — Windows 11 Raycast 风格 UI 迁移执行计划
 
-> **状态：Phase 0–2 已获用户最终验收；本轮仅授权 Phase 3 切片 1。同一切片补充验证已完成：拖动/缩小/浮层/恢复/正常退出已实测；完全透明及持续失活磨砂仍未通过，原生验收部分完成；停止等待用户决定。Phase 3 后续切片及 Phase 4–6 未授权。**
+> **状态：Phase 0–2 已获用户最终验收；本轮仅授权 Phase 3 切片 1。原生交互部分已获用户验收；同一切片的 layered 顶层透明定向实验已完成，真实透明与字幕组合实测通过，待用户验收。持续失活磨砂未实现且不属本轮目标；停止等待用户决定。Phase 3 后续切片及 Phase 4–6 未授权。**
 > 本文是本次迁移的**唯一活跃总计划与进度记录**，由 Codex 在各阶段结束时维护。
 > 长期行为约束见根目录 `AGENTS.md`。不要新建第二份计划或重复的进度日志。
 
@@ -183,7 +183,7 @@ tests/                       # 既有；按风险补最少的定向测试
 | **0** | 只读审计、隔离分支、旧版基线 | **已验收** | 用户于 2026-11-08 验收通过；既有基线缺口保留 |
 | **1** | React 字幕悬浮窗 + 最小设计系统 | **已验收** | 用户最终验收通过（`96fc85f`）；不代表 Windows 原生宿主/引擎验收 |
 | **2** | React 四页设置 + 三语 + 状态联动 | **已验收** | 六切片及最终浏览器模拟验收获用户通过（`e8487f7`） |
-| **3** | WPF + WebView2 双窗宿主 | **仅切片 1 已授权；实验部分完成，待决策** | 激活态环境采样可见、失活态实色回退；剩余原生验证未完成，不进入后续切片 |
+| **3** | WPF + WebView2 双窗宿主 | **仅切片 1 已授权；layered 透明定向实验完成，待验收** | 原生交互部分已验收；真实透明与字幕渲染已实测，0% 命中限制保留，持续磨砂未实现，不进入后续切片 |
 | **4** | Named Pipes + JSON 合同 | 未授权 | C# ↔ 模拟 Python 服务可靠通信；停止 |
 | **5** | 常驻 Python 引擎 + 业务迁移 | 未授权 | Start/Stop 模型复用 + SRT + 异常恢复；停止 |
 | **6** | 端到端集成、用户验收、离线安装 | 未授权 | 在干净 Windows 离线运行的正式可交付包；停止 |
@@ -381,6 +381,17 @@ tests/                       # 既有；按风险补最少的定向测试
 3. 关闭 WPF overlay test，点击 Both zero + no DWM，观察真实屏幕是否仍有深底；点击 Inspect page 记录页面 opacity，再点 Show/restore 恢复。可用 Hide subtitle 做“原窗口彻底隐藏”的对照，区分真实底板与捕获透明问题；不调整系统安全/隐私设置。
 4. 在不同背景及其他应用后方，分别点击字幕和后方应用比较激活/失活，移动后方内容并录屏；CSS 页内 blur、DWM Acrylic 与桌面实时采样分开记录。完成后点 Close experiment 正常退出。本轮未修改或引入 HostBackdrop 对照，因此不得把这些步骤说成其运行验证。
 
+#### 同切片：layered 顶层透明定向实验（2026-11-08，完成待验收）
+
+- **范围与纠正：** 用户已验收前述原生交互部分。本轮只验证真正顶层透明，不实现持续磨砂。单一 `SubtitleExperiment` 增加构造时的 layered 参数；在 HWND 创建前组合 WindowStyle=None、Background=Transparent、AllowsTransparency=true，layered 分支不调用现有 DWM 扩展/材质代码。原 AllowsTransparency=false + DWM 模式保留；控制窗的 Layered 选项通过关闭/重建同一个字幕类来往返，不创建第二工程。官方 [AllowsTransparency 说明](https://learn.microsoft.com/en-us/dotnet/api/system.windows.window.allowstransparency?view=windowsdesktop-10.0) 明确指出只设透明 Background 而不开此属性，桌面仍不可见。因此前述 HTML 根 opacity=0、WebView2 背景透明及关闭 DWM 都不能证明顶层透明；此前深底是非 layered 对照的结果，不推导整个 WPF + WebView2 不可行。
+- **最小调整及实际修复：** 宿主试验样式只复用既有 `.subtitle-material` / `.subtitle-appearance` 和 CSS 变量，提供背景0/文字100、背景0/文字0及恢复45/100三个预设；不再将 HTML 根 opacity 归零，不争夺字幕过渡层。长句选项导航既有 sample=long，未复制字幕实现。发现实验脚本重复顶层 let 导致后续 CSS 未应用，已改为 IIFE 并核对 applied 返回值；关闭标志和脚本异常反馈保护模式重建/退出期间的异步调用。控制窗取消自身 Topmost，避免遮挡字幕干扰透明判断，仍有独立正常窗口和任务栏恢复入口。首次构建及针对控制窗遮挡、脚本/关闭保护的三次必要局部重建均无警告/错误；最后移除恢复按钮await后多余的Activate以避免关闭竞态，最终版本的layered双零/恢复/正常退出冒烟复测通过，其余定向结果仍适用。无新增依赖，React/旧业务/Python/IPC 未改，未运行 Python 测试。
+- **A/B · 顶层透明与 WebView2：** 本机 Windows 11 25H2 26200.9711 / .NET 10.0.11 / WebView2 157.0.4341.42 上，layered 默认680×140正常显示中文、俄文、状态和工具栏；真实后方控制窗的白色区域及桌面应用内容随位置透入。截图直接捕获运行窗口，没有将桌面截图用作背景。关闭/重建切回非 layered 可正常运行，再切回 layered 亦可。两种模式使用相同页面和透明度预设，顶层合成路径不同；不能混同于 CSS 页内 blur 或 DWM 磨砂。
+- **C/D · 独立零透明度：** 背景0/文字100实测文字保留，底材/白边/材质阴影消失，后方真实窗口可见；背景0/文字0实测没有深色矩形，同时窗口列表仍有字幕 HWND、IsVisible=true，根 opacity=1、materialDisplay=none、textOpacity=0。状态灯/状态提示不属于双语正文透明度，仍可显示，不宣称整个应用所有像素都隐藏。Show/restore 后45/100字幕实际恢复。相同背景0/文字0在非 layered 模式仍出现深底，对照截图保留；这证明本轮差异来自顶层透明路径，而不是隐藏整个窗口。持续失活实时磨砂没有实现，也未作为本轮通过项。
+- **E · 输入/缩放/性能与限制：** Layered 背景45%时实际点击开始进入Loading→Listening，Tab可见焦点与Escape收起有反馈，工具栏淡入淡出可见；长句两行继续滚动，拖动 `(340,440)→(420,482)` 时仍更新，缩小 `680×140→450×112→420×108` 正常。背景0%时在原透明grip尝试拖动未改变位置，须从控制窗恢复背景后拖动；这是本机实际命中限制，与 [layered alpha=0命中规则](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features) 相符，未使用alpha=1假透明/穿透hack掩盖。未验证0%下任意透明边缘均可缩放、向外放大、多DPI/多屏或长期性能；交互和滚动可响应，无本轮卡死，但未测最终呈现帧率/CPU基线，静态图不证明60FPS。隐藏后列表仅留控制窗，恢复后原layered字幕重现；最后在layered模式点Close experiment正常退出，宿主及记录的6个WebView2子进程全部消失。旧安全审查拒绝清理的目录未重试。
+- **证据与停止：** 构建、运行日志与关闭前后进程表在 `output/verification/phase3-slice1-layered-20261108/`；9张真实截图在 `docs/screenshots/phase3-slice1-layered-20261108/`（默认、0/100、0/0、双零控制窗、键盘工具栏、长句拖动前后、紧凑尺寸及非layered双零对照），随本轮提交推送。初次尚未修正脚本时的截图已由最终定向复测覆盖，不将先前目标值日志冒充实际样式成功。Phase 0已知问题、字号迁移待办和持续磨砂遗留均保留；没有HostBackdrop/Win2D/效果图/引擎/配置持久化或切片2工作，等待用户验收。
+
+**当前版本复现（此前 Both zero + no DWM 是历史版本标签）：** 根目录先 `dotnet build desktop/RuZh.Subtitles.Host -c Release`（需已有frontend/dist；若缺失先按前述前端构建步骤生成），再 `dotnet run --project desktop/RuZh.Subtitles.Host -c Release --no-build`。勾选 Layered，等待Navigation success后点Background 0 / text 100，再点Background 0 / text 0和Inspect page；观察真实桌面并对照窗口列表，不以HTML值代替视觉。Show/restore恢复；Long bilingual sample复用长句，改变示例或宿主模式会重新加载实验mock页面，不保留其模拟会话。背景45%时可用左上grip/边缘拖动缩放；背景0%命中受限时用独立控制窗恢复。可取消Layered做同参数深底对照，最后Close experiment正常退出。完全透明不等于实时磨砂，CSS backdrop-filter仍不能对桌面模糊。
+
 ### Phase 4 — Named Pipes 合同与模拟服务（未授权）
 
 **范围：** C# 宿主与 Python mock service 使用**本机 Windows Named Pipes** 双向通信；JSON 协议小而确定，不引入网络服务器。
@@ -474,14 +485,14 @@ plan_version: 1
 baseline_commit: a5feb50d97581f8d13f1596255ff9f93a6b03d24
 branch: feature/raycast-ui-rewrite
 current_phase: 3
-phase_status: awaiting_approval  # 切片 1 实验部分完成；持续失活磨砂未达标，等待用户决定
+phase_status: awaiting_approval  # 原生交互部分已验收；layered透明定向实验完成，等待用户验收
 approved_scope: phase_3_slice_1_only
-active_task: "同一切片补充交互实测与官方 HostBackdrop 调查完成；完全透明及持续失活磨砂未通过，停止待决策"
-next_task: "等待用户人工复核未通过项及决定是否另授权 Composition 互操作实验；不得自行进入切片 2"
-verified: ["Phase 0–2 已验收，旧业务、Phase 0 已知失败及字号迁移待办保留", "同切片实测拖动/缩小至420×108、WPF浮层、隐藏恢复、双零后恢复；置顶开关False→True有原生状态反馈，跨应用覆盖待人工", "双零捕获仍有深底，完全透明未通过；Acrylic失活回退按官方行为记录", "正常关闭后宿主及已记录WebView2子进程均无残留；本轮未重复构建或修改功能源码", "HostBackdrop官方候选经有限调查，COM/效果图与共存成本已记录，未实施或宣称持续失活模糊成功；切片2未授权"]
-blockers: ["持续失活磨砂尚无实测通过方案；HostBackdrop接入需额外合成互操作，等待技术决策", "双零捕获仍深底及跨应用覆盖/向外放大/动态背景等待人工复核，步骤见本切片补充记录"]
+active_task: "同一切片layered透明对照已完成；真实透明、字幕组合及恢复已实测，停止待验收"
+next_task: "等待本轮透明实验验收与新的明确授权；不得自行实施持续磨砂或进入切片2"
+verified: ["原生交互部分用户已验收；Phase0问题、字号迁移待办及旧业务保留", "单工程同类窗口可切换非layered与AllowsTransparency=true，layered不调用原DWM材质", "实际桌面观察及截图：layered背景0/文字100保留正文，0/0无深底且HWND可见；非layered同参数仍有深底", "layered按钮/Tab/Escape/滚动、45%背景下拖动缩放至420×108、隐藏/双零恢复和正常退出无残留通过", "三次必要构建通过，实验脚本作用域/关闭保护已修正并定向复测；无依赖/React/Python改动，未做Python测试", "0%透明grip命中受限，定量性能及多DPI未验证；持续磨砂未实现、不属本轮，切片2未授权"]
+blockers: ["背景0%透明grip拖动未移动，需控制窗恢复背景；完整透明区命中和定量性能未验收", "持续失活磨砂仍未实现，本轮只验证真实透明，后续须用户明确授权"]
 delivery_policy: "按用户持续授权：更新本文、提交、检查敏感信息及产物后 push 同名分支；不合并 main；每切片结束立即停止"
-last_commit: e2decec600bc5ae6262a8f7a6fb37aed9bfed235 # 本轮写入前提交；本轮验证提交由 git log -1 查询
+last_commit: 518c49c0e795b32dd04d2d10e546ea889a74c145 # 本轮写入前提交；透明实验提交由git log -1查询
 ```
 
 > Codex 修改本段时保持简短、准确，不附会不存在的通过情况。完成 Phase 0 后应把 `phase_status` 置为 `awaiting_approval`，而不是自动把 `current_phase` 改成 1。
@@ -494,10 +505,10 @@ last_commit: e2decec600bc5ae6262a8f7a6fb37aed9bfed235 # 本轮写入前提交；
 | 2026-11-08 | Phase 0 | 从指定基线建分支，剪切导入两文件（`72200dd`）；仅审计与更新本文。一次全量 413 通过/1 跳过/306 setup 错误，修正命令目录后仅补跑错误子集 304 通过/2 失败；证据 `output/verification/phase0-20261108/`。资源预检、CLI 及打包源检查通过，五个 Phase 1 切片未实施 | **审计完成，基线缺口已明示；停止待验收，Phase 1–6 未授权** |
 | 2026-11-08 | Phase 1 | 五个切片及最终浏览器模拟检查完成，用户已最终验收（`96fc85f`）；证据 `output/verification/phase1-slice5-20261108/` 及前序切片目录保留。Windows 原生宿主/真实引擎仍未验证，Phase 0 已知失败未改 | **Phase 1 已验收** |
 | 2026-11-08 | Phase 2 | 六切片及最终浏览器模拟验收完成，用户已最终验收（`e8487f7`）；既有四入口、三语、重置、布局与交互证据保留 | **Phase 2 已验收** |
-| 2026-11-08 | Phase 3 | 仅切片1及有限补充：同一WPF宿主实测拖动/最小尺寸/浮层/隐藏恢复/双零恢复/正常退出无残留；置顶开关值变化实测，跨应用覆盖待人工。双零捕获仍深底，Acrylic失活回退；官方HostBackdrop经调查未实施，成本及人工步骤已记录，源码未改 | **部分完成；完全透明与持续失活磨砂未通过，待用户复核/技术决策** |
+| 2026-11-08 | Phase 3 | 原生交互部分已获用户验收；同切片layered透明定向实验完成。真实透明、WebView2字幕、独立0/100与0/0无深底、恢复和退出无残留已实测；非layered深底对照保留。0%命中与定量性能限制明示，9张实际截图及日志保留，无HostBackdrop等扩展 | **本轮透明实验完成待验收；持续磨砂未实现，不进入切片2** |
 
 每个阶段最多补一条精简记录，必要证据引用 Git SHA、测试日志或截图实际路径；不复制大量输出到本文。
 
 ## I. 下一次发给 Codex 的唯一启动指令
 
-> Phase 0–2 已验收，Phase 3 同一切片 1 的有限补充已完成并停止。等待用户按上述步骤复核未通过项，并决定是否明确授权额外 Composition 互操作实验；不得自行实施替代路径、进入切片 2 或 Phase 4–6，不合并或推送 main。
+> Phase0–2及Phase3原生交互部分已验收；同切片layered顶层透明定向实验完成后已停止。等待用户验收与新的明确授权；不得自行扩展持续磨砂、进入切片2或Phase4–6，不合并或推送main。
