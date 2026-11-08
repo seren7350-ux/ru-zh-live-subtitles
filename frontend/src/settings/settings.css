@@ -96,6 +96,17 @@
 .settings-window-shortcut { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--settings-line); font-size: 13px; }
 .settings-window-shortcut select { width: 210px; max-width: 100%; }
 .settings-window-path { display: block; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--settings-line); border-radius: 8px; background: rgb(0 0 0 / 12%); font-size: 12px; overflow-wrap: anywhere; }
+.settings-diagnostics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.settings-diagnostic-info { margin: 12px 0 0; }
+.settings-diagnostic-info > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 9px 0; border-top: 1px solid var(--settings-line); font-size: 12px; }
+.settings-diagnostic-info dt { color: var(--muted-foreground); }
+.settings-diagnostic-info dd { margin: 0; overflow-wrap: anywhere; }
+.settings-diagnostic-path { display: block; margin-top: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.settings-diagnostic-error { margin: 14px 0 10px; font-size: 12px; overflow-wrap: anywhere; }
+.settings-diagnostic-error[data-error="true"] { color: #ff9292; }
+.settings-diagnostic-records { margin: 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.8; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.settings-diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.settings-diagnostic-feedback { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--muted-foreground); overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .settings-root { padding: 12px; }
   .settings-body { grid-template-columns: 148px minmax(0, 1fr); }

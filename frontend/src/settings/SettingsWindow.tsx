@@ -5,6 +5,7 @@ import type { SubtitleStatus } from "@/components/SubtitleCard"
 import { InputPage } from "./InputPage"
 import { SubtitlesPage } from "./SubtitlesPage"
 import { WindowPage, defaultWindowSettings } from "./WindowPage"
+import { DiagnosticsPage } from "./DiagnosticsPage"
 import type { SubtitleAppearance } from "./subtitleAppearance"
 import "./settings.css"
 
@@ -72,11 +73,7 @@ export function SettingsWindow({ status, onToggleSession, subtitleAppearance, on
             ) : pageId === "window" ? (
               <WindowPage settings={windowSettings} onChange={setWindowSettings} />
             ) : (
-              <div className="settings-placeholder">
-                <NavigationIcon page={pageId} />
-                <h2>此页面尚未实现</h2>
-                <p>此演示暂未提供该页面的设置项。</p>
-              </div>
+              <DiagnosticsPage status={status} />
             )}
           </motion.div>
         </div>
