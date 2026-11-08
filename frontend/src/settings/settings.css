@@ -74,6 +74,17 @@
 .settings-placeholder { display: grid; justify-items: start; gap: 12px; margin-top: 32px; padding: 28px; border: 1px dashed var(--border); border-radius: 13px; color: var(--muted-foreground); }
 .settings-placeholder h2 { margin: 0; color: var(--foreground); font-size: 16px; font-weight: 500; }
 .settings-placeholder p { margin: 0; font-size: 13px; line-height: 1.7; }
+.settings-subtitles { display: grid; gap: 14px; }
+.settings-subtitle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--settings-line); }
+.settings-subtitle-row:first-of-type { margin-top: 10px; }
+.settings-subtitle-row:last-child { padding-bottom: 0; }
+.settings-subtitle-row strong { display: block; font-size: 13px; font-weight: 500; }
+.settings-subtitle-row small { display: block; margin-top: 3px; color: #a4a4a4; font-size: 11px; line-height: 1.5; }
+.settings-subtitle-number { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; color: var(--muted-foreground); font-size: 12px; }
+.settings-subtitle-number input { width: 64px; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--secondary); color: var(--foreground); font-size: 13px; }
+.settings-subtitle-toggle { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #d8d8da; cursor: pointer; }
+.settings-subtitles input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.settings-subtitles .settings-group[aria-label="可读性"] .settings-subtitle-row { border-top: 0; margin-top: 0; padding-top: 0; }
 @media (max-width: 720px) {
   .settings-root { padding: 12px; }
   .settings-body { grid-template-columns: 148px minmax(0, 1fr); }

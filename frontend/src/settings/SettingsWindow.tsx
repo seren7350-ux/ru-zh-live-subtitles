@@ -3,6 +3,8 @@ import { motion, useReducedMotionConfig } from "motion/react"
 import { Badge } from "@/components/ui/badge"
 import type { SubtitleStatus } from "@/components/SubtitleCard"
 import { InputPage } from "./InputPage"
+import { SubtitlesPage } from "./SubtitlesPage"
+import type { SubtitleAppearance } from "./subtitleAppearance"
 import "./settings.css"
 
 const pages = [
@@ -26,10 +28,12 @@ function NavigationIcon({ page }: { page: typeof pages[number]["id"] }) {
 export interface SettingsWindowProps {
   status: SubtitleStatus
   onToggleSession: () => void
+  subtitleAppearance: SubtitleAppearance
+  onSubtitleAppearanceChange: (appearance: SubtitleAppearance) => void
 }
 
 /** Shared settings view. The entry/preview supplies the existing mock session. */
-export function SettingsWindow({ status, onToggleSession }: SettingsWindowProps) {
+export function SettingsWindow({ status, onToggleSession, subtitleAppearance, onSubtitleAppearanceChange }: SettingsWindowProps) {
   const [pageId, setPageId] = useState<typeof pages[number]["id"]>("input")
   const [microphone, setMicrophone] = useState("default")
   const [deviceFeedback, setDeviceFeedback] = useState("")
@@ -61,6 +65,8 @@ export function SettingsWindow({ status, onToggleSession }: SettingsWindowProps)
             </header>
             {pageId === "input" ? (
               <InputPage status={status} onToggleSession={onToggleSession} microphone={microphone} onMicrophoneChange={(value) => { setMicrophone(value); setDeviceFeedback("已切换模拟输入设备") }} deviceFeedback={deviceFeedback} onRefresh={() => setDeviceFeedback("已刷新：3 个模拟设备")} />
+            ) : pageId === "subtitles" ? (
+              <SubtitlesPage appearance={subtitleAppearance} onChange={onSubtitleAppearanceChange} />
             ) : (
               <div className="settings-placeholder">
                 <NavigationIcon page={pageId} />
