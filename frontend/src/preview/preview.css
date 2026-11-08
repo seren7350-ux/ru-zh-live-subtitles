@@ -1,11 +1,28 @@
 .preview-page {
+  --preview-light: #4887c3;
+  --preview-mid: #15396d;
+  --preview-dark: #07152d;
   min-height: 100svh;
   display: grid;
   place-items: center;
   padding: 40px 24px;
   background:
-    radial-gradient(ellipse at 12% 12%, rgb(87 127 180 / 45%), transparent 62%),
-    linear-gradient(135deg, #263d5d, #0b1730 66%, #1b3050);
+    /* Fine lines make page-local blur visible without a desktop wallpaper. */
+    repeating-linear-gradient(115deg, transparent 0 58px, rgb(255 255 255 / 14%) 58px 60px, transparent 60px 118px),
+    radial-gradient(ellipse at 12% 12%, var(--preview-light), transparent 70%),
+    linear-gradient(135deg, var(--preview-mid), var(--preview-dark));
+}
+
+.preview-page[data-backdrop="mono"] {
+  --preview-light: #555555;
+  --preview-mid: #303030;
+  --preview-dark: #141414;
+}
+
+.preview-page[data-backdrop="warm"] {
+  --preview-light: #75a57b;
+  --preview-mid: #415d3d;
+  --preview-dark: #9a653f;
 }
 
 .preview-content {
@@ -31,7 +48,7 @@
 
 .preview-controls select {
   color: var(--foreground);
-  background: #162642;
+  background: rgb(20 20 20 / 55%);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 10px;

@@ -10,11 +10,12 @@ export default function App() {
     getSubtitleSample(new URLSearchParams(window.location.search).get("sample")),
   )
   const [compact, setCompact] = useState(false)
+  const [backdrop, setBackdrop] = useState("blue")
   const width = compact ? 420 : 680
   const height = compact ? 108 : 140
 
   return (
-    <main className="preview-page font-sans text-foreground">
+    <main className="preview-page font-sans text-foreground" data-backdrop={backdrop}>
       <div className="preview-content">
         <header className="space-y-2">
           <div className="flex items-center gap-3">
@@ -36,6 +37,14 @@ export default function App() {
             <select value={compact ? "compact" : "default"} onChange={(event) => setCompact(event.target.value === "compact")}>
               <option value="default">680 × 140</option>
               <option value="compact">420 × 108</option>
+            </select>
+          </label>
+          <label>
+            预览背景
+            <select value={backdrop} onChange={(event) => setBackdrop(event.target.value)}>
+              <option value="blue">蓝色</option>
+              <option value="mono">灰阶</option>
+              <option value="warm">绿色 / 暖色</option>
             </select>
           </label>
         </div>

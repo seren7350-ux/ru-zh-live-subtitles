@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Shared cool-blue tokens. Preview canvas styles live in preview/preview.css. */
+/* Neutral glass; environmental color comes from behind the surface. */
 :root {
   color-scheme: dark;
   font-synthesis: none;
@@ -9,13 +9,13 @@
   font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
 
   --background: transparent;
-  --foreground: #f4f7ff;
-  --card: rgb(19 35 70 / 88%);
+  --foreground: #f5f5f5;
+  --card: rgb(18 18 18 / 45%);
   --card-foreground: var(--foreground);
-  --muted-foreground: #bccae4;
-  --secondary: #1e3355;
+  --muted-foreground: #cacaca;
+  --secondary: #28282a;
   --primary: #6ab9ff;
-  --border: rgb(163 193 240 / 28%);
+  --border: rgb(255 255 255 / 20%);
   --ready: #48bfff;
   --radius: 1.25rem;
   --subtitle-chinese-size: 28px;
@@ -78,11 +78,11 @@ html:has(.subtitle-root) {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: linear-gradient(120deg, rgb(39 66 111 / 85%), var(--card) 65%, rgb(23 39 72 / 91%));
+  background: var(--card);
   color: var(--foreground);
   /* This only blurs content in the same browser page, never the Windows desktop. */
   backdrop-filter: blur(24px);
-  box-shadow: inset 0 1px 0 rgb(228 239 255 / 10%), 0 12px 30px rgb(2 10 29 / 22%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%), 0 12px 30px rgb(0 0 0 / 25%);
 }
 
 .subtitle-dot {
