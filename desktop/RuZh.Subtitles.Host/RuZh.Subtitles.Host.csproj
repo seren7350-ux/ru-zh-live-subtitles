@@ -11,8 +11,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Content Include="../../frontend/dist/**/*" Link="web/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="favicon.ico" Link="web/favicon.ico" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('../../frontend/dist/favicon.ico')" />
   </ItemGroup>
   <Target Name="RequireBuiltFrontend" BeforeTargets="BeforeBuild">
-    <Error Condition="!Exists('../../frontend/dist/subtitle.html')" Text="Build the existing frontend first: cd frontend; npm run build" />
+    <Error Condition="!Exists('../../frontend/dist/subtitle.html') Or !Exists('../../frontend/dist/settings.html')" Text="Build the existing frontend first: cd frontend; npm run build" />
   </Target>
 </Project>
