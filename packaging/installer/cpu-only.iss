@@ -6,7 +6,11 @@
 #ifndef VersionInfoVersion
   #error VersionInfoVersion must be provided by build_installer.ps1
 #endif
-#ifndef SplitPayloads
+#ifdef SplitPayloads
+#ifndef RuntimePartCount
+#define RuntimePartCount 0
+#endif
+#else
 #ifndef CpuDist
   #error CpuDist must be provided by build_installer.ps1
 #endif
@@ -137,13 +141,50 @@ begin
   Result := GetArrayLength(Entries) > 0;
 end;
 
-procedure CheckArchive(const FileName, ExpectedHash: String);
+procedure RequireArchive(const FileName: String);
 begin
   if not FileExists(FileName) then
     RaiseException('Keep ' + ExtractFileName(FileName) + ' beside setup.exe, then run Setup again.');
+end;
+
+procedure CheckArchive(const FileName, ExpectedHash: String);
+begin
+  RequireArchive(FileName);
   if CompareText(GetSHA256OfFile(FileName), ExpectedHash) <> 0 then
     RaiseException(ExtractFileName(FileName) + ' is damaged or belongs to a different setup.');
 end;
+
+#if Int(RuntimePartCount) > 0
+function RuntimePartPath(Index: Integer): String;
+begin
+  Result := ExpandConstant('{src}\') + Format('runtime.zip.%.3d', [Index]);
+end;
+
+procedure JoinRuntimeParts(const Destination: String);
+var
+  Index: Integer;
+  Source, Target: TFileStream;
+begin
+  for Index := 1 to {#RuntimePartCount} do
+    RequireArchive(RuntimePartPath(Index));
+
+  Log('Offline packages: joining {#RuntimePartCount} runtime.zip parts.');
+  Target := TFileStream.Create(Destination, fmCreate);
+  try
+    for Index := 1 to {#RuntimePartCount} do
+    begin
+      Source := TFileStream.Create(RuntimePartPath(Index), fmOpenRead or fmShareDenyWrite);
+      try
+        Target.CopyFrom(Source, 0, $100000);
+      finally
+        Source.Free;
+      end;
+    end;
+  finally
+    Target.Free;
+  end;
+end;
+#endif
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -152,7 +193,6 @@ begin
   Result := '';
   try
     AppZip := ExpandConstant('{src}\app.zip');
-    RuntimeZip := ExpandConstant('{src}\runtime.zip');
     AppStage := ExpandConstant('{tmp}\app');
     RuntimeStage := ExpandConstant('{tmp}\runtime');
     CheckArchive(AppZip, '{#AppZipSha256}');
@@ -160,6 +200,12 @@ begin
     ExtractionPage.Clear;
     if NeedRuntime then
     begin
+#if Int(RuntimePartCount) > 0
+      RuntimeZip := ExpandConstant('{tmp}\runtime.zip');
+      JoinRuntimeParts(RuntimeZip);
+#else
+      RuntimeZip := ExpandConstant('{src}\runtime.zip');
+#endif
       CheckArchive(RuntimeZip, '{#RuntimeZipSha256}');
       ForceDirectories(RuntimeStage);
       ExtractionPage.Add(RuntimeZip, RuntimeStage, True);
