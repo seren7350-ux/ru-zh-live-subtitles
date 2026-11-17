@@ -391,6 +391,83 @@ class PreparedFakePipeline(FakePipeline):
         return PipelinePrepareMetrics(0.1, 0.2, 0.3)
 
 
+def test_gui_live_session_skips_one_full_queue_segment_and_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from live_subtitles.cli import build_parser
+    from live_subtitles.gui import process_controller
+
+    translating = threading.Event()
+    release = threading.Event()
+    drained = threading.Event()
+    recovered = threading.Event()
+    microphone = FakeSoundDevice()
+
+    class SlowPipeline(PreparedFakePipeline):
+        def translate_text(self, text: str) -> tuple[str, Any]:
+            if self.translate_calls == 0:
+                translating.set()
+                assert release.wait(5)
+            return super().translate_text(text)
+
+    def create_session(**kwargs: Any) -> LiveTerminalSession:
+        return LiveTerminalSession(**kwargs, sounddevice_module=microphone, join_timeout=5)
+
+    monkeypatch.setattr(process_controller, "OfflineAudioTranslationPipeline", lambda **_: SlowPipeline())
+    monkeypatch.setattr(process_controller, "SileroOnnxVad", lambda: FakeVad(tmp_path))
+    monkeypatch.setattr(process_controller, "LiveTerminalSession", create_session)
+    parser = build_parser()
+    assert parser.parse_args(["live-overlay"]).segment_queue_size == 32
+    args = parser.parse_args(["live-overlay", "--segment-queue-size", "1"])
+    config = process_controller.LiveWorkerConfig(
+        device_index=None, duration=0, audio_queue_size=args.audio_queue_size,
+        segment_queue_size=args.segment_queue_size, vad_threshold=args.vad_threshold,
+        negative_threshold=args.negative_threshold, min_silence_ms=args.min_silence_ms,
+        speech_pad_ms=args.speech_pad_ms, pre_roll_ms=args.pre_roll_ms,
+        min_segment_ms=args.min_segment_ms, max_segment_seconds=args.max_segment_seconds,
+        asr_model="fake", asr_provider="fake", translation_engine="fake",
+        translation_model="fake", translation_device="cpu", num_beams=1, max_new_tokens=256,
+    )
+
+    def on_result(result: LiveSubtitleResult) -> None:
+        if result.start_seconds == 1:
+            drained.set()
+        elif result.start_seconds == 3:
+            recovered.set()
+
+    def on_listening() -> None:
+        deliver = session.vad_session.on_segment
+        assert deliver is not None
+        try:
+            deliver(1, segment(0))
+            assert translating.wait(5)
+            deliver(2, segment(1))
+            deliver(3, segment(2))
+            assert not session.processor.fatal_event.is_set()
+            assert not microphone.stream.stopped and not microphone.stream.closed
+        finally:
+            release.set()
+        assert drained.wait(5)
+        deliver(4, segment(3))
+        assert recovered.wait(5)
+        assert not microphone.stream.stopped and not microphone.stream.closed
+        session.request_stop("test complete")
+
+    session = process_controller._build_session(config, on_result, on_listening)
+    session.processor.temp_directory = tmp_path
+    result = session.run()
+
+    assert result.succeeded
+    assert result.vad.stop_reason == "test complete"
+    assert result.subtitle_metrics.queue_capacity == 1
+    assert result.subtitle_metrics.skipped_segments == 1
+    assert result.subtitle_metrics.backlog_failures == 0
+    assert [(item.start_seconds, item.succeeded) for item in result.subtitles] == [
+        (0, True), (1, True), (3, True),
+    ]
+    assert "skipped VAD segment=3; capacity=1; skipped_total=1" in caplog.text
+
+
 def test_live_terminal_ctrl_c_releases_microphone_and_both_workers(tmp_path: Path) -> None:
     sounddevice = FakeSoundDevice()
     pipeline = PreparedFakePipeline()

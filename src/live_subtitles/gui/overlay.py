@@ -173,6 +173,8 @@ class OverlayRenderer:
                 chinese_font_size=state.chinese_font_size,
                 text_opacity=state.text_opacity,
                 text_outline=state.text_outline,
+                text_color=state.text_color,
+                outline_color=state.effective_outline_color,
             )
         else:
             assert self.russian_widget is not None
@@ -318,6 +320,7 @@ class SubtitleOverlay:
             on_minimum_height=self._set_subtitle_minimum_height,
         )
         self.subtitle_view.container.pack(fill="both", expand=True)
+        self.subtitle_view.set_background_opacity(state.opacity)
         self.renderer = OverlayRenderer(
             root,
             status_widget=self.status,
@@ -694,6 +697,7 @@ class SubtitleOverlay:
             on_open_subtitles=self.on_open_subtitles,
             on_text_opacity=self.set_text_opacity,
             on_toggle_outline=self.toggle_text_outline,
+            on_color_change=self.render,
             on_toggle_toolbar=self.toggle_toolbar,
             on_hide=self._suppress_focus_recovery,
             on_restore_defaults=self.on_restore_defaults,
@@ -757,8 +761,15 @@ class SubtitleOverlay:
         self.windows.begin_decoration_change(self.render)
 
     def set_opacity(self, value: float) -> None:
+        was_visible = self.state.opacity > 0
         self.state.opacity = min(1.0, max(0.0, float(value)))
         self.root.attributes("-alpha", float(self.state.opacity))
+        self.subtitle_view.set_background_opacity(self.state.opacity)
+        if was_visible and not self.state.opacity:
+            panel = self._existing_settings_panel()
+            if panel is not None and panel.is_visible():
+                # Mapping the hit surface can raise the overlay's native window group.
+                panel.window.lift()
 
     def set_text_opacity(self, value: float) -> None:
         self.state.text_opacity = min(1.0, max(0.0, float(value)))

@@ -9,7 +9,7 @@ from ..model_assets import ModelAssetsReport, display_path
 from .microphone_selector import MicrophoneSelectorSnapshot
 from .workarea import window_placement
 from .commands import bind_start_stop
-from .state import SubtitleViewState
+from .state import DEFAULT_CHINESE_COLOR, SubtitleViewState
 from . import settings_theme as theme
 from .settings_controls import NumericScale
 
@@ -58,6 +58,7 @@ class SettingsPanel:
         on_open_subtitles: Callable[[], None] | None = None,
         on_text_opacity: Callable[[float], None] | None = None,
         on_toggle_outline: Callable[[], None] | None = None,
+        on_color_change: Callable[[], None] | None = None,
         on_toggle_toolbar: Callable[[], None] | None = None,
         on_hide: Callable[[], None] | None = None,
         on_restore_defaults: Callable[[str], None] | None = None,
@@ -231,7 +232,13 @@ class SettingsPanel:
             lambda value: on_text_opacity(float(value) / 100) if on_text_opacity else None,
             label="Text opacity (%)",
         )
-        self.outline_button = self._check("Black text outline", "text_outline", on_toggle_outline or (lambda: None))
+        self.outline_button = self._check("Text outline", "text_outline", on_toggle_outline or (lambda: None))
+        self._on_color_change = on_color_change or self.sync
+        self._color_buttons = {
+            "text_color": self._color_control("Text color", "text_color"),
+            "outline_color": self._color_control("Manual outline color", "outline_color"),
+        }
+        self._check("Automatically choose outline color", "auto_outline_color", self._set_auto_outline)
         self._body = self.pages["More"]
         self._shortcuts_expanded = False
         self.shortcuts_button = self._button("Show shortcuts", self._toggle_shortcuts)
@@ -417,6 +424,31 @@ class SettingsPanel:
         check.pack(side="right")
         return check
 
+    def _color_control(self, label: str, name: str) -> Any:
+        row = self.tk.Frame(self._body, background=theme.SURFACE)
+        row.pack(fill="x", pady=4)
+        self.tk.Label(row, text=label, anchor="w", background=theme.SURFACE,
+                      foreground=theme.TEXT).pack(side="left")
+        button = self.tk.Button(row, command=lambda: self._choose_color(label, name),
+                                **self._button_style())
+        button.pack(side="right")
+        return button
+
+    def _choose_color(self, label: str, name: str) -> None:
+        from tkinter.colorchooser import askcolor
+        from .i18n import translate
+
+        current = getattr(self.state_model, name) or DEFAULT_CHINESE_COLOR
+        _, color = askcolor(color=current, parent=self.window,
+                            title=translate(label, self.state_model.ui_language))
+        if color:
+            setattr(self.state_model, name, color.lower())
+            self._on_color_change()
+
+    def _set_auto_outline(self) -> None:
+        self.state_model.auto_outline_color = self._checks["auto_outline_color"].get()
+        self._on_color_change()
+
     def _label(self, text: str) -> Any:
         label = self.tk.Label(
             self._body,
@@ -491,6 +523,8 @@ class SettingsPanel:
         )
         for name, variable in self._checks.items():
             variable.set(bool(getattr(self.state_model, name)))
+        for name, button in self._color_buttons.items():
+            button.configure(text=getattr(self.state_model, name) or "Default color")
         self._sync_microphone_controls()
         self._sync_model_controls()
         if self.input_reset_button is not None:

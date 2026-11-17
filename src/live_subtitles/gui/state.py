@@ -11,6 +11,9 @@ DEFAULT_DISPLAY_LINES = 1
 DEFAULT_OPACITY = 0.88
 DEFAULT_CHINESE_FONT_SIZE = 34
 DEFAULT_RUSSIAN_FONT_SIZE = 20
+DEFAULT_RUSSIAN_COLOR = "#d8dbe2"
+DEFAULT_CHINESE_COLOR = "#ffffff"
+DEFAULT_OUTLINE_COLOR = "#000000"
 POSITION_PRESETS = ("top", "bottom", "floating")
 
 
@@ -38,6 +41,9 @@ class SubtitleViewState:
         background_opacity: float | None = None,
         text_opacity: float = 1.0,
         text_outline: bool = False,
+        text_color: str | None = None,
+        outline_color: str = DEFAULT_OUTLINE_COLOR,
+        auto_outline_color: bool = False,
         toolbar_visible: bool = True,
         chinese_font_size: int = DEFAULT_CHINESE_FONT_SIZE,
         russian_font_size: int = DEFAULT_RUSSIAN_FONT_SIZE,
@@ -68,6 +74,10 @@ class SubtitleViewState:
         self.opacity = opacity
         self.text_opacity = text_opacity
         self.text_outline = text_outline
+        # An unset text color preserves the two shades used by older preferences.
+        self.text_color = text_color
+        self.outline_color = outline_color
+        self.auto_outline_color = auto_outline_color
         self.toolbar_visible = toolbar_visible
         self.chinese_font_size = chinese_font_size
         self.russian_font_size = russian_font_size
@@ -94,6 +104,21 @@ class SubtitleViewState:
     def background_opacity(self, value: float) -> None:
         # Keep the original opacity attribute/CLI alias compatible.
         self.opacity = value
+
+    @property
+    def effective_outline_color(self) -> str:
+        if not self.auto_outline_color:
+            return self.outline_color
+        color = self.text_color or DEFAULT_CHINESE_COLOR
+        channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        linear = [
+            channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+            for channel in channels
+        ]
+        luminance = sum(weight * channel for weight, channel in zip((0.2126, 0.7152, 0.0722), linear))
+        black_contrast = (luminance + 0.05) / 0.05
+        white_contrast = 1.05 / (luminance + 0.05)
+        return "#000000" if black_contrast >= white_contrast else "#ffffff"
 
     @property
     def entries(self) -> tuple[SubtitleEntry, ...]:

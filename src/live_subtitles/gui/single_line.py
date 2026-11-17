@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
-from .state import SubtitleEntry
+from .state import DEFAULT_CHINESE_COLOR, DEFAULT_OUTLINE_COLOR, DEFAULT_RUSSIAN_COLOR, SubtitleEntry
 
 
 def single_line_text(text: str) -> str:
@@ -53,10 +53,14 @@ class SingleLineSubtitleView:
         )
         self.canvas.pack(fill="both", expand=True)
         self._layer = None
+        self._hit_layer = None
         if sys.platform == "win32" and hasattr(tk_module, "Toplevel"):
             from .caption_layer import CaptionLayer
 
-            self._layer = CaptionLayer(self.canvas.winfo_toplevel(), self.canvas, tk_module=tk_module)
+            root = self.canvas.winfo_toplevel()
+            self._layer = CaptionLayer(root, self.canvas, tk_module=tk_module)
+            self._hit_layer = CaptionLayer(root, self.canvas, tk_module=tk_module, hit_only=True)
+            self._layer.hit_surface = self._hit_layer
         self._items = (
             self.canvas.create_text(0, 0, anchor="nw", fill="#d8dbe2", width=0),
             self.canvas.create_text(0, 0, anchor="nw", fill="#ffffff", width=0),
@@ -68,6 +72,8 @@ class SingleLineSubtitleView:
         self._show_russian = True
         self._text_opacity = 1.0
         self._text_outline = False
+        self._text_colors = (DEFAULT_RUSSIAN_COLOR, DEFAULT_CHINESE_COLOR)
+        self._outline_color = DEFAULT_OUTLINE_COLOR
         self._outline_items: list[int] = []
         self._outline_groups: dict[int, list[tuple[int, int, int]]] = {}
         self._signature: tuple[object, ...] | None = None
@@ -91,6 +97,8 @@ class SingleLineSubtitleView:
             self._cancel_animation()
             if self._layer is not None:
                 self._layer.close()
+            if self._hit_layer is not None:
+                self._hit_layer.close()
 
     def _cancel_animation(self) -> None:
         if self._timer is not None:
@@ -103,14 +111,24 @@ class SingleLineSubtitleView:
     def set_pointer_handlers(self, handlers: dict[str, Callable[..., Any]]) -> None:
         if self._layer is not None:
             self._layer.set_pointer_handlers(handlers)
+        if self._hit_layer is not None:
+            self._hit_layer.set_pointer_handlers(handlers)
+
+    def set_background_opacity(self, opacity: float) -> None:
+        if self._hit_layer is not None:
+            self._hit_layer.set_hit_enabled(opacity == 0)
 
     def sync_window(self) -> None:
         if self._layer is not None and not self._destroyed:
             self._layer.sync_window(resume=True)
+        if self._hit_layer is not None and not self._destroyed:
+            self._hit_layer.sync_window(resume=True)
 
     def prepare_window_change(self) -> None:
         if self._layer is not None and not self._destroyed:
             self._layer.prepare_window_change()
+        if self._hit_layer is not None and not self._destroyed:
+            self._hit_layer.prepare_window_change()
 
     def _on_configure(self, event: Any) -> bool:
         size = (max(1, int(event.width)), max(1, int(event.height)))
@@ -131,6 +149,8 @@ class SingleLineSubtitleView:
         chinese_font_size: int,
         text_opacity: float = 1.0,
         text_outline: bool = False,
+        text_color: str | None = None,
+        outline_color: str = DEFAULT_OUTLINE_COLOR,
     ) -> bool:
         latest = entries[-1] if entries else None
         texts = (
@@ -140,7 +160,7 @@ class SingleLineSubtitleView:
         signature = (
             latest.index if latest is not None else None, texts, show_russian,
             int(russian_font_size), int(chinese_font_size),
-            float(text_opacity), bool(text_outline),
+            float(text_opacity), bool(text_outline), text_color, outline_color,
         )
         if signature == self._signature:
             return False
@@ -149,6 +169,8 @@ class SingleLineSubtitleView:
         self._show_russian = show_russian
         self._text_opacity = min(1.0, max(0.0, float(text_opacity)))
         self._text_outline = bool(text_outline)
+        self._text_colors = (text_color or DEFAULT_RUSSIAN_COLOR, text_color or DEFAULT_CHINESE_COLOR)
+        self._outline_color = outline_color
         self._requested_sizes = (int(russian_font_size), int(chinese_font_size))
         self._layout()
         return True
@@ -161,7 +183,7 @@ class SingleLineSubtitleView:
             self.canvas.itemconfigure(
                 item, text=self._texts[index], font=fonts[index],
                 state="normal" if visible else "hidden", width=0,
-                fill="#111318" if self._layer is not None else ("#d8dbe2", "#ffffff")[index],
+                fill="#111318" if self._layer is not None else self._text_colors[index],
             )
             self.canvas.coords(item, 0, 0)
             if visible:
@@ -228,10 +250,12 @@ class SingleLineSubtitleView:
             specs.append(dict(
                 x=line.origin_x, y=line.origin_y, anchor="nw", width=0,
                 text=self._texts[index], font=fonts[index],
-                fill=("#d8dbe2", "#ffffff")[index], outline=self._text_outline,
+                fill=self._text_colors[index],
+                outline=self._outline_color if self._text_outline else None,
             ))
         if self._layer is not None:
             self._layer.render(specs, opacity=self._text_opacity)
+            self._hit_layer.sync_window()
             return
         # Other Tk platforms keep a functional opaque view; zero still hides
         # text. Independent partial alpha is supplied by the Windows surface.
@@ -247,7 +271,7 @@ class SingleLineSubtitleView:
                 options = dict(spec)
                 x, y = options.pop("x"), options.pop("y")
                 options.pop("outline")
-                options["fill"] = "black"
+                options["fill"] = self._outline_color
                 for dx in (-1, 0, 1):
                     for dy in (-1, 0, 1):
                         if dx or dy:

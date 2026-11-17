@@ -47,6 +47,7 @@ class LiveTerminalSession:
         duration: float = 0.0,
         audio_queue_size: int = DEFAULT_QUEUE_SIZE,
         segment_queue_size: int = DEFAULT_SEGMENT_QUEUE_SIZE,
+        skip_on_segment_backlog: bool = False,
         threshold: float = 0.5,
         negative_threshold: float = 0.35,
         min_silence_ms: int = 600,
@@ -86,6 +87,7 @@ class LiveTerminalSession:
         self.processor = SegmentProcessor(
             self.pipeline,
             queue_size=segment_queue_size,
+            skip_on_backlog=skip_on_segment_backlog,
             fatal_event=self._fatal_event,
             on_result=on_result,
             clock=clock,

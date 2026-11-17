@@ -85,8 +85,9 @@ class _WindowOwner:
         # Reading native flags avoids raising the owner on every Configure.
         return bool(self.get_style(self.wrapper(window), -20) & 0x0008)
 
-    def ensure_above_owner(self, window: Any, root: Any) -> None:
+    def ensure_above_owner(self, window: Any, root: Any, *, behind: Any = None) -> None:
         hwnd, owner = self.wrapper(window), self.wrapper(root)
+        behind_hwnd = self.wrapper(behind) if behind is not None else None
         previous = self.get_owner(owner, 3)  # GW_HWNDPREV: next higher window
         cursor = previous
         # Keep normal owned dialogs (Settings) above the text, including when
@@ -98,7 +99,7 @@ class _WindowOwner:
                     return
                 previous = lowest_dialog
                 break
-            if (lowest_dialog is None and self.get_owner(cursor, 4) == owner
+            if (cursor != behind_hwnd and lowest_dialog is None and self.get_owner(cursor, 4) == owner
                     and self.is_visible(cursor)):
                 lowest_dialog = cursor
             cursor = self.get_owner(cursor, 3)
@@ -118,14 +119,20 @@ class CaptionLayer:
     for outlines. Windows makes fully transparent pixels pass mouse input on.
     """
 
-    def __init__(self, root: Any, anchor: Any, *, tk_module: Any) -> None:
+    def __init__(self, root: Any, anchor: Any, *, tk_module: Any, hit_only: bool = False) -> None:
         self.root, self.anchor, self.tk = root, anchor, tk_module
+        self._hit_only = hit_only
+        self._hit_enabled = False
+        self.hit_surface: CaptionLayer | None = None
         self.window: Any | None = None
         self.canvas: Any | None = None
         self._native = _WindowOwner()
         self._handlers: dict[str, Callable[..., Any]] = {}
         self._specs: tuple[dict[str, Any], ...] = ()
-        self._opacity = 1.0
+        # Windows skips hit testing at alpha zero. The hit surface covers only
+        # the subtitle canvas and uses the smallest nonzero Windows alpha.
+        self._opacity = 1 / 255 if hit_only else 1.0
+        self._color_key = COLOR_KEY
         self._signature: tuple[object, ...] | None = None
         self._geometry = ""
         self._topmost: bool | None = None
@@ -155,11 +162,12 @@ class CaptionLayer:
         # GWLP_HWNDPARENT on that child then reparents it: screen coordinates
         # become parent-relative and raise/configure events feed each other.
         # Keep a real popup and establish ownership only through _WindowOwner.
-        self.window.configure(background=COLOR_KEY)
-        self.window.attributes("-transparentcolor", COLOR_KEY)
+        self.window.configure(background=self._color_key)
+        if not self._hit_only:
+            self.window.attributes("-transparentcolor", self._color_key)
         self.window.attributes("-alpha", self._opacity)
         self.canvas = self.tk.Canvas(
-            self.window, background=COLOR_KEY, highlightthickness=0,
+            self.window, background=self._color_key, highlightthickness=0,
             borderwidth=0, width=1, height=1,
         )
         self.canvas.pack(fill="both", expand=True)
@@ -168,6 +176,11 @@ class CaptionLayer:
         self._signature = None
         self.set_pointer_handlers(self._handlers)
         self._paint()
+
+    def set_hit_enabled(self, enabled: bool) -> None:
+        if enabled != self._hit_enabled:
+            self._hit_enabled = enabled
+            self.sync_window()
 
     def render(self, specs: Sequence[dict[str, Any]], *, opacity: float) -> None:
         self._specs = tuple(dict(spec) for spec in specs)
@@ -186,6 +199,20 @@ class CaptionLayer:
         if signature == self._signature:
             return
         self._signature = signature
+        used_colors = {
+            color.lower() for spec in self._specs for color in (spec.get("fill"), spec.get("outline"))
+            if isinstance(color, str)
+        }
+        color_key = COLOR_KEY
+        channel = 1
+        while color_key in used_colors:
+            channel += 1
+            color_key = f"#{channel:02x}{channel:02x}{channel:02x}"
+        if color_key != self._color_key:
+            self._color_key = color_key
+            self.window.configure(background=color_key)
+            self.canvas.configure(background=color_key)
+            self.window.attributes("-transparentcolor", color_key)
         self.canvas.delete("all")
         self._groups.clear()
         for spec in self._specs:
@@ -198,7 +225,7 @@ class CaptionLayer:
                     for dy in (-1, 0, 1):
                         if dx or dy:
                             item = self.canvas.create_text(
-                                x + dx, y + dy, **dict(options, fill="black"),
+                                x + dx, y + dy, **dict(options, fill=outline if isinstance(outline, str) else "black"),
                             )
                             group.append((item, x + dx, y + dy))
             item = self.canvas.create_text(x, y, **options)
@@ -229,7 +256,8 @@ class CaptionLayer:
         if not self.root.winfo_ismapped() or self.root.state() in {"withdrawn", "iconic"}:
             self.hide_window()
             return
-        if not self.anchor.winfo_ismapped() or not self._specs:
+        has_content = self._hit_enabled if self._hit_only else bool(self._specs)
+        if not self.anchor.winfo_ismapped() or not has_content:
             self.hide_window()
             return
         if not self._exists():
@@ -258,7 +286,10 @@ class CaptionLayer:
             self.window.deiconify()
             self.window.update_idletasks()
         self._native.attach(self.window, self.root)
-        self._native.ensure_above_owner(self.window, self.root)
+        if self.hit_surface is not None and self.hit_surface._exists():
+            self._native.ensure_above_owner(self.window, self.root, behind=self.hit_surface.window)
+        else:
+            self._native.ensure_above_owner(self.window, self.root)
 
     def hide_window(self) -> None:
         if self._exists() and self.window.state() != "withdrawn":

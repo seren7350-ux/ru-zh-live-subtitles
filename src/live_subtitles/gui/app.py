@@ -18,7 +18,7 @@ from ..model_assets import (
 )
 from ..runtime_paths import bundled_resource_path, is_frozen, subtitle_directory
 from ..subtitles import SrtSession
-from ..preferences import Preferences, BOOL_FIELDS, NUM_FIELDS
+from ..preferences import Preferences, BOOL_FIELDS, COLOR_FIELDS, NUM_FIELDS
 from ..config import (
     DEFAULT_ASR_MODEL,
     DEFAULT_PROVIDER,
@@ -46,7 +46,7 @@ from .process_controller import (
 )
 from .session_progress import SessionProgress
 from .shutdown import ShutdownProgress
-from .state import SubtitleViewState
+from .state import DEFAULT_OUTLINE_COLOR, SubtitleViewState
 from .session_view import apply_session_event
 
 if TYPE_CHECKING:
@@ -163,7 +163,7 @@ def add_gui_subcommands(subparsers: Any) -> None:
     live.add_argument(
         "--segment-queue-size",
         type=_bounded_int(1, 32, "Segment queue size"),
-        default=8,
+        default=32,
     )
     live.add_argument(
         "--audio-queue-size", type=_bounded_int(16, 2_000, "Audio queue size"), default=320
@@ -314,7 +314,7 @@ class GuiRuntime:
     def save_preferences(self) -> None:
         if self.preferences is None or self._destroyed:
             return
-        values = {key: getattr(self.state, key) for key in (*BOOL_FIELDS, *NUM_FIELDS)}
+        values = {key: getattr(self.state, key) for key in (*BOOL_FIELDS, *NUM_FIELDS, *COLOR_FIELDS)}
         values["ui_language"] = self.state.ui_language
         values["window_rect"] = list(self.overlay.window_rectangle())
         if self.microphone_selector is not None:
@@ -338,7 +338,7 @@ class GuiRuntime:
         defaults = SubtitleViewState()
         overlay = self.overlay
         if page == "Appearance":
-            for key in ("show_russian", "text_outline", *NUM_FIELDS):
+            for key in ("show_russian", "text_outline", "auto_outline_color", *NUM_FIELDS, *COLOR_FIELDS):
                 setattr(self.state, key, getattr(defaults, key))
             overlay.set_opacity(defaults.opacity)
         elif page == "More":
@@ -763,6 +763,9 @@ def _state_from_args(args: argparse.Namespace) -> SubtitleViewState:
         opacity=args.opacity,
         text_opacity=getattr(args, "text_opacity", 1.0),
         text_outline=bool(getattr(args, "text_outline", False)),
+        text_color=getattr(args, "text_color", None),
+        outline_color=getattr(args, "outline_color", DEFAULT_OUTLINE_COLOR),
+        auto_outline_color=getattr(args, "auto_outline_color", False),
         chinese_font_size=args.chinese_font_size,
         russian_font_size=args.russian_font_size,
         show_russian=args.show_russian,
@@ -842,7 +845,7 @@ def _live_overlay(args: argparse.Namespace) -> int:
         args.preferences = None
     args.saved_preferences = saved
     explicit = getattr(args, "explicit_options", set())
-    for key in (*BOOL_FIELDS, *NUM_FIELDS):
+    for key in (*BOOL_FIELDS, *NUM_FIELDS, *COLOR_FIELDS):
         if key in saved and key not in explicit:
             setattr(args, key, saved[key])
     state = _state_from_args(args)
@@ -915,7 +918,7 @@ def _log_live_exit_metrics(controller: LiveProcessOverlayController) -> None:
         logger.info(
             "Live session %d exit metrics; duration=%.3f; subtitles=%d/%d; "
             "audio_blocks=%d/%d; audio_queue=%d/%d; segment_queue=%d/%d; "
-            "dropped_gaps_status_backlog=%d/%d/%d/%d; rtf_p95=%.3f; "
+            "dropped_gaps_status_backlog=%d/%d/%d/%d; skipped_segments=%d; rtf_p95=%.3f; "
             "ru_latency_p95=%.3f; zh_latency_p95=%.3f; loads=%d/%d/%d/%d; "
             "cuda_peak_mib=%.1f; temp_wav=%d/%d/%d; workers=%s/%s; microphone=%s",
             index,
@@ -932,6 +935,7 @@ def _log_live_exit_metrics(controller: LiveProcessOverlayController) -> None:
             vad.sequence_gaps,
             vad.portaudio_status_count,
             metrics.backlog_failures,
+            metrics.skipped_segments,
             metrics.p95_rtf,
             metrics.p95_russian_latency_seconds,
             metrics.p95_chinese_latency_seconds,
@@ -982,6 +986,7 @@ def _print_live_worker_summary(summary: LiveWorkerSummary) -> None:
     print(f"  Dropped blocks/sequence gaps: {vad.dropped_blocks}/{vad.sequence_gaps}")
     print(f"  PortAudio status events: {vad.portaudio_status_count}")
     print(f"  Segment backlog failures: {metrics.backlog_failures}")
+    print(f"  Segments skipped due to backlog: {metrics.skipped_segments}")
     print(
         f"  Queue wait average/median/P95: {metrics.average_queue_wait_seconds:.3f}/"
         f"{metrics.median_queue_wait_seconds:.3f}/{metrics.p95_queue_wait_seconds:.3f} s"

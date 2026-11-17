@@ -4,12 +4,16 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from .runtime_paths import user_data_directory
 
-BOOL_FIELDS = ("show_russian", "topmost", "borderless", "toolbar_visible", "text_outline")
+BOOL_FIELDS = (
+    "show_russian", "topmost", "borderless", "toolbar_visible", "text_outline", "auto_outline_color",
+)
+COLOR_FIELDS = ("text_color", "outline_color")
 NUM_FIELDS = {"opacity": (0, 1), "text_opacity": (0, 1),
               "chinese_font_size": (16, 72), "russian_font_size": (10, 48)}
 
@@ -22,6 +26,10 @@ def validated(values: Any) -> dict[str, Any]:
         value = values.get(key)
         if type(value) in (int, float) and math.isfinite(value) and minimum <= value <= maximum:
             result[key] = int(value) if "font_size" in key else float(value)
+    for key in COLOR_FIELDS:
+        value = values.get(key)
+        if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            result[key] = value.lower()
     rect = values.get("window_rect")
     if (isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect)
             and all(abs(n) <= 100000 for n in rect) and rect[2] >= 520 and rect[3] >= 180):

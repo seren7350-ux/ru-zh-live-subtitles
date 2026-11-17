@@ -105,6 +105,7 @@ class SegmentProcessorMetrics:
     p95_chinese_latency_seconds: float
     retained_results: int
     worker_exited: bool
+    skipped_segments: int = 0
 
 
 class SegmentProcessor:
@@ -115,6 +116,7 @@ class SegmentProcessor:
         pipeline: OfflineAudioTranslationPipeline,
         *,
         queue_size: int = DEFAULT_SEGMENT_QUEUE_SIZE,
+        skip_on_backlog: bool = False,
         fatal_event: threading.Event | None = None,
         on_result: Callable[[LiveSubtitleResult], None] | None = None,
         clock: Callable[[], float] = time.perf_counter,
@@ -130,6 +132,7 @@ class SegmentProcessor:
             raise SegmentProcessorError("Segment worker join timeout must be greater than zero.")
         self.pipeline = pipeline
         self.queue_size = queue_size
+        self.skip_on_backlog = skip_on_backlog
         self.fatal_event = fatal_event or threading.Event()
         self.on_result = on_result
         self._clock = clock
@@ -151,6 +154,7 @@ class SegmentProcessor:
         self._dequeued = 0
         self._high_watermark = 0
         self._backlog_failures = 0
+        self._skipped_segments = 0
         self._temp_created = 0
         self._temp_deleted = 0
         self._temp_paths: set[Path] = set()
@@ -179,7 +183,7 @@ class SegmentProcessor:
         )
         self._thread.start()
 
-    def enqueue(self, _vad_index: int, segment: AudioSegment) -> None:
+    def enqueue(self, vad_index: int, segment: AudioSegment) -> None:
         """Put one complete immutable segment without blocking the VAD worker."""
 
         if not self._accepting:
@@ -194,6 +198,13 @@ class SegmentProcessor:
         try:
             self._queue.put_nowait(item)
         except queue.Full as exc:
+            if self.skip_on_backlog:
+                self._skipped_segments += 1
+                diagnostic_logger().warning(
+                    "Subtitle queue full; skipped VAD segment=%d; capacity=%d; skipped_total=%d",
+                    vad_index, self.queue_size, self._skipped_segments,
+                )
+                return
             self._backlog_failures += 1
             self._fatal_error = BACKLOG_MESSAGE
             self.fatal_event.set()
@@ -485,6 +496,7 @@ class SegmentProcessor:
             queue_high_watermark=self._high_watermark,
             queue_final_depth=self._queue.qsize(),
             backlog_failures=self._backlog_failures,
+            skipped_segments=self._skipped_segments,
             successful_segments=self._successful,
             failed_segments=self._failed,
             temp_files_created=self._temp_created,

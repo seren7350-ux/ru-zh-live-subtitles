@@ -340,6 +340,7 @@ def _build_session(
         duration=config.duration,
         audio_queue_size=config.audio_queue_size,
         segment_queue_size=config.segment_queue_size,
+        skip_on_segment_backlog=True,
         threshold=config.vad_threshold,
         negative_threshold=config.negative_threshold,
         min_silence_ms=config.min_silence_ms,
