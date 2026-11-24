@@ -12,6 +12,7 @@ from .runtime_paths import user_data_directory
 
 BOOL_FIELDS = (
     "show_russian", "topmost", "borderless", "toolbar_visible", "text_outline", "auto_outline_color",
+    "auto_start",
 )
 COLOR_FIELDS = ("text_color", "outline_color")
 NUM_FIELDS = {"opacity": (0, 1), "text_opacity": (0, 1),
@@ -32,7 +33,7 @@ def validated(values: Any) -> dict[str, Any]:
             result[key] = value.lower()
     rect = values.get("window_rect")
     if (isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect)
-            and all(abs(n) <= 100000 for n in rect) and rect[2] >= 520 and rect[3] >= 180):
+            and all(abs(n) <= 100000 for n in rect) and rect[2] >= 520 and rect[3] >= 0):
         result["window_rect"] = rect
     device = values.get("microphone_name")
     if values.get("ui_language") in ("en", "zh", "ru"):

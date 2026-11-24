@@ -39,13 +39,11 @@ class SingleLineSubtitleView:
         *,
         tk_module: Any,
         on_width_changed: Callable[[int], None] | None = None,
-        on_minimum_height: Callable[[int], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.tk = tk_module
         self._clock = clock
         self._on_width_changed = on_width_changed
-        self._on_minimum_height = on_minimum_height
         self.container = tk_module.Frame(parent, background="#111318")
         self.canvas = tk_module.Canvas(
             self.container, background="#111318", highlightthickness=0,
@@ -78,6 +76,7 @@ class SingleLineSubtitleView:
         self._outline_groups: dict[int, list[tuple[int, int, int]]] = {}
         self._signature: tuple[object, ...] | None = None
         self._size = (0, 0)
+        self._requested_height = 0
         self._lines: list[_Line] = []
         self._destroyed = False
         self._timer: str | None = None
@@ -89,7 +88,7 @@ class SingleLineSubtitleView:
 
             # Native restoration maps descendants after the root's lifecycle
             # callbacks; an unchanged canvas size would otherwise miss it.
-            bind_window_lifecycle(self.canvas, "<Map>", lambda _event: self.sync_window())
+            bind_window_lifecycle(self.canvas, "<Map>", lambda _event: self.sync_window(resume=False))
 
     def _on_destroy(self, event: Any) -> None:
         if event.widget is self.canvas:
@@ -118,11 +117,10 @@ class SingleLineSubtitleView:
         if self._hit_layer is not None:
             self._hit_layer.set_hit_enabled(opacity == 0)
 
-    def sync_window(self) -> None:
+    def sync_window(self, *, resume: bool = True) -> None:
         if self._layer is not None and not self._destroyed:
-            self._layer.sync_window(resume=True)
-        if self._hit_layer is not None and not self._destroyed:
-            self._hit_layer.sync_window(resume=True)
+            self._hit_layer.sync_window(resume=resume)
+            self._layer.sync_window(resume=resume)
 
     def prepare_window_change(self) -> None:
         if self._layer is not None and not self._destroyed:
@@ -175,13 +173,16 @@ class SingleLineSubtitleView:
         self._layout()
         return True
 
-    def _measure(self, sizes: tuple[int, int]) -> list[tuple[int, tuple[int, int, int, int]]]:
+    def _measure(
+        self, sizes: tuple[int, int], *, reserve: bool = False
+    ) -> list[tuple[int, tuple[int, int, int, int]]]:
         measured = []
         fonts = (("Segoe UI", sizes[0]), ("Microsoft YaHei UI", sizes[1], "bold"))
         for index, item in enumerate(self._items):
-            visible = bool(self._texts[index]) and (index == 1 or self._show_russian)
+            text = ("Я", "中")[index] if reserve else self._texts[index]
+            visible = bool(text) and (index == 1 or self._show_russian)
             self.canvas.itemconfigure(
-                item, text=self._texts[index], font=fonts[index],
+                item, text=text, font=fonts[index],
                 state="normal" if visible else "hidden", width=0,
                 fill="#111318" if self._layer is not None else self._text_colors[index],
             )
@@ -206,23 +207,21 @@ class SingleLineSubtitleView:
         width, height = self._size
         # Real text bounds include font fallback glyphs and the current DPI.
         minimum_sizes = (min(8, self._requested_sizes[0]), min(12, self._requested_sizes[1]))
-        minimum_height = self._height(self._measure(minimum_sizes))
-        if self._on_minimum_height is not None:
-            self._on_minimum_height(minimum_height)
         sizes = self._requested_sizes
         measured = self._measure(sizes)
+        if measured:
+            requested_height = self._height(measured)
+        else:
+            requested_height = self._height(self._measure(sizes, reserve=True))
+            self._measure(sizes)  # The placeholders only reserve space.
+        if requested_height != self._requested_height:
+            self._requested_height = requested_height
+            self.canvas.configure(height=requested_height)
         while self._height(measured) > height and sizes != minimum_sizes:
             sizes = tuple(max(minimum, value - 1) for value, minimum in zip(sizes, minimum_sizes))
             measured = self._measure(sizes)
         self.effective_russian_font_size, self.effective_chinese_font_size = sizes
-        if not measured:
-            self._present()
-            return
-        if width <= self.PADDING * 2 or height < minimum_height:
-            # The owner grows its minimum height to fit both complete rows.
-            # During the intervening Configure event, never draw half a line.
-            for item in self._items:
-                self.canvas.itemconfigure(item, state="hidden")
+        if not measured or width <= self.PADDING * 2:
             self._present()
             return
         available_width = width - self.PADDING * 2
@@ -254,8 +253,8 @@ class SingleLineSubtitleView:
                 outline=self._outline_color if self._text_outline else None,
             ))
         if self._layer is not None:
-            self._layer.render(specs, opacity=self._text_opacity)
             self._hit_layer.sync_window()
+            self._layer.render(specs, opacity=self._text_opacity)
             return
         # Other Tk platforms keep a functional opaque view; zero still hides
         # text. Independent partial alpha is supplied by the Windows surface.

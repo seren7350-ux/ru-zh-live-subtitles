@@ -7,13 +7,14 @@ from live_subtitles.gui.workarea import fit_rectangle, positioned, client_placem
 
 def test_preferences_round_trip_excludes_session_and_invalid_values(tmp_path):
     store = Preferences(tmp_path / "preferences.json")
-    store.save({"opacity": 0, "text_opacity": 0, "show_russian": False,
-                "text_outline": True, "window_rect": [-1800, 40, 900, 280],
+    store.save({"opacity": 0, "text_opacity": 0, "show_russian": False, "auto_start": False,
+                "text_outline": True, "window_rect": [-1800, 40, 900, 44],
                 "microphone_name": "Microphone", "listening": True,
                 "entries": ["private caption"], "chinese_font_size": 999})
     assert store.load() == {"opacity": 0.0, "text_opacity": 0.0,
-                            "show_russian": False, "text_outline": True,
-                            "window_rect": [-1800, 40, 900, 280], "microphone_name": "Microphone"}
+                            "show_russian": False, "text_outline": True, "auto_start": False,
+                            "window_rect": [-1800, 40, 900, 44], "microphone_name": "Microphone"}
+    assert validated({"window_rect": [-1800, 40, 900, 0]}) == {"window_rect": [-1800, 40, 900, 0]}
     assert "private" not in store.path.read_text()
     assert not store.path.with_suffix(".json.new").exists()
 

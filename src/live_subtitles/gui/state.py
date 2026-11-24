@@ -45,6 +45,7 @@ class SubtitleViewState:
         outline_color: str = DEFAULT_OUTLINE_COLOR,
         auto_outline_color: bool = False,
         toolbar_visible: bool = True,
+        auto_start: bool = True,
         chinese_font_size: int = DEFAULT_CHINESE_FONT_SIZE,
         russian_font_size: int = DEFAULT_RUSSIAN_FONT_SIZE,
         show_russian: bool = True,
@@ -79,6 +80,7 @@ class SubtitleViewState:
         self.outline_color = outline_color
         self.auto_outline_color = auto_outline_color
         self.toolbar_visible = toolbar_visible
+        self.auto_start = auto_start
         self.chinese_font_size = chinese_font_size
         self.russian_font_size = russian_font_size
         self.show_russian = show_russian

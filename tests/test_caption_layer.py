@@ -1,4 +1,7 @@
+import ctypes
+import sys
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -74,32 +77,6 @@ class Window:
         self.exists = self.visible = False
 
 
-class Canvas:
-    def __init__(self, parent, **options):
-        self.parent = parent
-        self.options = options
-        self.items = {}
-        self.next_item = 1
-        self.repaints = 0
-
-    def pack(self, **options):
-        pass
-
-    def create_text(self, x, y, **options):
-        item = self.next_item
-        self.next_item += 1
-        self.items[item] = dict(options, x=x, y=y)
-        return item
-
-    def delete(self, tag):
-        assert tag == "all"
-        self.items.clear()
-        self.repaints += 1
-
-    def coords(self, item, x, y):
-        self.items[item].update(x=x, y=y)
-
-
 @pytest.fixture
 def surface(monkeypatch):
     calls = []
@@ -108,10 +85,6 @@ def surface(monkeypatch):
         calls.append(("attach", window, root))
         window.native_attached = True
 
-    def detach(window):
-        calls.append(("detach", window))
-        window.native_attached = False
-
     def ensure_above_owner(window, root):
         if not window.above_parent:
             calls.append(("position_above", window, root))
@@ -119,7 +92,7 @@ def surface(monkeypatch):
 
     native = SimpleNamespace(
         attach=attach,
-        detach=detach,
+        layered_handle=lambda window: window,
         visible=lambda window: window.visible,
         topmost=lambda window: window.values["-topmost"],
         ensure_above_owner=ensure_above_owner,
@@ -132,7 +105,9 @@ def surface(monkeypatch):
         winfo_width=lambda: geometry[0], winfo_height=lambda: geometry[1],
         winfo_rootx=lambda: geometry[2], winfo_rooty=lambda: geometry[3],
     )
-    api = SimpleNamespace(Toplevel=Window, Canvas=Canvas, TclError=RuntimeError)
+    bitmap = Mock()
+    monkeypatch.setattr(caption_layer, "CaptionBitmap", lambda: bitmap)
+    api = SimpleNamespace(Toplevel=Window, TclError=RuntimeError)
     layer = caption_layer.CaptionLayer(root, anchor, tk_module=api)
     return layer, root, geometry, calls
 
@@ -145,28 +120,47 @@ def line(text="Привет", *, x=10, y=20, outline=False):
 def test_text_alpha_and_outline_are_independent_of_parent_alpha(surface):
     layer, root, _geometry, native = surface
     layer.render([line(outline=True)], opacity=0.0)
-    assert layer.window.values["-alpha"] == 0.0
-    assert layer.window.values["-transparentcolor"] == caption_layer.COLOR_KEY
+    layer._bitmap.paint.assert_called_once_with(
+        layer.window, (600, 160), (line(outline=True),), (0,), 0.0, layer.anchor
+    )
+    assert "-transparentcolor" not in layer.window.values
     assert root.values["-alpha"] == 0.25 and root.calls == []
-    assert len(layer.canvas.items) == 9  # eight stroke offsets and one face
-    assert sum(item["fill"] == "black" for item in layer.canvas.items.values()) == 8
     assert ("attach", layer.window, root) in native
     layer.render([line(outline=True)], opacity=0.5)
-    assert layer.window.values["-alpha"] == 0.5
+    assert layer._bitmap.paint.call_args.args[4] == 0.5
     assert root.values["-alpha"] == 0.25
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Uses Windows GDI+")
+def test_outline_bitmap_has_neutral_antialiasing_and_a_clear_background():
+    size = (400, 80)
+    pixel_data = (ctypes.c_ubyte * (size[0] * size[1] * 4))()
+    anchor = SimpleNamespace(
+        tk=SimpleNamespace(call=lambda *args: "Segoe UI" if args[0] == "font" else 1.5),
+        winfo_rgb=lambda color: (0, 0, 0) if color == "black" else (65535, 65535, 65535),
+    )
+    bitmap = caption_layer.CaptionBitmap()
+    try:
+        spec = dict(line(outline="white"), fill="black")
+        bitmap._draw(size, ctypes.cast(pixel_data, ctypes.c_void_p), (spec,), (0,), anchor)
+    finally:
+        bitmap.close()
+
+    pixels = set(zip(*[iter(pixel_data)] * 4))
+    assert (0, 0, 0, 0) in pixels
+    assert (0, 0, 0, 255) in pixels
+    assert (255, 255, 255, 255) in pixels
+    assert any(0 < alpha < 255 for _, _, _, alpha in pixels)
+    assert all(blue == green == red <= alpha for blue, green, red, alpha in pixels)
 
 
 def test_marquee_moves_stroke_with_face_but_leaves_fitting_line_stationary(surface):
     layer, _root, _geometry, _native = surface
     layer.render([line(outline=True), line("短句", x=200, y=80)], opacity=1)
-    before = {key: dict(value) for key, value in layer.canvas.items.items()}
-    groups = layer._groups
     layer.move_offsets([33, 0])
-    for item, _, _ in groups[0]:
-        assert layer.canvas.items[item]["x"] == before[item]["x"] - 33
-        assert layer.canvas.items[item]["y"] == before[item]["y"]
-    for item, _, _ in groups[1]:
-        assert layer.canvas.items[item] == before[item]
+    assert layer._bitmap.paint.call_args.args[2:4] == (
+        (line(outline=True), line("短句", x=200, y=80)), (33, 0)
+    )
 
 
 def test_same_render_keeps_current_marquee_position_without_remap(surface):
@@ -174,12 +168,10 @@ def test_same_render_keeps_current_marquee_position_without_remap(surface):
     specs = [line(outline=True)]
     layer.render(specs, opacity=1)
     layer.move_offsets([25])
-    before = {key: dict(value) for key, value in layer.canvas.items.items()}
     calls = list(layer.window.calls)
-    repaints = layer.canvas.repaints
+    paint_calls = list(layer._bitmap.paint.call_args_list)
     layer.render(specs, opacity=1)
-    assert layer.canvas.items == before
-    assert layer.canvas.repaints == repaints
+    assert layer._bitmap.paint.call_args_list == paint_calls
     assert layer.window.calls == calls
 
 
@@ -239,27 +231,28 @@ def test_empty_captions_and_minimized_parent_hide_surface_until_restore(surface)
     layer.sync_window()
     assert window.state() == "normal" and layer.window is window
     layer.render([], opacity=1)
-    assert window.state() == "withdrawn" and layer.canvas.items == {}
+    assert window.state() == "withdrawn" and layer._specs == ()
     layer.sync_window()
     assert window.state() == "withdrawn"
 
 
-def test_borderless_transition_detaches_and_suspends_until_explicit_resume(surface):
+def test_borderless_transition_recreates_popup_only_after_explicit_resume(surface):
     layer, root, geometry, native = surface
     layer.render([line()], opacity=1)
     window = layer.window
     layer.prepare_window_change()
-    assert native[-1] == ("detach", window)
-    assert window.state() == "withdrawn"
+    assert not window.exists and layer.window is None
     native.clear()
     geometry[2] = -620
     layer.render([line("Changed while switching")], opacity=0.5)
     layer.sync_window()
-    assert window.state() == "withdrawn" and native == []
+    assert layer.window is None and native == []
     layer.sync_window(resume=True)
-    assert native and all(call == ("attach", window, root) for call in native)
-    assert window.state() == "normal"
-    assert ("geometry", "600x160+-620+40") in window.calls
+    assert layer.window is not window
+    assert ("attach", layer.window, root) in native
+    assert layer.window.state() == "normal"
+    assert ("geometry", "600x160+-620+40") in layer.window.calls
+    assert layer._bitmap.paint.call_args.args[2] == (line("Changed while switching"),)
 
 
 def test_native_hidden_popup_restores_even_when_tk_state_is_normal(surface):
@@ -288,21 +281,23 @@ def test_caption_pointer_bindings_survive_native_surface_recreation(surface):
     event = object()
     layer.window.bindings["<ButtonPress-1>"](event)
     assert received == [event]
-    assert list(layer.canvas.items.values())[0]["text"] == "Привет"
+    assert layer._bitmap.paint.call_args.args[2] == (line(),)
 
 
 def test_close_destroys_owned_surface_and_never_recreates_it(surface):
     layer, _root, _geometry, native = surface
     layer.render([line(outline=True)], opacity=1)
     window = layer.window
+    bitmap = layer._bitmap
     layer.close()
     layer.close()
+    bitmap.close.assert_called_once()
     assert window.calls.count("destroy") == 1
     native.clear()
     layer.render([line("Later")], opacity=1)
     layer.sync_window(resume=True)
     layer.move_offsets([50])
-    assert layer.window is None and layer.canvas is None
+    assert layer.window is None and layer._bitmap is None
     assert native == []
 
 
@@ -368,7 +363,6 @@ def native_owner(monkeypatch):
     owner.set_owner = set_owner
     owner.set_position = set_position
     owner.is_visible = lambda hwnd: visible.get(hwnd, True)
-    owner._identity = None
     monkeypatch.setattr(caption_layer.ctypes, "set_last_error", lambda value: None, raising=False)
     monkeypatch.setattr(caption_layer.ctypes, "get_last_error", lambda: 0, raising=False)
     return SimpleNamespace(

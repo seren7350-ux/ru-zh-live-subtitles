@@ -26,7 +26,7 @@ STATUS_COLORS = {
 }
 
 MIN_WINDOW_WIDTH = 520
-MIN_WINDOW_HEIGHT = 180
+MIN_WINDOW_HEIGHT = 1
 RESIZE_BORDER_PIXELS = 7
 RESIZE_DIRECTIONS = frozenset({"n", "s", "e", "w", "ne", "nw", "se", "sw"})
 RESIZE_CURSORS = {
@@ -242,18 +242,16 @@ class SubtitleOverlay:
         self._initial_fit_pending = True
         self._resize_session: ResizeSession | None = None
         self._window_width = max(640, int(self.root.winfo_screenwidth() * 0.8))
-        self._window_height = 280
-        self._minimum_window_height = MIN_WINDOW_HEIGHT
-        self._last_root_size = (self._window_width, self._window_height)
+        self._last_root_size = (1, 1)
 
         self.root.title("Russian–Chinese Live Subtitles")
         self.root.configure(background="#111318")
         self.root.protocol("WM_DELETE_WINDOW", on_exit)
         from .workarea import work_area, positioned
-        initial = (0, 0, self._window_width, self._window_height)
+        initial = (0, 0, self._window_width, 1)
         area = work_area(initial, (root.winfo_screenwidth(), root.winfo_screenheight()))
-        x, y, self._window_width, self._window_height = positioned(initial, area, state.position)
-        self.root.geometry(f"{self._window_width}x{self._window_height}+{x}+{y}")
+        x, y, self._window_width, _ = positioned(initial, area, state.position)
+        self.root.geometry(f"+{x}+{y}")
         configure_window_resizing(self.root)
         self.root.attributes("-topmost", bool(state.topmost))
         self.root.attributes("-alpha", float(state.opacity))
@@ -299,7 +297,7 @@ class SubtitleOverlay:
             root,
             background="#111318",
             padx=24,
-            pady=12,
+            pady=0,
             highlightthickness=1,
             highlightbackground="#292e38",
         )
@@ -312,14 +310,13 @@ class SubtitleOverlay:
             font=("Segoe UI", 9),
             wraplength=max(120, self._window_width - 60),
         )
-        self.error.pack(fill="x", side="bottom")
         self.subtitle_view = SingleLineSubtitleView(
             self.content,
             tk_module=tk,
             on_width_changed=self._set_error_wraplength,
-            on_minimum_height=self._set_subtitle_minimum_height,
         )
         self.subtitle_view.container.pack(fill="both", expand=True)
+        self._request_caption_width(self._window_width)
         self.subtitle_view.set_background_opacity(state.opacity)
         self.renderer = OverlayRenderer(
             root,
@@ -368,15 +365,9 @@ class SubtitleOverlay:
         button.pack(side="left", padx=2)
         return button
 
-    def _set_subtitle_minimum_height(self, height: int) -> None:
-        if not hasattr(self, "subtitle_view"):
-            return
-        chrome_height = self.root.winfo_height() - self.subtitle_view.canvas.winfo_height()
-        minimum = max(MIN_WINDOW_HEIGHT, chrome_height + height)
-        if minimum != self._minimum_window_height:
-            self._minimum_window_height = minimum
-            self.root.minsize(MIN_WINDOW_WIDTH, minimum)
-            self.root.after_idle(self._keep_in_workarea)
+    def _request_caption_width(self, width: int) -> None:
+        padding = 2 * (int(self.content.cget("padx")) + int(self.content.cget("highlightthickness")))
+        self.subtitle_view.canvas.configure(width=max(1, width - padding))
 
     def _set_error_wraplength(self, wraplength: int) -> None:
         self.error.configure(wraplength=max(120, int(wraplength)))
@@ -607,7 +598,6 @@ class SubtitleOverlay:
                 direction=session.direction,
                 delta_x=int(event.x_root) - session.pointer_x,
                 delta_y=int(event.y_root) - session.pointer_y,
-                minimum_height=self._minimum_window_height,
             )
             self.root.geometry(f"{width}x{height}+{x}+{y}")
         except (self.tk.TclError, ValueError):
@@ -632,8 +622,11 @@ class SubtitleOverlay:
         if current_size == self._last_root_size:
             return
         self._last_root_size = current_size
-        if not self.windows.transition_pending:
-            self.state.set_position("floating")
+        if self.state.position != "floating":
+            if height == self.root.winfo_reqheight():
+                self.root.after_idle(self._keep_in_workarea)
+            else:
+                self.state.set_position("floating")
 
     def _start_stop(self) -> None:
         if self.state.stopping or self.closing:
@@ -645,6 +638,11 @@ class SubtitleOverlay:
 
     def render(self) -> None:
         self.renderer.render(self.state)
+        if self.state.latest_error or self.state.srt_error:
+            if not self.error.winfo_manager():
+                self.error.pack(fill="x", side="bottom", before=self.subtitle_view.container)
+        elif self.error.winfo_manager():
+            self.error.pack_forget()
         from .i18n import translate
         tr = lambda text: translate(text, self.state.ui_language)
         pinned_color = "#343a46"
@@ -754,7 +752,6 @@ class SubtitleOverlay:
     def toggle_borderless(self) -> None:
         if self.closing or self.windows.transition_pending:
             return
-        self.hide_settings_panel()
         self._dragging = False
         self._resize_session = None
         self.state.borderless = not self.state.borderless
@@ -789,26 +786,39 @@ class SubtitleOverlay:
 
     def set_position(self, preset: str) -> None:
         self.state.set_position(preset)
-        x, y, width, height = window_placement(
-            self.root, self.root, self.window_rectangle(), framed=not self.state.borderless, preset=preset
-        )
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self._keep_in_workarea()
 
-    def window_rectangle(self) -> tuple[int, int, int, int]:
+    def window_rectangle(self, *, for_preferences: bool = False) -> tuple[int, int, int, int]:
+        height = self.root.winfo_height()
+        # Zero stores a content-sized window so the next launch can fit its own rows.
+        if for_preferences and height == self.root.winfo_reqheight():
+            height = 0
         return (int(self.root.winfo_x()), int(self.root.winfo_y()),
-                max(MIN_WINDOW_WIDTH, int(self.root.winfo_width())),
-                max(MIN_WINDOW_HEIGHT, int(self.root.winfo_height())))
+                max(MIN_WINDOW_WIDTH, int(self.root.winfo_width())), int(height))
 
     def restore_geometry(self, rect: tuple[int, int, int, int]) -> None:
+        self.state.set_position("floating")
+        natural_height = rect[3] == 0
+        if natural_height:
+            self._request_caption_width(rect[2])
+            self.root.geometry("")
+            rect = (*rect[:3], self.root.winfo_reqheight())
         x, y, width, height = window_placement(
             self.root, self.root, rect, framed=not self.state.borderless
         )
-        self.state.set_position("floating")
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self._place_window((x, y, width, height), resize=not natural_height or (width, height) != rect[2:])
+
+    def _place_window(self, rect: tuple[int, int, int, int], *, resize: bool = False) -> None:
+        x, y, width, height = rect
+        size = f"{width}x{height}" if resize else ""
+        self.root.geometry(f"{size}+{x}+{y}")
 
     def _keep_in_workarea(self) -> None:
         if self.closing or self.windows.transition_pending:
             return
-        if self.root.winfo_width() <= 1 or self.root.winfo_height() <= 1:
-            return
-        self.restore_geometry(self.window_rectangle())
+        rect = self.window_rectangle()
+        fitted = window_placement(
+            self.root, self.root, rect, framed=not self.state.borderless, preset=self.state.position
+        )
+        if fitted != rect:
+            self._place_window(fitted, resize=fitted[2:] != rect[2:])

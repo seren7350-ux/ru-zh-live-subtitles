@@ -272,7 +272,11 @@ class GuiRuntime:
         self.overlay.on_open_logs = self.open_logs_folder
         self.overlay.on_dump_threads = self.dump_diagnostics
         if saved_preferences and "window_rect" in saved_preferences:
-            self.overlay.restore_geometry(tuple(saved_preferences["window_rect"]))
+            rect = tuple(saved_preferences["window_rect"])
+            if rect[3] == 280 and "auto_start" not in saved_preferences:
+                # The previous version saved its fixed default height on startup.
+                rect = (*rect[:3], 0)
+            self.overlay.restore_geometry(rect)
         if model_assets is not None:
             self.refresh_model_assets()
 
@@ -316,7 +320,7 @@ class GuiRuntime:
             return
         values = {key: getattr(self.state, key) for key in (*BOOL_FIELDS, *NUM_FIELDS, *COLOR_FIELDS)}
         values["ui_language"] = self.state.ui_language
-        values["window_rect"] = list(self.overlay.window_rectangle())
+        values["window_rect"] = list(self.overlay.window_rectangle(for_preferences=True))
         if self.microphone_selector is not None:
             values["microphone_name"] = self.microphone_selector.preference_name()
         if values == self._preference_snapshot:
@@ -349,11 +353,13 @@ class GuiRuntime:
             self.state.toolbar_visible = defaults.toolbar_visible
             overlay._sync_toolbar()
             def reset_geometry() -> None:
-                overlay.restore_geometry((self.root.winfo_x(), self.root.winfo_y(), 900, 280))
+                overlay.restore_geometry((self.root.winfo_x(), self.root.winfo_y(), 900, 0))
                 overlay.set_position("bottom")
             self.root.after_idle(reset_geometry)
-        elif self.microphone_selector is not None:
-            self.select_microphone(None)
+        else:
+            self.state.auto_start = defaults.auto_start
+            if self.microphone_selector is not None:
+                self.select_microphone(None)
         panel = overlay.settings_panel
         if panel is not None and page == "Appearance":
             for scale, value in ((panel.opacity_scale, defaults.opacity * 100),
@@ -771,6 +777,7 @@ def _state_from_args(args: argparse.Namespace) -> SubtitleViewState:
         show_russian=args.show_russian,
         topmost=args.topmost,
         borderless=args.borderless,
+        auto_start=getattr(args, "auto_start", True),
     )
 
 

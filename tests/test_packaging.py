@@ -100,7 +100,6 @@ def test_windowed_no_arguments_uses_live_overlay_defaults(
         "--translation-device",
         "cpu",
         "--offline",
-        "--no-auto-start",
     ]]
     assert (tmp_path / "ru-zh-live-subtitles" / "logs" / "application.log").is_file()
 

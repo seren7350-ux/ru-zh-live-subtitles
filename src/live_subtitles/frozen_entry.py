@@ -41,7 +41,6 @@ def default_arguments(mode: str) -> list[str]:
         "--translation-device",
         "cpu",
         "--offline",
-        "--no-auto-start",
     ]
 
 

@@ -171,6 +171,20 @@ def test_reset_page_preserves_other_pages_and_language(runtime, page):
     gui.save_preferences.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "saved, height",
+    [({"window_rect": [20, 30, 900, 280]}, 0),
+     ({"window_rect": [20, 30, 900, 230]}, 230),
+     ({"window_rect": [20, 30, 900, 280], "auto_start": True}, 280)],
+)
+def test_legacy_default_height_migrates_to_content_height(monkeypatch, saved, height):
+    overlay = Mock()
+    monkeypatch.setattr(app, "SubtitleOverlay", lambda *_args, **_kwargs: overlay)
+    app.GuiRuntime(FakeRoot(), SubtitleViewState(), FakeController(), ui_poll_ms=50,
+                   saved_preferences=saved)
+    overlay.restore_geometry.assert_called_once_with((20, 30, 900, height))
+
+
 def test_reset_input_does_not_change_active_session(runtime):
     gui, root, controller = runtime
     controller.running = True
@@ -277,10 +291,38 @@ def test_live_overlay_passes_cli_device_to_selector(
     monkeypatch.setattr(app, "LiveProcessOverlayController", Controller)
     monkeypatch.setattr(app, "_run_tk", run_tk)
     monkeypatch.setattr(app, "_log_live_exit_metrics", lambda _controller: None)
+    monkeypatch.setattr(app.Preferences, "load", lambda _self: {})
     args = build_parser().parse_args(["live-overlay", "--device", "12"])
     assert app._live_overlay(args) == 0
     assert captured[0] is not None
     assert captured[0].selected_index == 12
+
+
+@pytest.mark.parametrize(
+    "saved, options, expected",
+    [
+        ({}, [], True),
+        ({"auto_start": False}, [], False),
+        ({"auto_start": True}, ["--no-auto-start"], False),
+        ({"auto_start": False}, ["--auto-start"], True),
+    ],
+)
+def test_live_overlay_autostart_uses_preference_unless_explicit(monkeypatch, saved, options, expected):
+    from live_subtitles.frozen_entry import default_arguments
+
+    monkeypatch.setattr(app.Preferences, "load", lambda _self: saved)
+    controller = Mock(summaries=(), last_result=None)
+    monkeypatch.setattr(app, "LiveProcessOverlayController", lambda _config: controller)
+    monkeypatch.setattr(app, "_log_live_exit_metrics", lambda _controller: None)
+    launch = Mock(return_value=0)
+    monkeypatch.setattr(app, "_run_tk", launch)
+    args = build_parser().parse_args(default_arguments("windowed") + options)
+    args.explicit_options = {"auto_start"} if options else set()
+
+    assert app._live_overlay(args) == 0
+    state, _, launch_args = launch.call_args.args
+    assert state.auto_start is expected
+    assert launch_args.auto_start is expected
 
 
 def test_overlay_demo_has_no_microphone_selector(

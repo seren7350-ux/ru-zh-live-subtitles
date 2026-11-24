@@ -42,7 +42,8 @@ def test_inno_policy_is_per_user_x64_cpu_offline_and_stable() -> None:
     assert "DefaultDirName={localappdata}\\Programs\\RuZhLiveSubtitles" in source
     assert "ArchitecturesAllowed=x64compatible" in source
     assert "ArchitecturesInstallIn64BitMode=x64compatible" in source
-    assert "live-overlay --translation-device cpu --offline --no-auto-start" in source
+    assert 'Parameters: "live-overlay --translation-device cpu --offline"' in source
+    assert "--no-auto-start" not in source
     assert "Tasks: desktopicon" in source
     assert "Flags: unchecked" in source
     assert "Program Files" not in source

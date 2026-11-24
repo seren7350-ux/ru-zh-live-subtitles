@@ -6,8 +6,7 @@ import ctypes
 from ctypes import wintypes
 from typing import Any, Callable, Sequence
 
-
-COLOR_KEY = "#010101"
+from .caption_bitmap import CaptionBitmap
 
 
 class _WindowOwner:
@@ -39,7 +38,6 @@ class _WindowOwner:
             ctypes.c_int, ctypes.c_int, wintypes.UINT,
         )
         self.set_position.restype = wintypes.BOOL
-        self._identity: tuple[int, int] | None = None
 
     def wrapper(self, widget: Any) -> int:
         content = widget.winfo_id()
@@ -66,16 +64,15 @@ class _WindowOwner:
             ctypes.set_last_error(0)
             if not self.set_owner(hwnd, -8, owner) and ctypes.get_last_error():
                 raise ctypes.WinError(ctypes.get_last_error())
-        self._identity = (hwnd, owner)
 
-    def detach(self, window: Any) -> None:
-        # Tk can replace the main wrapper during borderless changes. An owned
-        # popup must not remain attached to the HWND about to be destroyed.
+    def layered_handle(self, window: Any) -> int:
         hwnd = self.wrapper(window)
-        ctypes.set_last_error(0)
-        if not self.set_owner(hwnd, -8, 0) and ctypes.get_last_error():
-            raise ctypes.WinError(ctypes.get_last_error())
-        self._identity = None
+        style = self.get_style(hwnd, -20)
+        if not style & 0x80000:  # WS_EX_LAYERED
+            ctypes.set_last_error(0)
+            if not self.set_style(hwnd, -20, style | 0x80000) and ctypes.get_last_error():
+                raise ctypes.WinError(ctypes.get_last_error())
+        return hwnd
 
     def visible(self, window: Any) -> bool:
         return bool(self.is_visible(self.wrapper(window)))
@@ -112,12 +109,7 @@ class _WindowOwner:
 
 
 class CaptionLayer:
-    """Mirror text above a background window with an independent real alpha.
-
-    Color-key pixels reveal the parent or desktop. Near-black avoids a bright
-    color fringe on Tk's antialiased glyph edges; exact black remains available
-    for outlines. Windows makes fully transparent pixels pass mouse input on.
-    """
+    """Own the alpha-composited caption or its invisible mouse hit surface."""
 
     def __init__(self, root: Any, anchor: Any, *, tk_module: Any, hit_only: bool = False) -> None:
         self.root, self.anchor, self.tk = root, anchor, tk_module
@@ -125,21 +117,20 @@ class CaptionLayer:
         self._hit_enabled = False
         self.hit_surface: CaptionLayer | None = None
         self.window: Any | None = None
-        self.canvas: Any | None = None
+        self._bitmap: CaptionBitmap | None = None
         self._native = _WindowOwner()
         self._handlers: dict[str, Callable[..., Any]] = {}
         self._specs: tuple[dict[str, Any], ...] = ()
         # Windows skips hit testing at alpha zero. The hit surface covers only
         # the subtitle canvas and uses the smallest nonzero Windows alpha.
         self._opacity = 1 / 255 if hit_only else 1.0
-        self._color_key = COLOR_KEY
-        self._signature: tuple[object, ...] | None = None
+        self._offsets: tuple[int, ...] = ()
+        self._painted_size: tuple[int, int] | None = None
         self._geometry = ""
         self._topmost: bool | None = None
         self._closed = False
         self._suspended = False
         self._syncing = False
-        self._groups: list[list[tuple[int, float, float]]] = []
 
     def set_pointer_handlers(self, handlers: dict[str, Callable[..., Any]]) -> None:
         self._handlers = dict(handlers)
@@ -162,20 +153,13 @@ class CaptionLayer:
         # GWLP_HWNDPARENT on that child then reparents it: screen coordinates
         # become parent-relative and raise/configure events feed each other.
         # Keep a real popup and establish ownership only through _WindowOwner.
-        self.window.configure(background=self._color_key)
-        if not self._hit_only:
-            self.window.attributes("-transparentcolor", self._color_key)
-        self.window.attributes("-alpha", self._opacity)
-        self.canvas = self.tk.Canvas(
-            self.window, background=self._color_key, highlightthickness=0,
-            borderwidth=0, width=1, height=1,
-        )
-        self.canvas.pack(fill="both", expand=True)
+        if self._hit_only:
+            self.window.configure(background="#010101")
+            self.window.attributes("-alpha", self._opacity)
         self._geometry = ""
         self._topmost = None
-        self._signature = None
+        self._painted_size = None
         self.set_pointer_handlers(self._handlers)
-        self._paint()
 
     def set_hit_enabled(self, enabled: bool) -> None:
         if enabled != self._hit_enabled:
@@ -183,61 +167,33 @@ class CaptionLayer:
             self.sync_window()
 
     def render(self, specs: Sequence[dict[str, Any]], *, opacity: float) -> None:
-        self._specs = tuple(dict(spec) for spec in specs)
+        specs = tuple(dict(spec) for spec in specs)
+        if specs != self._specs:
+            self._specs = specs
+            self._offsets = (0,) * len(specs)
+            self._painted_size = None
         opacity = min(1.0, max(0.0, float(opacity)))
         if opacity != self._opacity:
             self._opacity = opacity
-            if self._exists():
-                self.window.attributes("-alpha", opacity)
-        self._paint()
+            self._painted_size = None
         self.sync_window()
 
-    def _paint(self) -> None:
-        if not self._exists():
+    def _paint(self, size: tuple[int, int]) -> None:
+        if self._hit_only or size == self._painted_size:
             return
-        signature = tuple(tuple(sorted(spec.items())) for spec in self._specs)
-        if signature == self._signature:
-            return
-        self._signature = signature
-        used_colors = {
-            color.lower() for spec in self._specs for color in (spec.get("fill"), spec.get("outline"))
-            if isinstance(color, str)
-        }
-        color_key = COLOR_KEY
-        channel = 1
-        while color_key in used_colors:
-            channel += 1
-            color_key = f"#{channel:02x}{channel:02x}{channel:02x}"
-        if color_key != self._color_key:
-            self._color_key = color_key
-            self.window.configure(background=color_key)
-            self.canvas.configure(background=color_key)
-            self.window.attributes("-transparentcolor", color_key)
-        self.canvas.delete("all")
-        self._groups.clear()
-        for spec in self._specs:
-            group = []
-            options = dict(spec)
-            x, y = options.pop("x"), options.pop("y")
-            outline = options.pop("outline", False)
-            if outline:
-                for dx in (-1, 0, 1):
-                    for dy in (-1, 0, 1):
-                        if dx or dy:
-                            item = self.canvas.create_text(
-                                x + dx, y + dy, **dict(options, fill=outline if isinstance(outline, str) else "black"),
-                            )
-                            group.append((item, x + dx, y + dy))
-            item = self.canvas.create_text(x, y, **options)
-            group.append((item, x, y))
-            self._groups.append(group)
+        if self._bitmap is None:
+            self._bitmap = CaptionBitmap()
+        hwnd = self._native.layered_handle(self.window)
+        self._bitmap.paint(hwnd, size, self._specs, self._offsets, self._opacity, self.anchor)
+        self._painted_size = size
 
     def move_offsets(self, offsets: Sequence[float]) -> None:
-        if not self._exists():
-            return
-        for group, offset in zip(self._groups, offsets):
-            for item, x, y in group:
-                self.canvas.coords(item, x - offset, y)
+        pixels = tuple(round(offset) for offset in offsets)
+        if pixels != self._offsets:
+            self._offsets = pixels
+            self._painted_size = None
+            if self._exists() and not self._suspended and self.window.state() == "normal":
+                self._paint((self.anchor.winfo_width(), self.anchor.winfo_height()))
 
     def sync_window(self, *, resume: bool = False) -> None:
         if self._closed or self._syncing:
@@ -283,10 +239,14 @@ class CaptionLayer:
             self.window.update_idletasks()
             # Install NOACTIVATE and ownership before exposing the popup.
             self._native.attach(self.window, self.root)
+            self._painted_size = None
+            self._paint((width, height))
             self.window.deiconify()
             self.window.update_idletasks()
         self._native.attach(self.window, self.root)
-        if self.hit_surface is not None and self.hit_surface._exists():
+        self._paint((width, height))
+        if (self.hit_surface is not None and self.hit_surface._exists()
+                and self.hit_surface.window.state() == "normal"):
             self._native.ensure_above_owner(self.window, self.root, behind=self.hit_surface.window)
         else:
             self._native.ensure_above_owner(self.window, self.root)
@@ -297,15 +257,20 @@ class CaptionLayer:
 
     def prepare_window_change(self) -> None:
         self._suspended = True
+        # Discard the popup before Tk changes the owner wrapper. Reusing the
+        # Tcl window can leave an HWND invalidated by the native owner change.
+        self._destroy_popup()
+
+    def _destroy_popup(self) -> None:
         if self._exists():
-            self._native.detach(self.window)
-            self.hide_window()
+            self.window.destroy()
+        self.window = None
 
     def close(self) -> None:
         self._closed = True
-        if self._exists():
-            try:
-                self.window.destroy()
-            except self.tk.TclError:
-                pass
-        self.window = self.canvas = None
+        try:
+            self._destroy_popup()
+        finally:
+            if self._bitmap is not None:
+                self._bitmap.close()
+                self._bitmap = None

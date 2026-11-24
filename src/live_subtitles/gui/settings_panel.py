@@ -150,6 +150,8 @@ class SettingsPanel:
         self.input_model_help = None
         if models is not None:
             self.input_model_help = self._button("Model setup help", models.open_instructions)
+        if models is not None:
+            self._check("Start automatically", "auto_start", self._set_auto_start)
         self.start_stop_button = self._button("Start", on_start_stop)
         self._label("F8 to start or stop. Audio is processed on this computer.")
 
@@ -444,6 +446,9 @@ class SettingsPanel:
         if color:
             setattr(self.state_model, name, color.lower())
             self._on_color_change()
+
+    def _set_auto_start(self) -> None:
+        self.state_model.auto_start = bool(self._checks["auto_start"].get())
 
     def _set_auto_outline(self) -> None:
         self.state_model.auto_outline_color = self._checks["auto_outline_color"].get()

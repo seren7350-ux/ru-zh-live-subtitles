@@ -87,9 +87,9 @@ Source: "{#ModelAssetsRoot}\*"; DestDir: "{localappdata}\ru-zh-live-subtitles\mo
 #endif
 
 [Icons]
-Name: "{group}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline --no-auto-start"; WorkingDir: "{app}"
+Name: "{group}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline"; WorkingDir: "{app}"
 Name: "{group}\Model setup instructions"; Filename: "{app}\MODEL_SETUP.txt"; WorkingDir: "{app}"
-Name: "{autodesktop}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline --no-auto-start"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\Russian–Chinese Live Subtitles"; Filename: "{app}\ru-zh-subtitles.exe"; Parameters: "live-overlay --translation-device cpu --offline"; WorkingDir: "{app}"; Tasks: desktopicon
 
 #ifdef SplitPayloads
 [Code]

@@ -80,19 +80,17 @@ class WindowCoordinator:
     def begin_decoration_change(self, finished: Callable[[], None]) -> None:
         if self.closing() or self.transition_pending:
             return
-        geometry = str(self.root.geometry())
         self.transition_pending = True
         prepare = getattr(self.caption(), "prepare_window_change", None)
         if callable(prepare):
             prepare()
         self.root.overrideredirect(bool(self.state.borderless))
-        self.root.after_idle(lambda: self._finish_decoration_change(geometry, finished))
+        self.root.after_idle(lambda: self._finish_decoration_change(finished))
 
-    def _finish_decoration_change(self, geometry: str, finished: Callable[[], None]) -> None:
+    def _finish_decoration_change(self, finished: Callable[[], None]) -> None:
         if self.closing():
             self.transition_pending = False
             return
-        self.root.geometry(geometry)
         self.root.attributes("-topmost", bool(self.state.topmost))
         self.root.attributes("-alpha", float(self.state.opacity))
         # Repeating resizable() here would replace the Windows shell wrapper.
@@ -100,4 +98,7 @@ class WindowCoordinator:
         self.root.configure(cursor="")
         self.transition_pending = False
         self.sync_caption()
+        panel = self.settings()
+        if panel is not None and panel.is_visible():
+            panel.window.lift()
         finished()

@@ -103,6 +103,9 @@ class FakeWidget:
     def winfo_height(self) -> int:
         return int(self.options.get("height", 200))
 
+    def winfo_manager(self) -> str:
+        return "pack" if self.packed else ""
+
     def winfo_reqheight(self) -> int:
         return int(self.options.get("reqheight", 100))
 
@@ -606,8 +609,8 @@ def test_resize_geometry_clamps_minimum_and_moves_only_left_top_edges() -> None:
         height=400,
         direction="nw",
         delta_x=700,
-        delta_y=350,
-    ) == (380, 420, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+        delta_y=450,
+    ) == (380, 599, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
     assert resized_geometry(
         x=100,
         y=200,
@@ -615,7 +618,7 @@ def test_resize_geometry_clamps_minimum_and_moves_only_left_top_edges() -> None:
         height=400,
         direction="se",
         delta_x=-700,
-        delta_y=-350,
+        delta_y=-450,
     ) == (100, 200, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
 
@@ -787,7 +790,13 @@ def test_live_settings_shows_model_assets_without_polling(tmp_path: Path) -> Non
     assert "Model setup required" in str(panel.model_status.options["text"])
     assert "need attention" in panel.input_model_status.options["text"]
     assert panel.input_model_help.packed
+    checkbox = panel._checks["auto_start"]
+    assert checkbox.get() is True
+    checkbox.set(False)
+    panel._set_auto_start()
+    assert panel.state_model.auto_start is False
     panel.sync()
+    assert checkbox.get() is False
     assert calls == []
     assert panel.model_recheck_button is not None
     command = panel.model_recheck_button.options["command"]
@@ -808,6 +817,7 @@ def test_demo_settings_omits_model_assets(tmp_path: Path) -> None:
     panel, _root, _tk, _calls = build_panel(models=None)
     assert panel.model_status is None
     assert panel.model_recheck_button is None
+    assert "auto_start" not in panel._checks
     assert "Demo mode" in panel.input_model_status.options["text"]
 
 
@@ -897,8 +907,8 @@ def overlay_stub() -> tuple[SubtitleOverlay, FakeRoot]:
     overlay.control_bar.pack(fill="x", side="bottom")
     overlay.content = FakeWidget()
     overlay._window_width = 800
-    overlay._window_height = 280
-    overlay._minimum_window_height = MIN_WINDOW_HEIGHT
+    overlay.error = FakeWidget()
+    overlay.subtitle_view = SimpleNamespace(container=FakeWidget(), set_background_opacity=Mock())
     overlay._last_root_size = (800, 280)
     overlay.renderer = OverlayRenderer(
         overlay.root,
@@ -980,14 +990,11 @@ def test_borderless_resize_does_not_trigger_drag_and_sets_floating() -> None:
     assert overlay.state.position == "floating"
 
 
-def test_small_window_minimum_includes_complete_subtitle_rows() -> None:
+def test_borderless_window_can_resize_below_previous_height_limit() -> None:
     overlay, root = overlay_stub()
-    overlay.subtitle_view = SimpleNamespace(canvas=FakeWidget(height=30))
-    overlay._set_subtitle_minimum_height(70)
-    assert root.options["minsize"] == (MIN_WINDOW_WIDTH, 320)
     overlay._begin_resize(SimpleNamespace(x_root=400, y_root=899))
-    overlay._resize_drag(SimpleNamespace(x_root=400, y_root=800))
-    assert root.geometry_calls[-1].startswith("800x320")
+    overlay._resize_drag(SimpleNamespace(x_root=400, y_root=639))
+    assert root.geometry_calls[-1] == "800x20+100+620"
 
 
 def test_drag_area_does_not_trigger_resize() -> None:
@@ -1114,19 +1121,22 @@ def test_right_click_bindings_are_single_release_bindings() -> None:
     assert "add=\"+\"" not in source
 
 
-def test_borderless_toggle_withdraws_panel_then_restores_window_state_idle() -> None:
+def test_borderless_toggle_keeps_settings_visible_and_restores_window_state_idle() -> None:
     overlay, root = overlay_stub()
     panel = FakePanel(overlay.state)
     overlay.settings_panel = panel  # type: ignore[assignment]
+    panel.show()
     original_geometry = root.geometry()
     overlay.toggle_borderless()
-    assert panel.hide_calls == 1
-    assert not overlay.state.settings_visible
+    assert panel.hide_calls == 0
+    assert panel.is_visible()
+    assert overlay.state.settings_visible
     assert root.override_calls == [False]
     assert root.after_idle_callbacks
     assert root.destroy_calls == 0
     root.run_idle()
     assert root.geometry() == original_geometry
+    assert panel.is_visible()
     assert root.attribute_calls[-2:] == [("-topmost", True), ("-alpha", 0.88)]
     assert not overlay.windows.transition_pending
 
