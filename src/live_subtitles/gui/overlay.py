@@ -256,6 +256,9 @@ class SubtitleOverlay:
         self.root.attributes("-topmost", bool(state.topmost))
         self.root.attributes("-alpha", float(state.opacity))
         self.root.overrideredirect(bool(state.borderless))
+        start_withdrawn = sys.platform == "win32" and state.borderless
+        if start_withdrawn:
+            self.root.withdraw()
 
         self.control_bar = tk.Frame(
             root,
@@ -334,6 +337,8 @@ class SubtitleOverlay:
         self._bind_interactions_once()
         self._sync_toolbar()
         self.render()
+        if start_withdrawn:
+            self.root.after_idle(self.windows.show_initial_borderless)
 
     def _show_more(self) -> None:
         from .i18n import translate

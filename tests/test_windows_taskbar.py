@@ -87,6 +87,26 @@ def test_borderless_wrapper_supports_shell_minimize_without_adding_frame(taskbar
     api.ShowWindow.assert_not_called()
 
 
+def test_order_restore_preserves_position_and_focus_of_the_new_wrapper(taskbar):
+    api = taskbar._user32
+    api.GetAncestor.side_effect = [123, 654]
+    api.GetWindow.side_effect = [997, 998, 999]
+    api.IsWindowVisible.side_effect = [False, True, True]
+    api.GetWindowLongW.side_effect = lambda hwnd, index: win.WS_EX_TOPMOST if hwnd == 998 else 0
+    assert taskbar.preceding_window(ROOT) == 999
+
+    taskbar.restore_order(ROOT, 999)
+
+    assert api.GetWindow.call_args_list == [call(hwnd, win.GW_HWNDPREV) for hwnd in (123, 997, 998)]
+    api.SetWindowPos.assert_called_once_with(654, 999, 0, 0, 0, 0, win.KEEP_PLACEMENT & ~win.SWP_NOZORDER)
+
+
+def test_order_restore_skips_closed_predecessor(taskbar):
+    taskbar._user32.IsWindow.return_value = False
+    taskbar.restore_order(ROOT, 999)
+    taskbar._user32.SetWindowPos.assert_not_called()
+
+
 def test_decorated_wrapper_keeps_existing_native_and_extended_styles(taskbar):
     api = taskbar._user32
     api.GetWindowLongW.side_effect = lambda hwnd, index: {

@@ -12,11 +12,14 @@ GWL_STYLE = -16
 GWL_EXSTYLE = -20
 WS_MINIMIZEBOX = 0x20000
 WS_SYSMENU = 0x80000
+WS_EX_TOPMOST = 0x8
 WS_EX_TOOLWINDOW = 0x80
 WS_EX_APPWINDOW = 0x40000
 GA_ROOT = 2
+GW_HWNDPREV = 3
+SWP_NOZORDER = 0x0004
 # Change visibility/styles without changing size, position, stacking or focus.
-KEEP_PLACEMENT = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0200
+KEEP_PLACEMENT = 0x0001 | 0x0002 | SWP_NOZORDER | 0x0010 | 0x0200
 SWP_FRAMECHANGED = 0x0020
 SWP_SHOWWINDOW = 0x0040
 SWP_HIDEWINDOW = 0x0080
@@ -80,6 +83,9 @@ class WindowsTaskbar:
         hwnd = wintypes.HWND
         for name, result, arguments in (
             ("GetAncestor", hwnd, (hwnd, wintypes.UINT)),
+            ("GetWindow", hwnd, (hwnd, wintypes.UINT)),
+            ("GetForegroundWindow", hwnd, ()),
+            ("IsWindow", wintypes.BOOL, (hwnd,)),
             ("GetWindowLongW", wintypes.LONG, (hwnd, ctypes.c_int)),
             ("SetWindowLongW", wintypes.LONG, (hwnd, ctypes.c_int, wintypes.LONG)),
             ("IsWindowVisible", wintypes.BOOL, (hwnd,)),
@@ -103,9 +109,36 @@ class WindowsTaskbar:
             raise OSError("Tk main window does not have a Windows toplevel wrapper.")
         return hwnd
 
-    def _position(self, hwnd: int, flags: int) -> None:
-        if not self._user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, KEEP_PLACEMENT | flags):
+    def _position(self, hwnd: int, flags: int, *, behind: int | None = None) -> None:
+        flags |= KEEP_PLACEMENT
+        if behind is not None:
+            flags &= ~SWP_NOZORDER
+        if not self._user32.SetWindowPos(hwnd, behind, 0, 0, 0, 0, flags):
             raise ctypes.WinError(ctypes.get_last_error())
+
+    def _topmost(self, hwnd: int) -> bool:
+        return bool(self._user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
+
+    def is_active(self, root: Any) -> bool:
+        return self._user32.GetForegroundWindow() == self.wrapper(root)
+
+    def preceding_window(self, root: Any) -> int | None:
+        hwnd = self.wrapper(root)
+        topmost = self._topmost(hwnd)
+        previous = self._user32.GetWindow(hwnd, GW_HWNDPREV)
+        while previous:
+            if (self._user32.IsWindowVisible(previous) and not self._user32.IsIconic(previous)
+                    and self._topmost(previous) == topmost):
+                return previous
+            previous = self._user32.GetWindow(previous, GW_HWNDPREV)
+        return None
+
+    def restore_order(self, root: Any, preceding: int | None) -> None:
+        if preceding is None or not self._user32.IsWindow(preceding):
+            return
+        hwnd = self.wrapper(root)
+        if preceding != hwnd and self._topmost(preceding) == self._topmost(hwnd):
+            self._position(hwnd, 0, behind=preceding)
 
     def ensure_button(self, root: Any) -> None:
         hwnd = self.wrapper(root)

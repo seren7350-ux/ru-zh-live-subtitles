@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -1139,6 +1139,38 @@ def test_borderless_toggle_keeps_settings_visible_and_restores_window_state_idle
     assert panel.is_visible()
     assert root.attribute_calls[-2:] == [("-topmost", True), ("-alpha", 0.88)]
     assert not overlay.windows.transition_pending
+
+
+@pytest.mark.parametrize("was_active", [False, True])
+def test_borderless_transition_registers_hidden_wrapper_before_show_and_restores_order(was_active) -> None:
+    overlay, root = overlay_stub()
+    actions = Mock()
+    actions.taskbar.preceding_window.return_value = 123
+    actions.taskbar.is_active.return_value = was_active
+    overlay.windows.taskbar = actions.taskbar
+    overlay.subtitle_view.sync_window = actions.sync_caption
+    overlay.subtitle_view.prepare_window_change = actions.prepare_caption
+    root.state = Mock(return_value="normal")
+    actions.attach_mock(root.state, "state")
+    root.withdraw = actions.withdraw
+    root.deiconify = actions.deiconify
+    root.overrideredirect = actions.overrideredirect
+
+    overlay.toggle_borderless()
+    root.run_idle()
+
+    assert actions.mock_calls == [
+        call.prepare_caption(),
+        call.state(),
+        call.taskbar.preceding_window(root),
+        call.taskbar.is_active(root),
+        call.withdraw(),
+        call.overrideredirect(False),
+        call.taskbar.ensure_button(root),
+        call.deiconify() if was_active else call.state("normal"),
+        call.taskbar.restore_order(root, 123),
+        call.sync_caption(),
+    ]
 
 
 def test_ten_borderless_round_trips_do_not_rebuild_or_accumulate() -> None:

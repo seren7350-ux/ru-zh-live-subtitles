@@ -35,6 +35,13 @@ class WindowCoordinator:
             except OSError:
                 diagnostic_logger().exception("Could not register the subtitle taskbar window")
 
+    def show_initial_borderless(self) -> None:
+        if not self.closing():
+            # Tk's stack command creates the wrapper even while withdrawn.
+            self.root.lift()
+            self.sync_taskbar()
+            self.root.state("normal")
+
     def reveal(self) -> None:
         if self.closing():
             return
@@ -84,10 +91,24 @@ class WindowCoordinator:
         prepare = getattr(self.caption(), "prepare_window_change", None)
         if callable(prepare):
             prepare()
+        remap = self.taskbar is not None and self.root.state() in {"normal", "zoomed"}
+        preceding = None
+        was_active = False
+        if remap:
+            try:
+                preceding = self.taskbar.preceding_window(self.root)
+                was_active = self.taskbar.is_active(self.root)
+            except OSError:
+                diagnostic_logger().exception("Could not read subtitle window order")
+            # Tk replaces the HWND. Set its taskbar styles before Explorer
+            # sees the new wrapper for the first time.
+            self.root.withdraw()
         self.root.overrideredirect(bool(self.state.borderless))
-        self.root.after_idle(lambda: self._finish_decoration_change(finished))
+        self.root.after_idle(lambda: self._finish_decoration_change(finished, remap, preceding, was_active))
 
-    def _finish_decoration_change(self, finished: Callable[[], None]) -> None:
+    def _finish_decoration_change(
+        self, finished: Callable[[], None], remap: bool, preceding: int | None, was_active: bool
+    ) -> None:
         if self.closing():
             self.transition_pending = False
             return
@@ -95,10 +116,20 @@ class WindowCoordinator:
         self.root.attributes("-alpha", float(self.state.opacity))
         # Repeating resizable() here would replace the Windows shell wrapper.
         self.sync_taskbar()
+        if remap:
+            # wm deiconify raises and activates a Windows Tk toplevel.
+            if was_active:
+                self.root.deiconify()
+            else:
+                self.root.state("normal")
+            try:
+                self.taskbar.restore_order(self.root, preceding)
+            except OSError:
+                diagnostic_logger().exception("Could not restore subtitle window order")
         self.root.configure(cursor="")
         self.transition_pending = False
         self.sync_caption()
         panel = self.settings()
-        if panel is not None and panel.is_visible():
+        if self.taskbar is None and panel is not None and panel.is_visible():
             panel.window.lift()
         finished()

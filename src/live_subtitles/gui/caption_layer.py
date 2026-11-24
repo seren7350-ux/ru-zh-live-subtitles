@@ -84,25 +84,15 @@ class _WindowOwner:
 
     def ensure_above_owner(self, window: Any, root: Any, *, behind: Any = None) -> None:
         hwnd, owner = self.wrapper(window), self.wrapper(root)
-        behind_hwnd = self.wrapper(behind) if behind is not None else None
         previous = self.get_owner(owner, 3)  # GW_HWNDPREV: next higher window
-        cursor = previous
-        # Keep normal owned dialogs (Settings) above the text, including when
-        # text is remapped after Clear or the first subtitle of a new session.
-        lowest_dialog = None
-        while cursor:
-            if cursor == hwnd:
-                if lowest_dialog is None:
-                    return
-                previous = lowest_dialog
-                break
-            if (cursor != behind_hwnd and lowest_dialog is None and self.get_owner(cursor, 4) == owner
-                    and self.is_visible(cursor)):
-                lowest_dialog = cursor
-            cursor = self.get_owner(cursor, 3)
-        # Tk's lift(relative) swaps *both* windows on Windows. Swapping an
-        # owned popup and its owner creates a Configure/raise feedback loop.
-        # Move only the caption, preserving other owned windows above it.
+        if behind is not None and previous == self.wrapper(behind):
+            previous = self.get_owner(previous, 3)
+        if previous == hwnd:
+            return
+        if previous and not self.topmost(root) and self.get_style(previous, -20) & 0x0008:
+            previous = -2  # HWND_NOTOPMOST keeps the caption in the owner's band.
+        # Keep the caption next to its owner when another app covers them.
+        # Tk's relative lift swaps both windows, so move only the caption.
         flags = 0x0001 | 0x0002 | 0x0010 | 0x0200  # NOSIZE, NOMOVE, NOACTIVATE, NOOWNERZORDER
         if not self.set_position(hwnd, previous, 0, 0, 0, 0, flags):
             raise ctypes.WinError(ctypes.get_last_error())
@@ -241,7 +231,7 @@ class CaptionLayer:
             self._native.attach(self.window, self.root)
             self._painted_size = None
             self._paint((width, height))
-            self.window.deiconify()
+            self.window.state("normal")
             self.window.update_idletasks()
         self._native.attach(self.window, self.root)
         self._paint((width, height))

@@ -30,7 +30,9 @@ class Window:
     def winfo_ismapped(self):
         return self.visible and self.exists
 
-    def state(self):
+    def state(self, value=None):
+        if value == "normal":
+            self.deiconify()
         return self.window_state
 
     def withdraw(self):
@@ -410,7 +412,7 @@ def test_native_topmost_query_reads_flags_without_mutating_any_window(native_own
 
 
 @pytest.mark.parametrize("intervening", [False, True])
-def test_native_order_leaves_caption_and_settings_untouched_when_already_above(native_owner, intervening):
+def test_native_order_keeps_caption_next_to_owner_below_settings(native_owner, intervening):
     native = native_owner
     settings = 303
     unrelated = 404
@@ -421,7 +423,11 @@ def test_native_order_leaves_caption_and_settings_untouched_when_already_above(n
     native.previous[native.window.hwnd] = settings
     for _ in range(20):
         native.api.ensure_above_owner(native.window, native.root)
-    assert native.calls == []
+    if intervening:
+        assert len(native.calls) == 1
+        assert native.calls[0][:3] == ("position", native.window.hwnd, unrelated)
+    else:
+        assert native.calls == []
 
 
 @pytest.mark.parametrize("predecessor", [0, 303])
@@ -468,14 +474,27 @@ def test_native_order_puts_remapped_caption_below_existing_dialogs_once(native_o
     assert len(native.calls) == 1
 
 
-@pytest.mark.parametrize(("same_owner", "is_visible"), [(True, False), (False, True), (False, False)])
-def test_native_order_ignores_hidden_or_unrelated_windows(native_owner, same_owner, is_visible):
+def test_native_order_keeps_non_topmost_caption_below_topmost_band(native_owner):
     native = native_owner
-    other = 303
-    native.owners[other] = native.root.hwnd if same_owner else 999
-    native.visible[other] = is_visible
-    native.previous[native.root.hwnd] = other
-    native.previous[other] = native.window.hwnd
+    topmost = 303
+    native.styles[(native.root.hwnd, -20)] = 0
+    native.styles[(topmost, -20)] = 0x0008
+    native.previous[native.root.hwnd] = topmost
+    native.api.ensure_above_owner(native.window, native.root)
+    assert native.calls[0][:3] == ("position", native.window.hwnd, -2)
+
+
+def test_native_order_keeps_caption_over_hit_surface_and_under_covering_window(native_owner):
+    native = native_owner
+    hit_surface, covering = SimpleNamespace(hwnd=303), 404
+    native.previous.update({
+        native.root.hwnd: hit_surface.hwnd,
+        hit_surface.hwnd: covering,
+        covering: native.window.hwnd,
+    })
     for _ in range(20):
-        native.api.ensure_above_owner(native.window, native.root)
-    assert native.calls == []
+        native.api.ensure_above_owner(native.window, native.root, behind=hit_surface)
+    assert len(native.calls) == 1
+    assert native.calls[0][:3] == ("position", native.window.hwnd, covering)
+    assert native.previous[native.root.hwnd] == hit_surface.hwnd
+    assert native.previous[hit_surface.hwnd] == native.window.hwnd
