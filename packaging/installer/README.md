@@ -1,3 +1,17 @@
+# Split CPU offline releases
+
+For an application-only release, build a clean CPU onedir and run
+`build_split_installer.py --cpu-dist <onedir> --reuse-runtime <runtime.zip>
+--output-dir <new-directory> --iscc <ISCC.exe>`. The builder compares every
+reusable onedir file with the retained runtime before emitting `app.zip` and
+`setup.exe`. Setup reuses the installed runtime and models after checking their
+SHA-256 hashes. Fresh installs use the same runtime attachment or parts named
+on the release page.
+
+For a full release, pass `--model-assets-root <verified-model-bundle>` instead
+of `--reuse-runtime`. The builder emits the runtime attachment(s) alongside the
+two application files.
+
 # Self-contained CPU offline installer 0.3.0
 
 `cpu-only.iss` combines the provenance-bound `dist/ru-zh-subtitles-cpu` onedir

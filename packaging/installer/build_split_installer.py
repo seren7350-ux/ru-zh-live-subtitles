@@ -49,7 +49,11 @@ def split_onedir(cpu_dist: Path) -> tuple[dict[str, Path], dict[str, Path]]:
     return app, runtime
 
 
-def write_runtime_manifest(runtime_zip: Path, manifest: Path) -> None:
+def write_runtime_manifest(
+    runtime_zip: Path, manifest: Path, reusable_files: dict[str, Path] | None = None,
+) -> None:
+    if reusable_files is not None:
+        reusable_files = reusable_files.copy()
     with ZipFile(runtime_zip) as archive, manifest.open("w", encoding="utf-8-sig") as output:
         for entry in sorted(archive.infolist(), key=lambda entry: entry.filename):
             if entry.is_dir():
@@ -58,7 +62,22 @@ def write_runtime_manifest(runtime_zip: Path, manifest: Path) -> None:
             with archive.open(entry) as source:
                 for block in iter(lambda: source.read(COPY_BUFFER_BYTES), b""):
                     digest.update(block)
-            output.write(f"{digest.hexdigest()}|{entry.filename}\n")
+            checksum = digest.hexdigest()
+            if reusable_files is not None and not entry.filename.startswith("models/"):
+                source_file = reusable_files.pop(entry.filename, None)
+                if source_file is None or sha256_file(source_file) != checksum:
+                    raise ValueError(f"Reusable runtime does not match the CPU build: {entry.filename}")
+            output.write(f"{checksum}|{entry.filename}\n")
+    if reusable_files:
+        raise ValueError(f"Reusable runtime is missing CPU build files: {', '.join(sorted(reusable_files))}")
+
+
+def runtime_part_count(runtime_zip: Path) -> int:
+    size = runtime_zip.stat().st_size
+    if size < RELEASE_ASSET_LIMIT:
+        return 0
+    part_size = RELEASE_ASSET_LIMIT - 1
+    return (size + part_size - 1) // part_size
 
 
 def split_runtime_zip(runtime_zip: Path, staging: Path) -> list[Path]:
@@ -86,16 +105,21 @@ def split_runtime_zip(runtime_zip: Path, staging: Path) -> list[Path]:
 def build_attachments(
     app_zip: Path, runtime_zip: Path, staging: Path, output: Path, iscc: Path, version: str,
     script: Path = INSTALLER_SCRIPT,
+    *, reusable_files: dict[str, Path] | None = None,
 ) -> None:
     if app_zip.stat().st_size >= RELEASE_ASSET_LIMIT:
         raise ValueError("app.zip exceeds the Release attachment size limit.")
 
     print("Reading the runtime ZIP manifest", flush=True)
     manifest = staging / "runtime-files.txt"
-    write_runtime_manifest(runtime_zip, manifest)
-    print("Preparing Release runtime attachments", flush=True)
-    parts = split_runtime_zip(runtime_zip, staging)
-    part_count = 0 if parts == [runtime_zip] else len(parts)
+    write_runtime_manifest(runtime_zip, manifest, reusable_files)
+    if reusable_files is None:
+        print("Preparing Release runtime attachments", flush=True)
+        parts = split_runtime_zip(runtime_zip, staging)
+    else:
+        print("Runtime matches the CPU build. Publishing app and setup only.", flush=True)
+        parts = []
+    part_count = runtime_part_count(runtime_zip)
     subprocess.run([
         str(iscc), "/Qp", f"/O{staging}", "/Fsetup", "/DSplitPayloads=1",
         f"/DAppVersion={version}", f"/DVersionInfoVersion={version}.0",
@@ -140,23 +164,36 @@ def build(
         build_attachments(app_zip, runtime_zip, staging, output, iscc, version, script)
 
 
+def build_update(cpu_dist: Path, runtime_zip: Path, output: Path, iscc: Path, version: str) -> None:
+    app, runtime = split_onedir(cpu_dist)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="split-update-", dir=output.parent) as scratch:
+        staging = Path(scratch)
+        app_zip = staging / "app.zip"
+        print("Writing app.zip", flush=True)
+        write_zip(app_zip, app)
+        build_attachments(app_zip, runtime_zip, staging, output, iscc, version, reusable_files=runtime)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--cpu-dist", type=Path)
     source.add_argument("--existing-payloads", type=Path, help="directory containing app.zip and runtime.zip")
-    parser.add_argument("--model-assets-root", type=Path, help="required when building from --cpu-dist")
+    runtime = parser.add_mutually_exclusive_group()
+    runtime.add_argument("--model-assets-root", type=Path, help="model bundle for a full CPU build")
+    runtime.add_argument("--reuse-runtime", type=Path, help="publish only app.zip and setup.exe using this verified runtime.zip")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--iscc", required=True, type=Path)
     args = parser.parse_args()
 
     output = args.output_dir.resolve()
     iscc = args.iscc.resolve(strict=True)
+    if output.exists():
+        raise FileExistsError(f"Output directory already exists: {output}")
     if args.existing_payloads:
-        if args.model_assets_root:
-            parser.error("--model-assets-root is only used with --cpu-dist")
-        if output.exists():
-            raise FileExistsError(f"Output directory already exists: {output}")
+        if args.model_assets_root or args.reuse_runtime:
+            parser.error("--model-assets-root and --reuse-runtime require --cpu-dist")
         existing = args.existing_payloads.resolve(strict=True)
         app_zip, runtime_zip = existing / "app.zip", existing / "runtime.zip"
         with ZipFile(app_zip) as archive:
@@ -170,14 +207,17 @@ def main() -> None:
             )
         return
 
-    if not args.model_assets_root:
-        parser.error("--model-assets-root is required with --cpu-dist")
+    if not args.model_assets_root and not args.reuse_runtime:
+        parser.error("provide --model-assets-root or --reuse-runtime with --cpu-dist")
     cpu_dist = args.cpu_dist.resolve(strict=True)
-    models = args.model_assets_root.absolute()
     head = cpu_build_provenance.git_commit(REPO)
     distribution = validate_distribution(cpu_dist, repo_root=REPO, expected_commit=head)
-    validate_model_bundle(models)
     version = distribution["cpu_build_provenance"]["application_version"]
+    if args.reuse_runtime:
+        build_update(cpu_dist, args.reuse_runtime.resolve(strict=True), output, iscc, version)
+        return
+    models = args.model_assets_root.absolute()
+    validate_model_bundle(models)
     build(
         cpu_dist, models.resolve(), output, iscc, version, INSTALLER_SCRIPT,
     )
